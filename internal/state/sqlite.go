@@ -1,0 +1,226 @@
+package state
+
+import (
+	"database/sql"
+	"os"
+	"path/filepath"
+	"runtime"
+	"time"
+
+	_ "modernc.org/sqlite"
+)
+
+type FileRecord struct {
+	VolumeUUID   string
+	RelativePath string
+	Size         int64
+	Mtime        time.Time
+	SHA1         string
+	UploadedAt   *time.Time
+}
+
+type DB struct {
+	db *sql.DB
+}
+
+func Open(path string) (*DB, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	dsn := path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(max(runtime.NumCPU(), 4))
+	s := &DB{db: db}
+	if err := s.migrate(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *DB) Close() error {
+	return s.db.Close()
+}
+
+func (s *DB) migrate() error {
+	_, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS files (
+			volume_uuid TEXT NOT NULL,
+			relative_path TEXT NOT NULL,
+			size INTEGER NOT NULL,
+			mtime INTEGER NOT NULL,
+			sha1 TEXT NOT NULL DEFAULT '',
+			uploaded_at INTEGER,
+			PRIMARY KEY (volume_uuid, relative_path)
+		);
+		CREATE INDEX IF NOT EXISTS idx_files_sha1 ON files(sha1);
+
+		CREATE TABLE IF NOT EXISTS volume_sync (
+			volume_uuid TEXT PRIMARY KEY,
+			last_synced_mtime INTEGER NOT NULL DEFAULT 0,
+			last_synced_path TEXT NOT NULL DEFAULT ''
+		);
+	`)
+	return err
+}
+
+func (s *DB) Get(volumeUUID, relativePath string) (*FileRecord, error) {
+	row := s.db.QueryRow(`
+		SELECT volume_uuid, relative_path, size, mtime, sha1, uploaded_at
+		FROM files WHERE volume_uuid = ? AND relative_path = ?
+	`, volumeUUID, relativePath)
+
+	var rec FileRecord
+	var mtimeUnix int64
+	var uploadedAt sql.NullInt64
+	if err := row.Scan(&rec.VolumeUUID, &rec.RelativePath, &rec.Size, &mtimeUnix, &rec.SHA1, &uploadedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	rec.Mtime = time.Unix(mtimeUnix, 0)
+	if uploadedAt.Valid {
+		t := time.Unix(uploadedAt.Int64, 0)
+		rec.UploadedAt = &t
+	}
+	return &rec, nil
+}
+
+func (s *DB) Upsert(rec FileRecord) error {
+	var uploadedAt *int64
+	if rec.UploadedAt != nil {
+		v := rec.UploadedAt.Unix()
+		uploadedAt = &v
+	}
+	_, err := s.db.Exec(`
+		INSERT INTO files (volume_uuid, relative_path, size, mtime, sha1, uploaded_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(volume_uuid, relative_path) DO UPDATE SET
+			size = excluded.size,
+			mtime = excluded.mtime,
+			sha1 = excluded.sha1,
+			uploaded_at = excluded.uploaded_at
+	`, rec.VolumeUUID, rec.RelativePath, rec.Size, rec.Mtime.Unix(), rec.SHA1, uploadedAt)
+	return err
+}
+
+func (s *DB) MarkHashed(volumeUUID, relativePath, sha1 string, size int64, mtime time.Time) error {
+	_, err := s.db.Exec(`
+		INSERT INTO files (volume_uuid, relative_path, size, mtime, sha1, uploaded_at)
+		VALUES (?, ?, ?, ?, ?, NULL)
+		ON CONFLICT(volume_uuid, relative_path) DO UPDATE SET
+			size = excluded.size,
+			mtime = excluded.mtime,
+			sha1 = excluded.sha1
+	`, volumeUUID, relativePath, size, mtime.Unix(), sha1)
+	return err
+}
+
+// Checkpoint flushes the WAL so the sync watermark survives abrupt process termination.
+func (s *DB) Checkpoint() error {
+	_, err := s.db.Exec("PRAGMA wal_checkpoint(FULL)")
+	return err
+}
+
+// VolumeSyncCursor is the last contiguous synced file (by mtime, then path) for a volume.
+type VolumeSyncCursor struct {
+	Mtime        time.Time
+	RelativePath string
+}
+
+func (s *DB) GetVolumeSync(volumeUUID string) (VolumeSyncCursor, error) {
+	cur, found, err := s.getVolumeSyncRow(volumeUUID)
+	if err != nil {
+		return VolumeSyncCursor{}, err
+	}
+	if found {
+		return cur, nil
+	}
+	return s.backfillVolumeSync(volumeUUID)
+}
+
+func (s *DB) getVolumeSyncRow(volumeUUID string) (VolumeSyncCursor, bool, error) {
+	row := s.db.QueryRow(`
+		SELECT last_synced_mtime, last_synced_path
+		FROM volume_sync WHERE volume_uuid = ?
+	`, volumeUUID)
+
+	var cur VolumeSyncCursor
+	var mtimeUnix int64
+	err := row.Scan(&mtimeUnix, &cur.RelativePath)
+	if err == sql.ErrNoRows {
+		return VolumeSyncCursor{}, false, nil
+	}
+	if err != nil {
+		return VolumeSyncCursor{}, false, err
+	}
+	if mtimeUnix > 0 {
+		cur.Mtime = time.Unix(mtimeUnix, 0)
+	}
+	return cur, true, nil
+}
+
+func (s *DB) backfillVolumeSync(volumeUUID string) (VolumeSyncCursor, error) {
+	row := s.db.QueryRow(`
+		SELECT mtime, relative_path
+		FROM files
+		WHERE volume_uuid = ? AND uploaded_at IS NOT NULL
+		ORDER BY mtime DESC, relative_path DESC
+		LIMIT 1
+	`, volumeUUID)
+
+	var mtimeUnix int64
+	var path string
+	if err := row.Scan(&mtimeUnix, &path); err != nil {
+		if err == sql.ErrNoRows {
+			return VolumeSyncCursor{}, nil
+		}
+		return VolumeSyncCursor{}, err
+	}
+
+	_, err := s.db.Exec(`
+		INSERT INTO volume_sync (volume_uuid, last_synced_mtime, last_synced_path)
+		VALUES (?, ?, ?)
+	`, volumeUUID, mtimeUnix, path)
+	if err != nil {
+		return VolumeSyncCursor{}, err
+	}
+	return VolumeSyncCursor{Mtime: time.Unix(mtimeUnix, 0), RelativePath: path}, nil
+}
+
+// SetVolumeSync saves the sync watermark when it moves forward in file order.
+func (s *DB) SetVolumeSync(volumeUUID string, mtime time.Time, relativePath string) error {
+	cur, found, err := s.getVolumeSyncRow(volumeUUID)
+	if err != nil {
+		return err
+	}
+	if found && !isAfterWatermark(mtime, relativePath, cur) {
+		return nil
+	}
+
+	_, err = s.db.Exec(`
+		INSERT INTO volume_sync (volume_uuid, last_synced_mtime, last_synced_path)
+		VALUES (?, ?, ?)
+		ON CONFLICT(volume_uuid) DO UPDATE SET
+			last_synced_mtime = excluded.last_synced_mtime,
+			last_synced_path = excluded.last_synced_path
+	`, volumeUUID, mtime.Unix(), relativePath)
+	return err
+}
+
+func isAfterWatermark(mtime time.Time, path string, cur VolumeSyncCursor) bool {
+	if cur.Mtime.IsZero() {
+		return true
+	}
+	if mtime.After(cur.Mtime) {
+		return true
+	}
+	if mtime.Equal(cur.Mtime) && path > cur.RelativePath {
+		return true
+	}
+	return false
+}

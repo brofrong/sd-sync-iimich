@@ -1,0 +1,26 @@
+immich:
+  url: ""
+  api_key: ""
+
+watch:
+  volume_uuid: ""
+  volume_name: ""
+
+scan:
+  paths:
+    - "DCIM"
+    - "PRIVATE/M4ROOT/CLIP"
+  extensions:
+    - "jpg"
+    - "jpeg"
+    - "arw"
+    - "mp4"
+  exclude_patterns:
+    - "._*"
+
+upload:
+  concurrency: 0           # 0 = auto (число ядер CPU, макс. 16)
+  checkpoint_interval: 150 # сброс прогресса на диск каждые N файлов (100–200)
+
+state:
+  db_path: "~/.config/sd-sync-immich/state.db"
