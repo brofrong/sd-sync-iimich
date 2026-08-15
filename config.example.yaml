@@ -7,9 +7,9 @@ watch:
   volume_name: ""
 
 scan:
+  auto_paths: true
   paths:
     - "DCIM"
-    - "PRIVATE/M4ROOT/CLIP"
   extensions:
     - "jpg"
     - "jpeg"

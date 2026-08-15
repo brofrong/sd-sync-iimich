@@ -38,11 +38,12 @@ type ScanConfig struct {
 	Paths           []string `yaml:"paths"`
 	Extensions      []string `yaml:"extensions"`
 	ExcludePatterns []string `yaml:"exclude_patterns"`
+	AutoPaths       bool     `yaml:"auto_paths"`
 }
 
 type UploadConfig struct {
-	Concurrency         int `yaml:"concurrency"`          // 0 = auto (NumCPU, max 16)
-	CheckpointInterval  int `yaml:"checkpoint_interval"`  // flush WAL every N files (100–200, default 150)
+	Concurrency        int `yaml:"concurrency"`         // 0 = auto (NumCPU, max 16)
+	CheckpointInterval int `yaml:"checkpoint_interval"` // flush WAL every N files (100–200, default 150)
 }
 
 type StateConfig struct {
@@ -60,9 +61,10 @@ func Default() Config {
 		Immich: ImmichConfig{URL: "", APIKey: ""},
 		Watch:  WatchConfig{VolumeUUID: "", VolumeName: ""},
 		Scan: ScanConfig{
-			Paths:           []string{"DCIM", "PRIVATE/M4ROOT/CLIP"},
+			Paths:           []string{"DCIM"},
 			Extensions:      []string{"jpg", "jpeg", "arw", "mp4"},
 			ExcludePatterns: []string{"._*"},
+			AutoPaths:       true,
 		},
 		Upload: UploadConfig{
 			Concurrency:        0,
@@ -174,9 +176,14 @@ func (s *Store) Get() Config {
 func (s *Store) Update(fn func(*Config)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	previous := cloneConfig(s.cfg)
 	fn(&s.cfg)
 	s.applyDefaults()
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		s.cfg = previous
+		return err
+	}
+	return nil
 }
 
 func (s *Store) Save() error {
@@ -219,9 +226,93 @@ func ExpandPath(p string) (string, error) {
 }
 
 func (c Config) ExtensionSet() map[string]struct{} {
-	set := make(map[string]struct{}, len(c.Scan.Extensions))
-	for _, ext := range c.Scan.Extensions {
+	extensions := c.Scan.Extensions
+	if c.Scan.AutoPaths {
+		extensions = appendCopy(extensions, knownCameraExtensions...)
+	}
+	set := make(map[string]struct{}, len(extensions))
+	for _, ext := range extensions {
 		set[strings.ToLower(strings.TrimPrefix(ext, "."))] = struct{}{}
 	}
 	return set
+}
+
+var knownCameraPaths = []string{
+	"DCIM",
+	"PRIVATE/M4ROOT/CLIP",
+	"PRIVATE/AVCHD/BDMV/STREAM",
+	"MP_ROOT",
+	"PRIVATE/XDROOT/Clip",
+	"XDROOT/Clip",
+}
+
+var knownCameraExtensions = []string{
+	// Common still-image formats.
+	"avif", "bmp", "gif", "heic", "heif", "hif", "insp", "jpeg", "jpg", "jpe",
+	"jp2", "jxl", "mpo", "png", "tif", "tiff", "webp",
+	// RAW formats supported by Immich.
+	"3fr", "ari", "arw", "cap", "cin", "cr2", "cr3", "crw", "dcr", "dng",
+	"erf", "fff", "iiq", "k25", "kdc", "mrw", "nef", "nrw", "orf", "ori",
+	"pef", "raf", "raw", "rw2", "rwl", "sr2", "srf", "srw", "x3f",
+	// Video containers supported by Immich.
+	"3gp", "3gpp", "avi", "flv", "insv", "m2t", "m2ts", "m4v", "mkv",
+	"mov", "mp4", "mpe", "mpeg", "mpg", "mts", "mxf", "ts", "vob", "webm", "wmv",
+}
+
+// ScanPaths returns custom scan roots plus known camera layouts when automatic
+// media discovery is enabled. Parent paths replace nested paths to avoid
+// scanning the same file more than once.
+func (c Config) ScanPaths() []string {
+	paths := appendCopy([]string(nil), c.Scan.Paths...)
+	if c.Scan.AutoPaths {
+		paths = append(paths, knownCameraPaths...)
+	}
+
+	unique := make([]string, 0, len(paths))
+	for _, path := range paths {
+		path = filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+		if path == "" {
+			continue
+		}
+
+		skip := false
+		for _, existing := range unique {
+			if sameOrNestedPath(existing, path) {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+
+		filtered := unique[:0]
+		for _, existing := range unique {
+			if !sameOrNestedPath(path, existing) {
+				filtered = append(filtered, existing)
+			}
+		}
+		unique = append(filtered, path)
+	}
+	return unique
+}
+
+func sameOrNestedPath(parent, child string) bool {
+	parent = strings.ToLower(strings.TrimSuffix(parent, "/"))
+	child = strings.ToLower(strings.TrimSuffix(child, "/"))
+	return parent == "." || child == parent || strings.HasPrefix(child, parent+"/")
+}
+
+func appendCopy[T any](dst []T, values ...T) []T {
+	out := make([]T, len(dst), len(dst)+len(values))
+	copy(out, dst)
+	return append(out, values...)
+}
+
+func cloneConfig(cfg Config) Config {
+	cloned := cfg
+	cloned.Scan.Paths = appendCopy([]string(nil), cfg.Scan.Paths...)
+	cloned.Scan.Extensions = appendCopy([]string(nil), cfg.Scan.Extensions...)
+	cloned.Scan.ExcludePatterns = appendCopy([]string(nil), cfg.Scan.ExcludePatterns...)
+	return cloned
 }

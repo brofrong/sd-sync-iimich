@@ -26,7 +26,7 @@ func ScanVolume(mountPoint string, cfg config.Config) ([]File, error) {
 	exts := cfg.ExtensionSet()
 	var files []File
 
-	for _, relDir := range cfg.Scan.Paths {
+	for _, relDir := range cfg.ScanPaths() {
 		root := filepath.Join(mountPoint, relDir)
 		if _, err := os.Stat(root); os.IsNotExist(err) {
 			continue

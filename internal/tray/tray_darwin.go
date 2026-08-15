@@ -5,6 +5,8 @@ package tray
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +17,8 @@ import (
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/notify"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/settings"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/tray/icon"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/update"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/version"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/volume"
 	"github.com/getlantern/systray"
 )
@@ -29,12 +33,26 @@ type Controller struct {
 	urlLabel      *systray.MenuItem
 	sdLabel       *systray.MenuItem
 	uploadWorkers *systray.MenuItem
+	autoPaths     *systray.MenuItem
 
-	animCancel context.CancelFunc
+	updater             *update.Client
+	updateAvailableItem *systray.MenuItem
+	checkUpdatesItem    *systray.MenuItem
+	updateMu            sync.Mutex
+	availableUpdate     *update.Release
+	checkMu             sync.Mutex
+	installMu           sync.Mutex
+
+	animCancel   context.CancelFunc
+	updateCancel context.CancelFunc
 }
 
 func Run(application *app.App, cfg *config.Store) {
-	c := &Controller{App: application, Config: cfg}
+	c := &Controller{
+		App:     application,
+		Config:  cfg,
+		updater: update.NewClient(version.Current),
+	}
 	application.SetStatusCallback(func(s app.Status) {
 		c.updateStatus(s)
 	})
@@ -79,6 +97,12 @@ func (c *Controller) onReady() {
 	changeUpload := uploadMenu.AddSubMenuItem("Изменить...", "")
 	go c.listen(changeUpload, c.onChangeUploadWorkers)
 
+	c.autoPaths = settingsMenu.AddSubMenuItem(
+		"Автопоиск медиа с камер",
+		"Искать фото и видео в известных каталогах камер",
+	)
+	go c.listen(c.autoPaths, c.onToggleAutoPaths)
+
 	systray.AddSeparator()
 	c.syncItem = systray.AddMenuItem("Синхронизировать сейчас", "")
 	c.syncItem.Disable()
@@ -93,15 +117,30 @@ func (c *Controller) onReady() {
 	})
 
 	systray.AddSeparator()
+	c.updateAvailableItem = systray.AddMenuItem("", "")
+	c.updateAvailableItem.Hide()
+	go c.listen(c.updateAvailableItem, func() {
+		go c.installAvailableUpdate()
+	})
+	c.checkUpdatesItem = systray.AddMenuItem("Проверить обновления…", "")
+	go c.listen(c.checkUpdatesItem, func() {
+		go c.checkForUpdates(true)
+	})
+
+	systray.AddSeparator()
 	quitItem := systray.AddMenuItem("Выход", "")
 	go c.listen(quitItem, func() { systray.Quit() })
 
 	c.refreshLabels()
 	c.updateSyncEnabled()
+	c.startAutomaticUpdateChecks()
 }
 
 func (c *Controller) onExit() {
 	c.stopIconAnimation()
+	if c.updateCancel != nil {
+		c.updateCancel()
+	}
 	c.App.CancelSync()
 }
 
@@ -194,6 +233,13 @@ func (c *Controller) refreshLabels() {
 	if c.uploadWorkers != nil {
 		c.uploadWorkers.SetTitle("Параллельность: " + cfg.WorkerLabel(cfg.Upload.Concurrency, func(c config.Config) int { return c.EffectiveConcurrency() }))
 	}
+	if c.autoPaths != nil {
+		if cfg.Scan.AutoPaths {
+			c.autoPaths.Check()
+		} else {
+			c.autoPaths.Uncheck()
+		}
+	}
 }
 
 func (c *Controller) rebuildSDList(sdMenu *systray.MenuItem) {
@@ -270,6 +316,125 @@ func (c *Controller) onChangeUploadWorkers() {
 		c.Upload.Concurrency = n
 	})
 	c.refreshLabels()
+}
+
+func (c *Controller) onToggleAutoPaths() {
+	if err := c.Config.Update(func(cfg *config.Config) {
+		cfg.Scan.AutoPaths = !cfg.Scan.AutoPaths
+	}); err != nil {
+		logx.Warn("failed to save automatic media discovery setting", "err", err)
+		c.refreshLabels()
+		return
+	}
+	c.refreshLabels()
+	c.App.ConfigChanged()
+}
+
+func (c *Controller) startAutomaticUpdateChecks() {
+	if !version.IsRelease() {
+		logx.Debug("automatic update checks disabled for development build", "version", version.Current)
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	c.updateCancel = cancel
+	go func() {
+		c.checkForUpdates(false)
+		ticker := time.NewTicker(12 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				c.checkForUpdates(false)
+			}
+		}
+	}()
+}
+
+func (c *Controller) checkForUpdates(manual bool) {
+	if !version.IsRelease() {
+		if manual {
+			_ = settings.ShowMessage("Проверка обновлений недоступна для локальной dev-сборки.")
+		}
+		return
+	}
+	c.checkMu.Lock()
+	defer c.checkMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	release, err := c.updater.Check(ctx)
+	if err != nil {
+		logx.Warn("update check failed", "err", err, "manual", manual)
+		if manual {
+			_ = settings.ShowMessage("Не удалось проверить обновления:\n" + err.Error())
+		}
+		return
+	}
+	if release == nil {
+		if manual {
+			_ = settings.ShowMessage("Установлена актуальная версия " + version.Current + ".")
+		}
+		return
+	}
+
+	c.updateMu.Lock()
+	c.availableUpdate = release
+	c.updateMu.Unlock()
+	c.updateAvailableItem.SetTitle("Установить обновление " + release.Version + "…")
+	c.updateAvailableItem.Show()
+	logx.Info("update available", "current", version.Current, "latest", release.Version)
+
+	if manual {
+		c.installAvailableUpdate()
+	}
+}
+
+func (c *Controller) installAvailableUpdate() {
+	if !c.installMu.TryLock() {
+		return
+	}
+	defer c.installMu.Unlock()
+	c.updateAvailableItem.Disable()
+	c.checkUpdatesItem.Disable()
+	defer c.updateAvailableItem.Enable()
+	defer c.checkUpdatesItem.Enable()
+
+	c.updateMu.Lock()
+	release := c.availableUpdate
+	c.updateMu.Unlock()
+	if release == nil {
+		return
+	}
+
+	confirmed, err := settings.ConfirmUpdate(release.Version, release.Notes)
+	if err != nil || !confirmed {
+		if err != nil {
+			logx.Warn("update confirmation failed", "err", err)
+		}
+		return
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		logx.Error("failed to resolve executable for update", "err", err)
+		_ = settings.ShowMessage("Не удалось определить путь приложения:\n" + err.Error())
+		return
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(executable); resolveErr == nil {
+		executable = resolved
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	if err := c.updater.Install(ctx, release, executable); err != nil {
+		logx.Error("update installation failed", "version", release.Version, "err", err)
+		_ = settings.ShowMessage("Не удалось установить обновление:\n" + err.Error())
+		return
+	}
+	logx.Info("update installed", "version", release.Version, "path", executable)
+	_ = settings.ShowMessage("Обновление " + release.Version + " установлено. Приложение перезапустится.")
+	systray.Quit()
 }
 
 func (c *Controller) updateSyncEnabled() {

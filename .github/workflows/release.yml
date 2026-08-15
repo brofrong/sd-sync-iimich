@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -27,8 +26,9 @@ jobs:
           CGO_ENABLED: 1
         run: |
           mkdir -p dist
-          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/sd-sync-immich-darwin-arm64 ./cmd/sd-sync-immich
-          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/sd-sync-immich-darwin-amd64 ./cmd/sd-sync-immich
+          LDFLAGS="-s -w -X github.com/dmitiigorshkov/sd-sync-immich/internal/version.Current=${GITHUB_REF_NAME}"
+          GOOS=darwin GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/sd-sync-immich-darwin-arm64 ./cmd/sd-sync-immich
+          GOOS=darwin GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/sd-sync-immich-darwin-amd64 ./cmd/sd-sync-immich
           lipo -create -output dist/sd-sync-immich dist/sd-sync-immich-darwin-arm64 dist/sd-sync-immich-darwin-amd64
           chmod +x dist/sd-sync-immich dist/sd-sync-immich-darwin-arm64 dist/sd-sync-immich-darwin-amd64
 

@@ -47,6 +47,44 @@ func PromptWorkers(kind string, current int) (int, error) {
 	return n, nil
 }
 
+func ConfirmUpdate(version, notes string) (bool, error) {
+	message := fmt.Sprintf("Доступно обновление %s.", version)
+	if notes = strings.TrimSpace(notes); notes != "" {
+		notes = truncateText(notes, 1200)
+		message += "\n\n" + notes
+	}
+	message += "\n\nУстановить обновление и перезапустить приложение?"
+	script := fmt.Sprintf(
+		`display dialog %q with title "SD Sync Immich" buttons {"Отмена", "Установить"} default button "Установить" cancel button "Отмена"`,
+		escapeAppleScript(message),
+	)
+	result, err := runDialog(script)
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(result, "button returned:Установить"), nil
+}
+
+func ShowMessage(message string) error {
+	script := fmt.Sprintf(
+		`display dialog %q with title "SD Sync Immich" buttons {"OK"} default button "OK"`,
+		escapeAppleScript(message),
+	)
+	_, err := runDialog(script)
+	return err
+}
+
+func truncateText(text string, maxRunes int) string {
+	runes := []rune(text)
+	if len(runes) <= maxRunes {
+		return text
+	}
+	if maxRunes <= 0 {
+		return ""
+	}
+	return string(runes[:maxRunes]) + "…"
+}
+
 func runDialog(script string) (string, error) {
 	out, err := exec.Command("osascript", "-e", script).Output()
 	if err != nil {
