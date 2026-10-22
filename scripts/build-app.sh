@@ -27,11 +27,13 @@ outdir="$(cd "$2" && pwd)"
 app="SD Sync Immich.app"
 zip="SD-Sync-Immich.zip"
 
-# Wails' cgo objects otherwise target the SDK's macOS version, and ld warns
-# about every one of them; 13.0 matches LSMinimumSystemVersion.
+# The app's minimum macOS is 13.0 (LSMinimumSystemVersion): the Go 1.27
+# linker marks its own objects for 13.0, so a lower target only makes ld
+# warn. Wails' cgo objects otherwise target the SDK's macOS version, and ld
+# warns about every one of them. "-O2 -g" keeps Go's default cgo flags.
 export CGO_ENABLED=1
-export CGO_CFLAGS="-mmacosx-version-min=13.0"
-export CGO_LDFLAGS="-mmacosx-version-min=13.0"
+export CGO_CFLAGS="-O2 -g -mmacosx-version-min=13.0"
+export CGO_LDFLAGS="-O2 -g -mmacosx-version-min=13.0"
 
 "$root/scripts/build-frontend.sh"
 

@@ -12,9 +12,10 @@ jobs:
     env:
       CGO_ENABLED: "1"
       # Wails' cgo objects otherwise target the SDK's macOS version and ld
-      # warns about each of them; 13.0 is the app's minimum macOS.
-      CGO_CFLAGS: -mmacosx-version-min=13.0
-      CGO_LDFLAGS: -mmacosx-version-min=13.0
+      # warns about each of them; 13.0 is the app's minimum macOS (see
+      # scripts/build-app.sh). "-O2 -g" keeps Go's default cgo flags.
+      CGO_CFLAGS: -O2 -g -mmacosx-version-min=13.0
+      CGO_LDFLAGS: -O2 -g -mmacosx-version-min=13.0
       # scripts/build-frontend.sh uses the Wails CLI installed below.
       WAILS3: wails3
     steps:
