@@ -186,10 +186,10 @@ func (a *App) handleVolumeEvent(ev volume.Event) {
 			a.mountedTarget = nil
 		}
 		a.mu.Unlock()
-		// Neither a.mu nor syncMu may be held here: Stop waits for an
-		// in-progress resume, which takes both.
-		a.resume().Stop()
 		if removed {
+			// Neither a.mu nor syncMu may be held here: Stop waits for an
+			// in-progress resume, which takes both.
+			a.resume().Stop()
 			a.cardRemoved.Store(true)
 			a.cancelSync()
 		}

@@ -330,3 +330,22 @@ func TestSelectCardPersistsSelection(t *testing.T) {
 		t.Errorf("SelectCard started a sync for an unmounted card: %d runs", len(runs))
 	}
 }
+
+func TestUnmountStopsResumerOnlyForSelectedCard(t *testing.T) {
+	a := testApp(t)
+	card := a.MountedTarget()
+	a.resumer.Start()
+
+	a.handleVolumeEvent(volume.Event{
+		Type: volume.EventUnmounted,
+		Info: volume.Info{UUID: "OTHER-UUID", Name: "USB", MountPoint: "/Volumes/USB"},
+	})
+	if !a.resumer.Waiting() {
+		t.Fatal("resumer stopped after an unrelated volume was unmounted, want still waiting")
+	}
+
+	a.handleVolumeEvent(volume.Event{Type: volume.EventUnmounted, Info: *card})
+	if a.resumer.Waiting() {
+		t.Fatal("resumer still waiting after the selected card was unmounted")
+	}
+}
