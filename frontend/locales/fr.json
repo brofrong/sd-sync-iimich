@@ -112,6 +112,7 @@
   "server.saved": "Enregistré",
   "server.connected": "Connecté à Immich {version}",
   "server.invalid_url": "Saisissez l'adresse complète, commençant par http:// ou https://, par exemple https://immich.example.com.",
+  "server.key_required": "Saisissez la clé d'API de ce serveur. La clé enregistrée n'est envoyée qu'au serveur pour lequel elle a été enregistrée.",
   "server.save_failed": "Impossible d'enregistrer les réglages du serveur.",
   "logs.caption": "{count} dernières lignes de app.log",
   "logs.refresh": "Actualiser",

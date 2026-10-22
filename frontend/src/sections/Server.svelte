@@ -23,6 +23,7 @@
   let key = $state("");
   let showKey = $state(false);
   let urlInput: HTMLInputElement;
+  let keyInput: HTMLInputElement;
 
   // The URL field follows the saved URL until the user edits it.
   let edited = false;
@@ -43,6 +44,9 @@
   type Busy = "" | "test" | "save";
   let busy = $state<Busy>("");
   let urlError = $state(false);
+  // A server other than the saved one needs its own key: Go never sends
+  // the saved key to a newly typed host.
+  let keyRequired = $state(false);
   let result = $state<ServerCheckView | null>(null);
   let saveError = $state<string | null>(null);
   let saved = $state(false);
@@ -55,6 +59,7 @@
 
   function clearFeedback(): void {
     urlError = false;
+    keyRequired = false;
     result = null;
     saveError = null;
     saved = false;
@@ -83,6 +88,9 @@
       if (r.code === "invalid_url") {
         urlError = true;
         urlInput?.focus();
+      } else if (r.code === "key_required") {
+        keyRequired = true;
+        keyInput?.focus();
       } else {
         result = r;
       }
@@ -102,10 +110,20 @@
         urlInput?.focus();
         return;
       }
+      if (r.code === "key_required") {
+        keyRequired = true;
+        keyInput?.focus();
+        return;
+      }
       try {
         await backend.SaveServer(url, key);
       } catch (err) {
-        saveError = message(err);
+        if (message(err) === "key_required") {
+          keyRequired = true;
+          keyInput?.focus();
+        } else {
+          saveError = message(err);
+        }
         return;
       }
       url = normalize(url);
@@ -172,8 +190,10 @@
           autocomplete="off"
           autocapitalize="off"
           spellcheck="false"
-          placeholder={hasKey ? t("server.key_saved_placeholder") : t("server.key_placeholder")}
-          aria-describedby="server-key-hint"
+          placeholder={hasKey && !keyRequired ? t("server.key_saved_placeholder") : t("server.key_placeholder")}
+          aria-invalid={keyRequired}
+          aria-describedby={keyRequired ? "server-key-error" : "server-key-hint"}
+          bind:this={keyInput}
           bind:value={key}
           oninput={clearFeedback}
           onkeydown={onEnter}
@@ -190,7 +210,13 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d={showKey ? icons.eyeOff : icons.eye} /></svg>
         </button>
       </div>
-      <p id="server-key-hint" class="hint">{t("server.key_hint")}</p>
+      {#if keyRequired}
+        <p id="server-key-error" class="error-text" role="alert" in:fly={{ y: -4, duration: ms(220) }}>
+          {t("server.key_required")}
+        </p>
+      {:else}
+        <p id="server-key-hint" class="hint">{t("server.key_hint")}</p>
+      {/if}
     </div>
 
     <div class="actions">

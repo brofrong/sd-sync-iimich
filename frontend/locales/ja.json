@@ -112,6 +112,7 @@
   "server.saved": "保存しました",
   "server.connected": "Immich {version} に接続しました",
   "server.invalid_url": "http:// または https:// から始まる完全なアドレスを入力してください（例: https://immich.example.com）。",
+  "server.key_required": "このサーバーの API キーを入力してください。保存済みのキーは、保存したときのサーバーにのみ送信されます。",
   "server.save_failed": "サーバー設定を保存できませんでした。",
   "logs.caption": "app.log の最後の {count} 行",
   "logs.refresh": "更新",

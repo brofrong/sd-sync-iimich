@@ -17,9 +17,31 @@ import (
 // serverCheckTimeout bounds the "Test connection" request.
 const serverCheckTimeout = 20 * time.Second
 
-// checkInvalidURL is the ServerCheckView.Code for a URL that
-// normalizeServer rejects; the other codes are app status codes.
-const checkInvalidURL = "invalid_url"
+// ServerCheckView codes that are not app status codes: checkInvalidURL for
+// a URL that normalizeServer rejects, checkKeyRequired for a server other
+// than the saved one tested or saved without typing its API key.
+const (
+	checkInvalidURL  = "invalid_url"
+	checkKeyRequired = "key_required"
+)
+
+// keyForServer returns the API key to use with serverURL (normalized):
+// apiKey when one was typed, otherwise the saved key, but only for the
+// saved server's host, so the saved key is never sent to a server the
+// user just typed in. ok is false when the saved key cannot be used.
+func keyForServer(serverURL, apiKey, savedURL, savedKey string) (key string, ok bool) {
+	if apiKey != "" {
+		return apiKey, true
+	}
+	savedKey = strings.TrimSpace(savedKey)
+	if savedKey == "" {
+		return "", true
+	}
+	if saved, _, err := normalizeServer(savedURL, ""); err != nil || !strings.EqualFold(hostOf(saved), hostOf(serverURL)) {
+		return "", false
+	}
+	return savedKey, true
+}
 
 // normalizeServer cleans up a server URL and API key typed or pasted by the
 // user: surrounding whitespace (including a trailing newline in a pasted

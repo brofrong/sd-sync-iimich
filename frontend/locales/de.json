@@ -112,6 +112,7 @@
   "server.saved": "Gespeichert",
   "server.connected": "Verbunden mit Immich {version}",
   "server.invalid_url": "Gib die vollständige Adresse mit http:// oder https:// ein, zum Beispiel https://immich.example.com.",
+  "server.key_required": "Gib den API-Schlüssel für diesen Server ein. Der gespeicherte Schlüssel wird nur an den Server gesendet, für den er gespeichert wurde.",
   "server.save_failed": "Die Servereinstellungen konnten nicht gespeichert werden.",
   "logs.caption": "Letzte {count} Zeilen von app.log",
   "logs.refresh": "Aktualisieren",

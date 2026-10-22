@@ -112,6 +112,7 @@
   "server.saved": "已保存",
   "server.connected": "已连接到 Immich {version}",
   "server.invalid_url": "请输入以 http:// 或 https:// 开头的完整地址，例如 https://immich.example.com。",
+  "server.key_required": "请输入此服务器的 API 密钥。已保存的密钥只会发送到保存它时所用的服务器。",
   "server.save_failed": "无法保存服务器设置。",
   "logs.caption": "app.log 的最后 {count} 行",
   "logs.refresh": "刷新",

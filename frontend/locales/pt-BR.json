@@ -112,6 +112,7 @@
   "server.saved": "Salvo",
   "server.connected": "Conectado ao Immich {version}",
   "server.invalid_url": "Digite o endereço completo, começando com http:// ou https://, por exemplo https://immich.example.com.",
+  "server.key_required": "Digite a chave de API deste servidor. A chave salva só é enviada ao servidor para o qual foi salva.",
   "server.save_failed": "Não foi possível salvar as configurações do servidor.",
   "logs.caption": "Últimas {count} linhas de app.log",
   "logs.refresh": "Atualizar",

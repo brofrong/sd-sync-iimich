@@ -375,6 +375,13 @@ export function createMockTransport(): Transport {
       return false;
     }
   };
+  const hostOf = (u: string) => {
+    try {
+      return new URL(normalizeUrl(u)).host.toLowerCase();
+    } catch {
+      return u;
+    }
+  };
 
   const backend: Backend = {
     State: async () => new StateView({ ...state }),
@@ -411,6 +418,10 @@ export function createMockTransport(): Transport {
       if (!validUrl(url)) {
         return delay(80, new ServerCheckView({ ok: false, code: "invalid_url", params: {} }));
       }
+      // As in Go, the saved key is only sent to the saved server's host.
+      if (!apiKey.trim() && state.server.hasKey && hostOf(url) !== hostOf(state.server.url)) {
+        return delay(80, new ServerCheckView({ ok: false, code: "key_required", params: {} }));
+      }
       if (url.includes("bad")) {
         return delay(600, new ServerCheckView({ ok: false, code: "server_unreachable", params: { host: url, detail: "no such host" } }));
       }
@@ -422,6 +433,9 @@ export function createMockTransport(): Transport {
     SaveServer: async (url, apiKey) => {
       if (!validUrl(url)) throw new Error("server URL must start with http:// or https://");
       await delay(200, null);
+      if (!apiKey.trim() && state.server.hasKey && hostOf(url) !== hostOf(state.server.url)) {
+        throw new Error("key_required");
+      }
       if (url.includes("readonly")) {
         throw new Error("save server settings: open ~/.config/sd-sync-immich/config.yaml: permission denied");
       }

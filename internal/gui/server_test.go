@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/immich"
 )
 
@@ -112,5 +113,65 @@ func TestServerCheckResult(t *testing.T) {
 				t.Fatalf("Params = %v, want %v", got.Params, tt.wantParams)
 			}
 		})
+	}
+}
+
+func TestKeyForServer(t *testing.T) {
+	const saved = "https://immich.example"
+	tests := []struct {
+		name               string
+		url, key           string
+		savedURL, savedKey string
+		wantKey            string
+		wantOK             bool
+	}{
+		{name: "typed key wins", url: "https://other.example", key: "typed", savedURL: saved, savedKey: "old", wantKey: "typed", wantOK: true},
+		{name: "same host uses the saved key", url: "https://immich.example", savedURL: saved, savedKey: "old", wantKey: "old", wantOK: true},
+		{name: "host compared case-insensitively", url: "https://IMMICH.example", savedURL: saved, savedKey: "old", wantKey: "old", wantOK: true},
+		{name: "another host never gets the saved key", url: "https://other.example", savedURL: saved, savedKey: "old", wantOK: false},
+		{name: "another port is another server", url: "https://immich.example:8443", savedURL: saved, savedKey: "old", wantOK: false},
+		{name: "no saved key to leak", url: "https://other.example", savedURL: saved, wantKey: "", wantOK: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key, ok := keyForServer(tt.url, tt.key, tt.savedURL, tt.savedKey)
+			if key != tt.wantKey || ok != tt.wantOK {
+				t.Fatalf("keyForServer = %q, %v; want %q, %v", key, ok, tt.wantKey, tt.wantOK)
+			}
+		})
+	}
+}
+
+// savedServer returns a Service whose config (under a temporary HOME) has
+// url and key saved.
+func savedServer(t *testing.T, url, key string) *Service {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Update(func(c *config.Config) { c.Immich.URL, c.Immich.APIKey = url, key }); err != nil {
+		t.Fatal(err)
+	}
+	return &Service{cfg: cfg}
+}
+
+func TestTestServerKeepsSavedKeyFromNewHost(t *testing.T) {
+	s := savedServer(t, "https://immich.example", "secret")
+	got := s.TestServer("https://other.example", "")
+	if got.Code != checkKeyRequired || got.OK {
+		t.Fatalf("TestServer(new host, no key) = %+v, want code %q", got, checkKeyRequired)
+	}
+}
+
+func TestSaveServerRefusesNewHostWithoutKey(t *testing.T) {
+	s := savedServer(t, "https://immich.example", "secret")
+	err := s.SaveServer("https://other.example", "")
+	if err == nil || err.Error() != checkKeyRequired {
+		t.Fatalf("SaveServer(new host, no key) error = %v, want %q", err, checkKeyRequired)
+	}
+	if got := s.cfg.Get().Immich; got.URL != "https://immich.example" || got.APIKey != "secret" {
+		t.Fatalf("saved server = %q (key %q), want it unchanged", got.URL, got.APIKey)
 	}
 }

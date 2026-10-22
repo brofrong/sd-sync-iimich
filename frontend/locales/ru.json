@@ -112,6 +112,7 @@
   "server.saved": "Сохранено",
   "server.connected": "Подключено к Immich {version}",
   "server.invalid_url": "Введите полный адрес, начиная с http:// или https://, например https://immich.example.com.",
+  "server.key_required": "Введите API-ключ для этого сервера. Сохранённый ключ отправляется только на тот сервер, для которого он сохранён.",
   "server.save_failed": "Не удалось сохранить настройки сервера.",
   "logs.caption": "Последние строки app.log: {count}",
   "logs.refresh": "Обновить",

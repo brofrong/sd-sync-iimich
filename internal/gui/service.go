@@ -309,25 +309,33 @@ func (s *Service) EjectCard() error {
 }
 
 // TestServer checks url and apiKey without saving them. An empty apiKey
-// means the saved key.
+// means the saved key, which is only sent to the saved server's host:
+// another host gets checkKeyRequired.
 func (s *Service) TestServer(url, apiKey string) ServerCheckView {
 	u, key, err := normalizeServer(url, apiKey)
 	if err != nil {
 		return ServerCheckView{Code: checkInvalidURL, Params: map[string]string{}}
 	}
-	if key == "" {
-		key = strings.TrimSpace(s.cfg.Get().Immich.APIKey)
+	saved := s.cfg.Get().Immich
+	key, ok := keyForServer(u, key, saved.URL, saved.APIKey)
+	if !ok {
+		return ServerCheckView{Code: checkKeyRequired, Params: map[string]string{}}
 	}
 	return checkServer(context.Background(), u, key)
 }
 
 // SaveServer saves the server URL and, unless apiKey is empty, the key.
-// If that completes the setup while the selected card is mounted, a sync
-// starts right away.
+// Moving to another host needs its key: the saved one is not kept for it
+// (the error is checkKeyRequired). If saving completes the setup while the
+// selected card is mounted, a sync starts right away.
 func (s *Service) SaveServer(url, apiKey string) error {
 	u, key, err := normalizeServer(url, apiKey)
 	if err != nil {
 		return err
+	}
+	saved := s.cfg.Get().Immich
+	if _, ok := keyForServer(u, key, saved.URL, saved.APIKey); !ok {
+		return &codeError{code: checkKeyRequired, err: errors.New("the saved API key is only used for " + hostOf(saved.URL))}
 	}
 	if err := s.cfg.Update(func(c *config.Config) {
 		c.Immich.URL = u

@@ -112,6 +112,7 @@
   "server.saved": "Guardado",
   "server.connected": "Conectado a Immich {version}",
   "server.invalid_url": "Escribe la dirección completa, empezando por http:// o https://; por ejemplo, https://immich.example.com.",
+  "server.key_required": "Introduce la clave de API de este servidor. La clave guardada solo se envía al servidor para el que se guardó.",
   "server.save_failed": "No se pudieron guardar los ajustes del servidor.",
   "logs.caption": "Últimas {count} líneas de app.log",
   "logs.refresh": "Actualizar",

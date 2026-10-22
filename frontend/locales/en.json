@@ -112,6 +112,7 @@
   "server.saved": "Saved",
   "server.connected": "Connected to Immich {version}",
   "server.invalid_url": "Enter the full address, starting with http:// or https:// — for example https://immich.example.com.",
+  "server.key_required": "Enter the API key for this server. The saved key is only sent to the server it was saved for.",
   "server.save_failed": "Couldn’t save the server settings.",
   "logs.caption": "Last {count} lines of app.log",
   "logs.refresh": "Refresh",
