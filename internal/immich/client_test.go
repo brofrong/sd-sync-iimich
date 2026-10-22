@@ -137,6 +137,74 @@ func TestDetail(t *testing.T) {
 	}
 }
 
+func TestCheckReturnsServerVersion(t *testing.T) {
+	var gotAPIKey string
+	c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/server/version":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"major":2,"minor":3,"patch":1}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/assets/bulk-upload-check":
+			gotAPIKey = r.Header.Get("x-api-key")
+			b, _ := io.ReadAll(r.Body)
+			if string(b) != `{"assets":[]}` {
+				t.Errorf("bulk-upload-check body = %s, want {\"assets\":[]}", b)
+			}
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, `{"results":[]}`)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	info, err := c.Check(context.Background())
+	if err != nil {
+		t.Fatalf("Check() error = %v", err)
+	}
+	if info.Version != "v2.3.1" {
+		t.Fatalf("Version = %q, want v2.3.1", info.Version)
+	}
+	if gotAPIKey != "key" {
+		t.Fatalf("bulk-upload-check x-api-key = %q, want %q", gotAPIKey, "key")
+	}
+}
+
+func TestCheckRejectsBadKey(t *testing.T) {
+	c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/server/version":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"major":2,"minor":3,"patch":1}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/assets/bulk-upload-check":
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprint(w, `{"message":"Invalid API key"}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	_, err := c.Check(context.Background())
+	var se *StatusError
+	if !errors.As(err, &se) || se.Code != http.StatusUnauthorized {
+		t.Fatalf("Check() error = %v, want *StatusError with 401", err)
+	}
+}
+
+func TestPingUsesContext(t *testing.T) {
+	c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := c.Ping(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Ping() error = %v, want context.Canceled", err)
+	}
+}
+
 func TestUploadReturnsDuplicateWhenServerAnswersBeforeReadingBody(t *testing.T) {
 	c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
 		// Immich short-circuits known checksums without consuming the upload.

@@ -312,9 +312,9 @@ func (c *Client) Upload(ctx context.Context, filePath, sha1hex string, mtime tim
 	return &result, nil
 }
 
-func (c *Client) Ping() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+// Ping checks reachability of the server, honoring ctx so callers (such as
+// auto-resume) can bound or cancel the check.
+func (c *Client) Ping(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/server/ping", nil)
 	if err != nil {
 		return err
@@ -329,4 +329,64 @@ func (c *Client) Ping() error {
 		return fmt.Errorf("ping: %s", resp.Status)
 	}
 	return nil
+}
+
+// ServerInfo describes the Immich server a Client is pointed at.
+type ServerInfo struct {
+	Version string
+}
+
+type serverVersionResponse struct {
+	Major int `json:"major"`
+	Minor int `json:"minor"`
+	Patch int `json:"patch"`
+}
+
+// Check verifies the server is reachable and that the API key has upload
+// permission, for the "Test connection" button. It first fetches the server
+// version (no auth required), then confirms the key can call the
+// assets/bulk-upload-check endpoint; a non-2xx response there (e.g. a bad or
+// read-only key) comes back as a *StatusError.
+func (c *Client) Check(ctx context.Context) (ServerInfo, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/server/version", nil)
+	if err != nil {
+		return ServerInfo{}, err
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return ServerInfo{}, err
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return ServerInfo{}, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return ServerInfo{}, &StatusError{Code: resp.StatusCode, Message: formatAPIError(resp.Status, body)}
+	}
+	var v serverVersionResponse
+	if err := json.Unmarshal(body, &v); err != nil {
+		return ServerInfo{}, err
+	}
+	info := ServerInfo{Version: fmt.Sprintf("v%d.%d.%d", v.Major, v.Minor, v.Patch)}
+
+	req, err = http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/assets/bulk-upload-check", strings.NewReader(`{"assets":[]}`))
+	if err != nil {
+		return ServerInfo{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", c.APIKey)
+	resp, err = c.HTTP.Do(req)
+	if err != nil {
+		return ServerInfo{}, err
+	}
+	body, err = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return ServerInfo{}, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return ServerInfo{}, &StatusError{Code: resp.StatusCode, Message: formatAPIError(resp.Status, body)}
+	}
+	return info, nil
 }
