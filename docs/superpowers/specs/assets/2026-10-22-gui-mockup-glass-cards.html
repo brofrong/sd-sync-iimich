@@ -1,0 +1,124 @@
+<h2>Цветное стекло, но мутнее и только местами — где ему быть?</h2>
+<p class="subtitle">Сделал размытие сильнее, а обои просвечивают слабее. Свечение оставил только на активных элементах: выбранный раздел, главная кнопка, карточка статуса. Отличаются варианты тем, какие части окна стеклянные.</p>
+
+<style>
+  .stage { position:relative; border-radius:14px; overflow:hidden; padding:28px 22px; min-height:390px;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif; font-size:13px;
+    background: radial-gradient(circle at 18% 22%, #ff6a3d 0, transparent 38%), radial-gradient(circle at 82% 30%, #7b5cff 0, transparent 40%), radial-gradient(circle at 55% 88%, #00c2a8 0, transparent 42%), #1a1530; }
+  .blob { position:absolute; width:180px; height:180px; border-radius:50%; filter:blur(10px); opacity:.9; animation: drift 9s ease-in-out infinite alternate; }
+  @keyframes drift { to { transform: translate(60px, 40px) scale(1.15); } }
+  .noise::after { content:""; position:absolute; inset:0; pointer-events:none; opacity:.13; mix-blend-mode:overlay; border-radius:inherit;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+  .frost { backdrop-filter:blur(48px) saturate(170%); -webkit-backdrop-filter:blur(48px) saturate(170%); }
+
+  .win { position:relative; border-radius:14px; overflow:hidden; color:#f2f2f7; display:flex; min-height:330px;
+    border:1px solid rgba(255,255,255,.12); box-shadow:0 30px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.1); }
+  .solid { background:#15141c; }
+
+  .side { width:132px; padding:40px 8px 10px; position:relative; border-right:1px solid rgba(255,255,255,.08); }
+  .side.glass { background:linear-gradient(160deg, rgba(90,60,170,.42), rgba(25,20,45,.7)); }
+  .side.plain { background:#121118; }
+  .lights { position:absolute; top:12px; left:12px; display:flex; gap:6px; z-index:2; }
+  .lights i { width:11px; height:11px; border-radius:50%; display:block; } .lights i:nth-child(1){background:#ff5f57}.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+  .nav { position:relative; z-index:1; }
+  .nav div { position:relative; z-index:1; padding:7px 10px; border-radius:8px; color:rgba(255,255,255,.7); cursor:pointer; transition:color .25s; }
+  .nav div.on { color:#fff; }
+  .pill { position:absolute; left:0; right:0; height:31px; border-radius:8px; transition:transform .45s cubic-bezier(.2,.9,.25,1.2);
+    background:linear-gradient(90deg, rgba(140,110,255,.5), rgba(255,255,255,.06)); box-shadow:0 0 16px rgba(140,110,255,.45), inset 0 1px 0 rgba(255,255,255,.15); }
+
+  .main { flex:1; padding:22px; position:relative; }
+  .main.solid-bg { background:#17161e; }
+  .main.glass { background:linear-gradient(160deg, rgba(70,50,140,.35), rgba(15,12,28,.72)); }
+
+  .card2 { position:relative; border-radius:12px; padding:14px; transition: background .6s, border-color .6s, box-shadow .6s; }
+  .card2.flat { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.08); }
+  .card2.gl { background:linear-gradient(150deg, rgba(120,90,255,.30), rgba(30,25,60,.55)); border:1px solid rgba(180,160,255,.25); box-shadow:0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.14); overflow:hidden; }
+  .state { transition: opacity .35s, transform .45s cubic-bezier(.2,.9,.25,1.2); }
+  .state.out { opacity:0; transform:translateY(8px) scale(.98); }
+  .title { font-size:15px; font-weight:600; display:flex; align-items:center; gap:8px; }
+  .why { color:rgba(255,255,255,.68); font-size:12px; margin:6px 0 12px; line-height:1.45; }
+  .btn2 { display:inline-block; padding:5px 12px; border-radius:7px; font-size:12px; margin-right:6px; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.1); }
+  .btn2.pri { background:linear-gradient(90deg,#7b5cff,#0a84ff); border-color:transparent; box-shadow:0 0 14px rgba(123,92,255,.55); }
+  .track { height:6px; border-radius:3px; background:rgba(255,255,255,.1); overflow:hidden; margin:12px 0 4px; }
+  .fill { height:100%; width:20%; border-radius:3px; background:linear-gradient(90deg,#7b5cff,#64d2ff); position:relative; transition:width .8s cubic-bezier(.2,.9,.25,1); box-shadow:0 0 10px rgba(100,210,255,.6); }
+  .fill::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent); animation:shimmer 1.4s infinite; }
+  @keyframes shimmer { from { transform:translateX(-100%);} to { transform:translateX(100%);} }
+  .meta { display:flex; justify-content:space-between; font-size:11px; color:rgba(255,255,255,.55); }
+  .err .card2 { border-color:rgba(255,100,100,.45) !important; box-shadow:0 0 28px rgba(255,69,58,.28) !important; animation:nudge .5s; }
+  .err .card2.flat, .err .card2.gl { background:linear-gradient(150deg, rgba(255,69,58,.22), rgba(40,15,20,.5)); }
+  @keyframes nudge { 20%{transform:translateX(-4px)} 40%{transform:translateX(4px)} 60%{transform:translateX(-2px)} 80%{transform:translateX(2px)} }
+  .done .card2 { border-color:rgba(48,209,88,.4) !important; box-shadow:0 0 28px rgba(48,209,88,.25) !important; }
+  .done .card2.flat, .done .card2.gl { background:linear-gradient(150deg, rgba(48,209,88,.18), rgba(15,35,20,.5)); }
+  .spin { width:14px; height:14px; border-radius:50%; border:2px solid rgba(255,255,255,.25); border-top-color:#b39dff; animation:sp .9s linear infinite; }
+  @keyframes sp { to { transform:rotate(360deg);} }
+  .check path { stroke-dasharray:24; stroke-dashoffset:24; animation:draw .6s .15s forwards ease-out; }
+  @keyframes draw { to { stroke-dashoffset:0; } }
+  .rows { margin-top:14px; }
+  .rows div { display:flex; justify-content:space-between; padding:8px 2px; border-top:1px solid rgba(255,255,255,.07); font-size:12px; color:rgba(255,255,255,.8); }
+  .dotc { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+</style>
+
+<div class="cards">
+  <div class="card" data-choice="glass-sidebar" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="stage"><span class="blob" style="left:30px;top:200px;background:#ff8a3d"></span><span class="blob" style="right:40px;top:20px;background:#5b8cff;animation-delay:-4s"></span>
+        <div class="win" data-demo data-card="flat">
+          <div class="side glass frost noise"><div class="lights"><i></i><i></i><i></i></div>
+            <div class="nav"><span class="pill"></span><div class="on">Статус</div><div>История</div><div>Карты</div><div>Сервер</div><div>Логи</div></div></div>
+          <div class="main solid-bg"><div class="state"></div>
+            <div class="rows"><div><span>Карта</span><span>Brofrong · 256 ГБ</span></div><div><span>Сервер</span><span class="srv"></span></div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body"><h3>A. Стеклянная боковая панель</h3><p>Мутное фиолетовое стекло только слева, как сайдбар в Finder и Музыке. Контент справа на тёмном матовом фоне: текст и статусы читаются лучше всего.</p></div>
+  </div>
+
+  <div class="card" data-choice="glass-cards" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="stage"><span class="blob" style="left:30px;top:200px;background:#ff8a3d"></span><span class="blob" style="right:40px;top:20px;background:#5b8cff;animation-delay:-4s"></span>
+        <div class="win solid" data-demo data-card="gl">
+          <div class="side plain"><div class="lights"><i></i><i></i><i></i></div>
+            <div class="nav"><span class="pill"></span><div class="on">Статус</div><div>История</div><div>Карты</div><div>Сервер</div><div>Логи</div></div></div>
+          <div class="main solid-bg"><div class="state"></div>
+            <div class="rows"><div><span>Карта</span><span>Brofrong · 256 ГБ</span></div><div><span>Сервер</span><span class="srv"></span></div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body"><h3>B. Стеклянные карточки на тёмном окне</h3><p>Само окно тёмное и непрозрачное, а стеклом с шумом и цветом сделаны только карточки: статус, сводки. Получается «слой стекла поверх», рабочий стол за окном не просвечивает.</p></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  function states(card){ return [
+    { cls:"", html:`<div class="card2 ${card} noise"><div class="title"><span class="spin"></span>Синхронизация</div>
+        <div class="why">Загружаю DSC07133.ARW · 4,9 МБ/с · осталось ~6 мин</div>
+        <div class="track"><div class="fill" style="width:20%"></div></div><div class="meta"><span>412 из 2114</span><span>8,1 из 31 ГБ</span></div></div>`,
+      srv:'<span class="dotc" style="background:#30d158"></span>в сети · 220 мс', grow:true },
+    { cls:"err", html:`<div class="card2 ${card} noise"><div class="title">⚠︎ Синхронизация остановлена</div>
+        <div class="why">Immich не отвечает: immich.brofrong.ru — no such host.<br>Загружено 412 из 2114, прогресс сохранён. Продолжу сам, когда сеть вернётся.</div>
+        <span class="btn2 pri">Повторить сейчас</span><span class="btn2">Подробнее</span></div>`,
+      srv:'<span class="dotc" style="background:#ff453a"></span>не отвечает' },
+    { cls:"done", html:`<div class="card2 ${card} noise"><div class="title"><svg class="check" width="18" height="18" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6" fill="none" stroke="#30d158" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Готово</div>
+        <div class="why">Загружено 2114 файлов за 1 ч 48 мин. Карту можно извлечь.</div>
+        <span class="btn2 pri">Извлечь карту</span><span class="btn2">Открыть в Immich</span></div>`,
+      srv:'<span class="dotc" style="background:#30d158"></span>в сети · 220 мс' } ]; }
+  document.querySelectorAll('[data-demo]').forEach(win => {
+    const S = states(win.dataset.card);
+    const st = win.querySelector('.state'), srv = win.querySelector('.srv'), main = win.querySelector('.main');
+    const base = main.className; let i = 0;
+    function show(){
+      const s = S[i]; st.classList.add('out');
+      setTimeout(()=>{
+        st.innerHTML = s.html; main.className = base + ' ' + s.cls; srv.innerHTML = s.srv; st.classList.remove('out');
+        if (s.grow) { const f = st.querySelector('.fill'); let w = 20; const t = setInterval(()=>{ w += 7; f.style.width = Math.min(w,92)+'%'; if (w>=92) clearInterval(t); }, 500); }
+      }, 300);
+      i = (i+1) % S.length;
+    }
+    show(); setInterval(show, 4200);
+    const items = [...win.querySelectorAll('.nav div')], pill = win.querySelector('.pill');
+    items.forEach((el, idx) => el.addEventListener('click', e => { e.stopPropagation();
+      items.forEach(x=>x.classList.remove('on')); el.classList.add('on'); pill.style.transform = `translateY(${idx*31}px)`; }));
+  });
+})();
+</script>

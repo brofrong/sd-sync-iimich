@@ -32,3 +32,6 @@ go.work.sum
 
 # OS
 .DS_Store
+
+# Brainstorm companion
+.superpowers/
