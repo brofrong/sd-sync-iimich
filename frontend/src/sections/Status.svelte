@@ -8,6 +8,7 @@
   import { appState, backend, parseTime, status } from "../lib/backend";
   import { formatBytes, formatDuration, formatNumber, formatRelative, t } from "../lib/i18n";
   import { icons, type IconName } from "../lib/icons";
+  import { errorKindLines } from "../lib/runs";
   import { pageVisible, toneFor, type Tone } from "../lib/stores";
 
   interface Props {
@@ -158,10 +159,15 @@
   });
 
   const tiles = $derived([cardTile, serverTile, lastTile]);
+
+  // done_with_errors says why on the card: the last run's failures by kind.
+  const errorKinds = $derived(
+    code === "done_with_errors" && lastRun?.resultCode === "done_with_errors" ? errorKindLines(lastRun.errorSummary) : [],
+  );
 </script>
 
 <div class="status">
-  <StatusCard status={$status} view={$appState} {onNavigate} />
+  <StatusCard status={$status} view={$appState} {onNavigate} {errorKinds} />
 
   <div class="tiles">
     {#each tiles as tile (tile.id)}

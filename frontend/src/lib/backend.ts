@@ -1,9 +1,11 @@
 // The window's connection to Go: the bound Service, the "status", "state"
 // and "navigate" events, and stores that hold the latest status and state.
 //
-// Outside the Wails webview (a plain browser, `npm run dev`) or with
-// VITE_MOCK=1 the same interface is served by mock.ts, so the UI can be
-// developed and screenshotted without the app.
+// With VITE_MOCK=1, or outside the Wails webview in a development build
+// (`npm run dev` in a plain browser), the same interface is served by
+// mock.ts, so the UI can be developed and screenshotted without the app.
+// A production build never falls back to the mock on its own: fake data
+// in the shipped app would hide a broken bridge.
 import { writable, type Readable } from "svelte/store";
 import { Events } from "@wailsio/runtime";
 import { Service, StateView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
@@ -43,7 +45,11 @@ function hasWailsRuntime(): boolean {
   return Boolean(window.webkit?.messageHandlers?.["external"] || window.chrome?.webview);
 }
 
-export const isMock = import.meta.env.VITE_MOCK === "1" || !hasWailsRuntime();
+export const isMock = import.meta.env.VITE_MOCK === "1" || (!import.meta.env.PROD && !hasWailsRuntime());
+
+if (!isMock && !hasWailsRuntime()) {
+  console.error("Wails runtime not found: the window cannot reach the app (set VITE_MOCK=1 for the mock backend)");
+}
 
 function wailsTransport(): Transport {
   return {

@@ -1,7 +1,7 @@
 // A stand-in backend for developing the UI in a plain browser (no Wails
-// runtime) or with VITE_MOCK=1. It replays the mockup's scenario in a loop,
-// syncing → server_unreachable → done, and answers every Service method
-// with plausible data.
+// runtime, development builds only) or with VITE_MOCK=1. It replays the
+// mockup's scenario in a loop, syncing → server_unreachable → done, and
+// answers every Service method with plausible data.
 //
 // URL parameters (handy for screenshots):
 //   ?state=<code>   pin the status to one code (e.g. done, not_configured);

@@ -19,9 +19,11 @@
     status: Status;
     view: StateView;
     onNavigate: (section: string) => void;
+    /** Why files failed, one translated line per error kind (done_with_errors). */
+    errorKinds?: string[];
   }
 
-  let { status, view, onNavigate }: Props = $props();
+  let { status, view, onNavigate, errorKinds = [] }: Props = $props();
 
   const code = $derived(status.code as string);
   const tone = $derived(toneFor(code));
@@ -164,6 +166,11 @@
               </div>
             {:else}
               <p class="detail">{detail}</p>
+              {#if code === "done_with_errors" && errorKinds.length}
+                <ul class="kinds">
+                  {#each errorKinds as kind, k (k)}<li>{kind}</li>{/each}
+                </ul>
+              {/if}
               {#if code === "scanning"}
                 <ProgressBar value={null} label={title} />
               {/if}
@@ -428,6 +435,16 @@
     gap: 8px;
     margin-top: 16px;
   }
+  .kinds {
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+    color: rgba(255, 179, 64, 0.9);
+    font-size: 12px;
+    line-height: 1.6;
+    font-variant-numeric: tabular-nums;
+  }
+
   .action-error {
     margin: 10px 0 0;
     color: #ff8a80;

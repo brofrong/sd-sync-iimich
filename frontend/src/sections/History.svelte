@@ -9,6 +9,7 @@
   import { backend, parseTime, status } from "../lib/backend";
   import { formatBytes, formatDay, formatDuration, formatNumber, formatTime, t } from "../lib/i18n";
   import { icons } from "../lib/icons";
+  import { errorKindLines } from "../lib/runs";
   import { reducedMotion, toneFor, type Tone } from "../lib/stores";
 
   const LIMIT = 50;
@@ -78,10 +79,7 @@
     if (run.bytes > 0) stats.push({ text: formatBytes(run.bytes) });
     if (started && finished > started) stats.push({ text: formatDuration((finished - started) / 1000) });
 
-    const kinds = Object.entries(run.errorSummary ?? {})
-      .filter(([, n]) => (n ?? 0) > 0)
-      .sort(([, a], [, b]) => (b ?? 0) - (a ?? 0))
-      .map(([kind, n]) => t("history.error_kind", { kind: t(`error_kind.${kind}`), count: formatNumber(n ?? 0) }));
+    const kinds = errorKindLines(run.errorSummary);
 
     // The technical reason a run stopped, as Go reported it.
     const p = run.resultParams ?? {};
