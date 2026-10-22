@@ -63,6 +63,22 @@ func (s *DB) migrate() error {
 			last_synced_mtime INTEGER NOT NULL DEFAULT 0,
 			last_synced_path TEXT NOT NULL DEFAULT ''
 		);
+
+		CREATE TABLE IF NOT EXISTS sync_runs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			started_at INTEGER NOT NULL,
+			finished_at INTEGER,
+			volume_uuid TEXT NOT NULL DEFAULT '',
+			volume_name TEXT NOT NULL DEFAULT '',
+			result_code TEXT NOT NULL DEFAULT '',
+			result_params TEXT NOT NULL DEFAULT '{}',
+			uploaded INTEGER NOT NULL DEFAULT 0,
+			skipped INTEGER NOT NULL DEFAULT 0,
+			errors INTEGER NOT NULL DEFAULT 0,
+			bytes INTEGER NOT NULL DEFAULT 0,
+			error_summary TEXT NOT NULL DEFAULT '{}'
+		);
+		CREATE INDEX IF NOT EXISTS idx_sync_runs_started_at ON sync_runs(started_at);
 	`)
 	return err
 }

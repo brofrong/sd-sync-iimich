@@ -52,9 +52,32 @@ func New(cfg *config.Store, st *state.DB, dryRun bool) (*App, error) {
 		Watcher: w,
 		dryRun:  dryRun,
 	}
-	a.updateIdleStatus()
+	a.setStatus(a.startupStatus())
 	logx.Info("app started", "configured", cfg.IsConfigured(), "dry_run", dryRun)
 	return a, nil
+}
+
+// startupStatus computes the status to show right when the app starts,
+// before Run() begins watching volumes or kicks off a sync. It is
+// IdleStatus, unless the selected card is already mounted — in that case
+// Run() is about to start a sync, so the last finished run's outcome is
+// shown instead (see statusFromRun) rather than a blank status.
+func (a *App) startupStatus() Status {
+	cfg := a.Config.Get()
+	mounted, err := volume.ListRemovable()
+	if err != nil {
+		logx.Warn("failed to list removable volumes", "err", err)
+		mounted = nil
+	}
+	if st, ok := IdleStatus(cfg, mounted); ok {
+		return st
+	}
+	run, err := a.State.LastFinishedRun()
+	if err != nil {
+		logx.Warn("failed to load last finished run", "err", err)
+		return newStatus(CodeScanning, nil)
+	}
+	return statusFromRun(run)
 }
 
 func (a *App) SetStatusCallback(fn func(Status)) {
@@ -181,6 +204,11 @@ func (a *App) SyncNow() {
 		syncStart := time.Now()
 		a.setStatus(newStatus(CodeScanning, nil))
 
+		runID, startErr := a.State.StartRun(vol.UUID, vol.Name, syncStart)
+		if startErr != nil {
+			logx.Error("state: failed to record sync run start", "err", startErr)
+		}
+
 		result, err := a.Uploader.Sync(ctx, *vol, a.dryRun, func(p uploader.Progress) {
 			switch p.Phase {
 			case "scanning":
@@ -219,6 +247,23 @@ func (a *App) SyncNow() {
 			)
 		default:
 			logx.Error("sync failed", "err", err, "duration", time.Since(syncStart).Round(time.Second))
+		}
+
+		if startErr == nil {
+			finishedAt := time.Now()
+			if finishErr := a.State.FinishRun(state.SyncRun{
+				ID:           runID,
+				FinishedAt:   &finishedAt,
+				ResultCode:   string(st.Code),
+				ResultParams: st.Params,
+				Uploaded:     result.Uploaded,
+				Skipped:      result.Skipped,
+				Errors:       result.Errors,
+				Bytes:        result.Bytes,
+				ErrorSummary: result.ErrorSummary,
+			}); finishErr != nil {
+				logx.Error("state: failed to record sync run result", "err", finishErr)
+			}
 		}
 
 		a.setStatus(st)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/immich"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/state"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/uploader"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/volume"
 )
@@ -147,6 +148,30 @@ func IdleStatus(cfg config.Config, mounted []volume.Info) (Status, bool) {
 	return newStatus(CodeWaitingForCard, map[string]string{
 		"name": cfg.Watch.VolumeName,
 	}), true
+}
+
+// statusFromRun turns a finished sync run into the Status that represents
+// it. It is used for the startup status: when the selected card is already
+// mounted, Run() is about to start (or just finished) a sync, so the app
+// shows the outcome of the last finished run instead of a blank status —
+// that way a restart doesn't lose why the previous sync stopped. run is nil
+// when there is no run history yet; CodeScanning is used in that case since
+// a sync is about to start right away anyway.
+func statusFromRun(run *state.SyncRun) Status {
+	if run == nil || run.FinishedAt == nil {
+		return newStatus(CodeScanning, nil)
+	}
+	code := Code(run.ResultCode)
+	params := run.ResultParams
+	if params == nil {
+		params = map[string]string{}
+	}
+	return Status{
+		Code:    code,
+		Params:  params,
+		Actions: actionsFor(code),
+		At:      *run.FinishedAt,
+	}
 }
 
 // ResultStatus turns the outcome of a sync attempt into a Status. serverHost

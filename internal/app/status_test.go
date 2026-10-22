@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/immich"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/state"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/uploader"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/volume"
 )
@@ -199,6 +201,68 @@ func TestResultStatus(t *testing.T) {
 				if got.Params[k] != v {
 					t.Errorf("Params[%q] = %q, want %q (all params: %+v)", k, got.Params[k], v, got.Params)
 				}
+			}
+			if tt.wantActions != nil && !equalActions(got.Actions, tt.wantActions) {
+				t.Errorf("Actions = %v, want %v", got.Actions, tt.wantActions)
+			}
+		})
+	}
+}
+
+func TestStatusFromRun(t *testing.T) {
+	finishedAt := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name        string
+		run         *state.SyncRun
+		wantCode    Code
+		wantParams  map[string]string
+		wantAt      time.Time
+		wantActions []Action
+	}{
+		{
+			name:     "no run history yet falls back to scanning",
+			run:      nil,
+			wantCode: CodeScanning,
+		},
+		{
+			name: "done with errors carries params and actions from the run",
+			run: &state.SyncRun{
+				ResultCode:   string(CodeDoneWithErrors),
+				ResultParams: map[string]string{"uploaded": "5", "errors": "2"},
+				FinishedAt:   &finishedAt,
+			},
+			wantCode:    CodeDoneWithErrors,
+			wantParams:  map[string]string{"uploaded": "5", "errors": "2"},
+			wantAt:      finishedAt,
+			wantActions: []Action{ActionOpenLogs},
+		},
+		{
+			name: "done carries the run's finish time",
+			run: &state.SyncRun{
+				ResultCode:   string(CodeDone),
+				ResultParams: map[string]string{"uploaded": "5"},
+				FinishedAt:   &finishedAt,
+			},
+			wantCode:    CodeDone,
+			wantAt:      finishedAt,
+			wantActions: []Action{ActionEject, ActionOpenImmich},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := statusFromRun(tt.run)
+			if got.Code != tt.wantCode {
+				t.Fatalf("Code = %q, want %q", got.Code, tt.wantCode)
+			}
+			for k, v := range tt.wantParams {
+				if got.Params[k] != v {
+					t.Errorf("Params[%q] = %q, want %q (all params: %+v)", k, got.Params[k], v, got.Params)
+				}
+			}
+			if !tt.wantAt.IsZero() && !got.At.Equal(tt.wantAt) {
+				t.Errorf("At = %v, want %v", got.At, tt.wantAt)
 			}
 			if tt.wantActions != nil && !equalActions(got.Actions, tt.wantActions) {
 				t.Errorf("Actions = %v, want %v", got.Actions, tt.wantActions)
