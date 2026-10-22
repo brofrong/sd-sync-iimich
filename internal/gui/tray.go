@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
 
@@ -9,18 +10,25 @@ import (
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/app"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/gui/icon"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/i18n"
 )
 
 // spinnerFrameInterval is how often the tray spinner advances.
 const spinnerFrameInterval = 100 * time.Millisecond
 
+// trayLineInterval limits progress updates of the tray's status line to
+// one per second; a code change shows at once.
+const trayLineInterval = time.Second
+
 // trayMenu is the menu bar icon and its menu: a status line, "Sync now" or
 // "Stop", "Open window…", "Update available" (hidden without an update)
 // and "Quit". It is refreshed when the status code, the language or the
-// available update changes, not on every progress tick.
+// available update changes; while syncing, the status line also shows the
+// progress (see showProgress).
 type trayMenu struct {
 	svc  *Service
 	tray *application.SystemTray
+	line *throttle
 
 	status     *application.MenuItem
 	syncOrStop *application.MenuItem
@@ -37,6 +45,9 @@ type trayMenu struct {
 
 func newTray(wapp *application.App, svc *Service, sh *shell) *trayMenu {
 	t := &trayMenu{svc: svc}
+	t.line = newTrayLine(func(st app.Status) {
+		t.status.SetLabel(trayStatusLine(t.svc.catalog(), st))
+	})
 
 	menu := wapp.NewMenu()
 	t.status = menu.Add("").SetEnabled(false)
@@ -82,7 +93,7 @@ func (t *trayMenu) apply() (running bool) {
 	rel := t.svc.availableUpdate()
 	running = isRunning(st.Code)
 
-	t.status.SetLabel(c.T("status."+string(st.Code)+".title", st.Params))
+	t.status.SetLabel(trayStatusLine(c, st))
 	if running {
 		t.syncOrStop.SetLabel(c.T("tray.stop", nil)).SetEnabled(true)
 	} else {
@@ -96,6 +107,49 @@ func (t *trayMenu) apply() (running bool) {
 	}
 	t.quit.SetLabel(c.T("tray.quit", nil))
 	return running
+}
+
+// showProgress updates the status line from st, at most once per
+// trayLineInterval.
+func (t *trayMenu) showProgress(st app.Status) {
+	t.line.Push(st)
+}
+
+// newTrayLine returns the throttle for the tray's status line.
+func newTrayLine(show func(app.Status)) *throttle {
+	return newThrottle(trayLineInterval, show)
+}
+
+// trayStatusLine is the tray's status line for st: the status title, or
+// while syncing "Syncing 5 of 100 · about 3 min left" (without the time
+// left while it is unknown).
+func trayStatusLine(c *i18n.Catalog, st app.Status) string {
+	p := st.Progress
+	if st.Code != app.CodeSyncing || p == nil || p.Total <= 0 {
+		return c.T("status."+string(st.Code)+".title", st.Params)
+	}
+	params := map[string]string{
+		"current": strconv.Itoa(p.Current),
+		"total":   strconv.Itoa(p.Total),
+	}
+	if p.ETASeconds <= 0 {
+		return c.T("tray.progress_no_eta", params)
+	}
+	params["eta"] = formatETA(c, p.ETASeconds)
+	return c.T("tray.progress", params)
+}
+
+// formatETA formats a time left in whole minutes, rounded up: "3 min",
+// "2 h 14 min".
+func formatETA(c *i18n.Catalog, seconds int) string {
+	minutes := (seconds + 59) / 60
+	if minutes < 60 {
+		return c.T("tray.eta_minutes", map[string]string{"minutes": strconv.Itoa(minutes)})
+	}
+	return c.T("tray.eta_hours", map[string]string{
+		"hours":   strconv.Itoa(minutes / 60),
+		"minutes": strconv.Itoa(minutes % 60),
+	})
 }
 
 func isRunning(code app.Code) bool {

@@ -1,6 +1,7 @@
 // Package gui runs the Wails application: the menu bar icon and menu, the
-// main window (hidden until opened, with a Dock icon only while it is
-// shown) and the Service bound to the frontend.
+// main window (with a Dock icon only while it is shown; hidden at startup
+// when launchd starts a set-up app at login, see showWindowAtStartup) and
+// the Service bound to the frontend.
 package gui
 
 import (
@@ -49,6 +50,11 @@ type shell struct {
 	dock   *dock.DockService
 	tray   *trayMenu
 
+	// visible is true while the window is shown; onShow runs each time it
+	// is shown.
+	visible atomic.Bool
+	onShow  func()
+
 	// exitCode is the process exit code once the application has shut down.
 	exitCode atomic.Int32
 }
@@ -59,9 +65,28 @@ func (sh *shell) emit(name string, data any) {
 
 // showWindow shows the main window together with the Dock icon.
 func (sh *shell) showWindow() {
+	sh.visible.Store(true)
 	sh.dock.ShowAppIcon()
 	sh.window.Show()
 	sh.window.Focus()
+	if sh.onShow != nil {
+		sh.onShow()
+	}
+}
+
+// hideWindow hides the main window together with the Dock icon.
+func (sh *shell) hideWindow() {
+	sh.visible.Store(false)
+	sh.window.Hide()
+	sh.dock.HideAppIcon()
+}
+
+// showWindowAtStartup reports whether the window opens when the app
+// starts: always when the user opened the app (not launchd at login), and
+// whenever setup is unfinished, as the window is where it is finished.
+// Started at login and set up, the app stays in the menu bar.
+func showWindowAtStartup(code app.Code, startedByLaunchd bool) bool {
+	return !startedByLaunchd || code == app.CodeNotConfigured || code == app.CodeNoCardSelected
 }
 
 // quit shuts the application down and exits the process with code.
@@ -131,9 +156,8 @@ func Run(a *app.App, cfg *config.Store, st *state.DB, version string) error {
 	// Closing the window only hides it, together with the Dock icon; the
 	// app keeps running in the menu bar.
 	sh.window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
-		sh.window.Hide()
 		e.Cancel()
-		sh.dock.HideAppIcon()
+		sh.hideWindow()
 	})
 	// Clicking the Dock icon (shown while the window is open) shows it.
 	sh.app.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) {
@@ -141,10 +165,15 @@ func Run(a *app.App, cfg *config.Store, st *state.DB, version string) error {
 	})
 
 	sh.tray = newTray(sh.app, svc, sh)
+	sh.onShow = func() { svc.windowShown(a.Status()) }
 
 	sh.app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		logx.Info("gui started")
 		sh.tray.refresh()
+		if code := a.Status().Code; showWindowAtStartup(code, underLaunchd()) {
+			logx.Info("gui: showing the window at startup", "status", code, "launchd", underLaunchd())
+			sh.showWindow()
+		}
 		svc.start(ctx)
 	})
 

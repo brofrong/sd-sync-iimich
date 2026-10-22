@@ -48,6 +48,13 @@ func (t *throttle) Push(s app.Status) {
 	}
 }
 
+// Now emits s at once, dropping any held-back update.
+func (t *throttle) Now(s app.Status) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.emitLocked(s)
+}
+
 func (t *throttle) flush(gen uint64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()

@@ -135,13 +135,15 @@ func (s *Service) start(ctx context.Context) {
 
 // onStatus receives every status change from the App.
 func (s *Service) onStatus(st app.Status) {
-	s.status.Push(st)
-
 	s.mu.Lock()
 	prev := s.lastCode
 	s.lastCode = st.Code
 	s.mu.Unlock()
-	if prev == st.Code {
+	changed := prev != st.Code
+
+	s.forwardStatus(st, changed)
+	s.shell.tray.showProgress(st)
+	if !changed {
 		return
 	}
 	s.shell.tray.refresh()
@@ -151,6 +153,22 @@ func (s *Service) onStatus(st app.Status) {
 			go notify.Show(c.T("notify.done.title", nil), c.T("notify.done.body", map[string]string{"count": strconv.Itoa(n)}))
 		}
 	}
+}
+
+// forwardStatus sends st to the window: a code change always, progress
+// ticks only while the window is visible (the hidden window would render
+// them for nobody; windowShown catches it up).
+func (s *Service) forwardStatus(st app.Status, codeChanged bool) {
+	if !codeChanged && !s.shell.visible.Load() {
+		return
+	}
+	s.status.Push(st)
+}
+
+// windowShown sends the latest status st to the window as soon as it is
+// shown, as progress ticks were skipped while it was hidden.
+func (s *Service) windowShown(st app.Status) {
+	s.status.Now(st)
 }
 
 // watchVolumes pushes a fresh state whenever a volume is mounted or
