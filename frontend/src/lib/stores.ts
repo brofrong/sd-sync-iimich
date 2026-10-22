@@ -1,0 +1,65 @@
+// UI-wide state that is not backend data: the current section, page
+// visibility and the reduced-motion preference, plus how status codes map
+// onto the card's colour tone.
+import { readable, writable } from "svelte/store";
+
+/** Window sections, in sidebar order. */
+export const sections = ["status", "history", "cards", "server", "logs", "settings"] as const;
+export type SectionId = (typeof sections)[number];
+
+export function isSection(id: string): id is SectionId {
+  return (sections as readonly string[]).includes(id);
+}
+
+/** The section the window shows. The "navigate" event from Go sets it too. */
+export const section = writable<SectionId>("status");
+
+/** Navigates to id if it names a section. */
+export function navigate(id: string): void {
+  if (isSection(id)) section.set(id);
+}
+
+/** False while the window is hidden or minimised. */
+export const pageVisible = readable(typeof document === "undefined" || !document.hidden, (set) => {
+  const update = () => set(!document.hidden);
+  document.addEventListener("visibilitychange", update);
+  return () => document.removeEventListener("visibilitychange", update);
+});
+
+/** True when the user asked the system to reduce motion. */
+export const reducedMotion = readable(false, (set) => {
+  const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+  set(mq.matches);
+  const update = () => set(mq.matches);
+  mq.addEventListener("change", update);
+  return () => mq.removeEventListener("change", update);
+});
+
+/** Colour tone of the status card. */
+export type Tone = "idle" | "accent" | "error" | "warn" | "success";
+
+/** Status codes that mean sync stopped because something went wrong. */
+export const errorCodes: readonly string[] = [
+  "server_unreachable",
+  "auth_failed",
+  "server_error",
+  "card_removed",
+  "failed",
+];
+
+export function toneFor(code: string): Tone {
+  if (errorCodes.includes(code)) return "error";
+  switch (code) {
+    case "scanning":
+    case "syncing":
+      return "accent";
+    case "done":
+    case "nothing_new":
+      return "success";
+    case "done_with_errors":
+    case "other_card_mounted":
+      return "warn";
+    default:
+      return "idle";
+  }
+}

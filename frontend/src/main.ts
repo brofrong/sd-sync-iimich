@@ -1,4 +1,10 @@
-import { mount } from 'svelte'
-import App from './App.svelte'
+import { mount } from "svelte";
+import "./styles/theme.css";
+import App from "./App.svelte";
 
-mount(App, { target: document.getElementById('app')! })
+// Freeze CSS animations while the window is hidden or minimised.
+const syncPaused = () => document.body.classList.toggle("paused", document.hidden);
+document.addEventListener("visibilitychange", syncPaused);
+syncPaused();
+
+mount(App, { target: document.getElementById("app")! });
