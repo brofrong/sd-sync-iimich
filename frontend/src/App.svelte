@@ -5,7 +5,11 @@
   import { onMount } from "svelte";
   import { fade, fly } from "svelte/transition";
   import Sidebar from "./components/Sidebar.svelte";
-  import Placeholder from "./sections/Placeholder.svelte";
+  import Cards from "./sections/Cards.svelte";
+  import History from "./sections/History.svelte";
+  import Logs from "./sections/Logs.svelte";
+  import Server from "./sections/Server.svelte";
+  import Settings from "./sections/Settings.svelte";
   import Status from "./sections/Status.svelte";
   import { connect, status } from "./lib/backend";
   import { lang, t } from "./lib/i18n";
@@ -40,8 +44,16 @@
             <div class="page" in:fly={{ y: 12, duration: ms(350), delay: ms(90) }} out:fade={{ duration: ms(120) }}>
               {#if $section === "status"}
                 <Status onNavigate={navigate} />
+              {:else if $section === "history"}
+                <History />
+              {:else if $section === "cards"}
+                <Cards />
+              {:else if $section === "server"}
+                <Server />
+              {:else if $section === "logs"}
+                <Logs />
               {:else}
-                <Placeholder id={$section} />
+                <Settings />
               {/if}
             </div>
           {/key}

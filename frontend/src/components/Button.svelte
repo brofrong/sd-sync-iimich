@@ -1,31 +1,36 @@
 <script lang="ts">
   // A push button. "primary" is the one glowing, accent-filled action of a
   // card; "secondary" is a quiet glass button. When onclick returns a
-  // promise the button shows a busy state until it settles.
+  // promise the button shows a busy state until it settles; `busy` shows
+  // it for work started elsewhere (e.g. Enter in a form field).
   import type { Snippet } from "svelte";
 
   interface Props {
     variant?: "primary" | "secondary";
     disabled?: boolean;
+    busy?: boolean;
+    /** id of the element that says what the button acts on (aria-describedby). */
+    describedby?: string;
     onclick?: () => unknown;
     children: Snippet;
   }
 
-  let { variant = "secondary", disabled = false, onclick, children }: Props = $props();
+  let { variant = "secondary", disabled = false, busy: external = false, describedby, onclick, children }: Props = $props();
 
-  let busy = $state(false);
+  let running = $state(false);
+  const busy = $derived(running || external);
 
   async function handle(): Promise<void> {
     if (busy || !onclick) return;
     const result = onclick();
     if (result instanceof Promise) {
-      busy = true;
+      running = true;
       try {
         await result;
       } catch {
         // The caller reports errors; the button only tracks the busy state.
       } finally {
-        busy = false;
+        running = false;
       }
     }
   }
@@ -37,6 +42,7 @@
   class:busy
   disabled={disabled || busy}
   aria-busy={busy}
+  aria-describedby={describedby}
   onclick={handle}
 >
   {#if busy}<span class="spinner" aria-hidden="true"></span>{/if}
@@ -87,6 +93,10 @@
   .primary:hover:not(:disabled) {
     background: var(--accent);
     box-shadow: var(--glow-strong), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  }
+  /* Glow marks what can be clicked now; a disabled primary has none. */
+  .primary:disabled:not(.busy) {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
 
   .spinner {

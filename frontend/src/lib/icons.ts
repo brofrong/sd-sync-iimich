@@ -11,6 +11,11 @@ export const icons = {
   clock: "M12 3a9 9 0 1 1 0 18a9 9 0 1 1 0-18zM12 7v5l3.5 2",
   warning: "M12 3.5l9.5 16.5h-19zM12 10v4.5M12 17.5h.01",
   pause: "M12 3a9 9 0 1 1 0 18a9 9 0 1 1 0-18zM10 9v6M14 9v6",
+  check: "M6 12.5l4 4L18 8",
+  eye: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 9a3 3 0 1 1 0 6a3 3 0 1 1 0-6z",
+  eyeOff:
+    "M3 3l18 18M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.9 8.3 2 12 2 12s3.6 7 10 7c1.9 0 3.6-.6 5-1.4M9.9 9.9a3 3 0 0 0 4.2 4.2",
+  download: "M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14",
 } as const;
 
 export type IconName = keyof typeof icons;

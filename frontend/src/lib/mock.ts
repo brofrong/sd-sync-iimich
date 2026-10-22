@@ -4,9 +4,16 @@
 // with plausible data.
 //
 // URL parameters (handy for screenshots):
-//   ?state=<code>   pin the status to one code (e.g. done, not_configured)
+//   ?state=<code>   pin the status to one code (e.g. done, not_configured);
+//                   waiting_for_card and other_card_mounted also unplug the
+//                   selected card, so Cards shows it as not connected
 //   ?lang=<tag>     UI language (default: the browser's language)
 //   ?section=<id>   open a section
+//   ?update=none    "Check for Updates" finds nothing (default: v0.5.0)
+//   ?history=none   no sync runs yet
+//
+// In the Server section a URL containing "bad" is unreachable, the API key
+// "bad" is rejected, and a URL containing "readonly" fails to save.
 import {
   CardView,
   ServerCheckView,
@@ -40,6 +47,15 @@ const otherCard = new CardView({
   mounted: true,
   selected: false,
   sizeBytes: 64e9,
+});
+
+const spareCard = new CardView({
+  uuid: "C3D9F0E2-8A41-4B67-9E15-3F7A2C6D8B40",
+  name: "NO NAME",
+  mountPoint: "/Volumes/NO NAME",
+  mounted: true,
+  selected: false,
+  sizeBytes: 32e9,
 });
 
 // The same action sets as Go's actionsFor.
@@ -116,30 +132,85 @@ function syncProgress(fraction: number, tick: number): Progress {
 
 function sampleHistory(): SyncRun[] {
   const now = Date.now();
-  const run = (hoursAgo: number, minutes: number, code: string, p: Record<string, string>, uploaded: number, errors = 0) => {
-    const finished = new Date(now - hoursAgo * 3600e3);
+  let id = 100;
+  const run = (
+    hoursAgo: number,
+    minutes: number | null,
+    card: CardView,
+    code: string,
+    p: Record<string, string>,
+    counts: { uploaded: number; skipped?: number; errors?: number; summary?: Record<string, number> },
+  ) => {
+    const started = new Date(now - hoursAgo * 3600e3);
     return new SyncRun({
-      startedAt: new Date(finished.getTime() - minutes * 60e3).toISOString(),
-      finishedAt: finished.toISOString(),
-      volumeUUID: mainCard.uuid,
-      volumeName: mainCard.name,
-      resultCode: code,
+      id: id--,
+      startedAt: started.toISOString(),
+      finishedAt: minutes === null ? null : new Date(started.getTime() + minutes * 60e3).toISOString(),
+      volumeUUID: card.uuid,
+      volumeName: card.name,
+      resultCode: minutes === null ? "" : code,
       resultParams: p,
-      uploaded,
-      skipped: 3,
-      errors,
-      bytes: uploaded * 14.6e6,
-      errorSummary: errors ? { network: errors } : {},
+      uploaded: counts.uploaded,
+      skipped: counts.skipped ?? 0,
+      errors: counts.errors ?? 0,
+      bytes: counts.uploaded * 14.6e6,
+      errorSummary: counts.summary ?? {},
     });
   };
-  const runs = [
-    run(2, 108, "done", { uploaded: "2114" }, 2114),
-    run(27, 12, "server_unreachable", params.server_unreachable, 412),
-    run(75, 41, "done_with_errors", { uploaded: "806", errors: "4" }, 806, 4),
-    run(170, 3, "nothing_new", {}, 0),
+  return [
+    run(3, 108, mainCard, "done", { uploaded: "2114" }, { uploaded: 2114, skipped: 3 }),
+    run(5, 2, mainCard, "nothing_new", {}, { uploaded: 0, skipped: 2117 }),
+    run(27, 12, mainCard, "server_unreachable", params.server_unreachable, { uploaded: 412 }),
+    run(30, 41, otherCard, "done_with_errors", { uploaded: "806", errors: "6" }, {
+      uploaded: 806,
+      skipped: 14,
+      errors: 6,
+      summary: { network: 4, rejected: 2 },
+    }),
+    run(52, 7, mainCard, "cancelled", { uploaded: "96" }, { uploaded: 96 }),
+    run(98, null, mainCard, "", {}, { uploaded: 0 }),
+    run(170, 18, mainCard, "card_removed", { uploaded: "300" }, { uploaded: 300, skipped: 1 }),
+    run(7400, 64, otherCard, "done", { uploaded: "1290" }, { uploaded: 1290 }),
   ];
-  return runs.map((r, i) => Object.assign(r, { id: runs.length - i }));
 }
+
+/** sampleLog imitates app.log (slog's text format) with a few warnings. */
+function sampleLog(lines: number): string {
+  const out: string[] = [];
+  let at = Date.now() - lines * 1900;
+  const src = "source=/Users/runner/work/sd-sync-immich/internal/app/app.go:";
+  const line = (level: string, msg: string, attrs = "") => {
+    at += 1200 + Math.round(Math.random() * 1400);
+    const ts = new Date(at).toISOString().replace("Z", "+00:00");
+    out.push(`time=${ts} level=${level} ${src}${200 + (out.length % 180)} msg="${msg}"${attrs ? " " + attrs : ""}`);
+  };
+  line("INFO", "app run loop started", `version=0.4.0`);
+  line("INFO", "volume mounted", `name=${mainCard.name} uuid=${mainCard.uuid} mount=${mainCard.mountPoint}`);
+  line("INFO", "scan started", `paths="[DCIM PRIVATE/M4ROOT/CLIP]"`);
+  line("DEBUG", "scan finished", `files=${FILES} new=${FILES - 3} skipped=3 took=1.84s`);
+  line("INFO", "sync started", `files=${FILES - 3} bytes=${BYTES} concurrency=4`);
+  for (let i = 0; out.length < lines - 2; i++) {
+    const file = `DSC0${7100 + i}.ARW`;
+    if (i % 23 === 17) {
+      line("WARN", "upload failed, retrying", `file=${file} attempt=1 err="Post \"${SERVER_URL}/api/assets\": dial tcp: lookup ${HOST}: no such host"`);
+    } else if (i % 61 === 40) {
+      line("ERROR", "upload failed", `file=${file} kind=rejected err="server returned 400: Unsupported file type"`);
+    } else {
+      line("INFO", "uploaded", `file=${file} bytes=${14_600_000 + i * 1013} duplicate=false`);
+    }
+  }
+  line("INFO", "sync finished", `uploaded=${FILES} skipped=3 errors=0 took=1h48m12s`);
+  line("INFO", "status changed", "code=done");
+  return out.slice(-lines).join("\n");
+}
+
+const sampleNotes = `What's new
+• A real window: status, history, cards, server, logs and settings
+• Sync resumes by itself when Immich is back online
+• Eject the card right after a sync
+
+Fixes
+• The API key no longer keeps a trailing newline when pasted`;
 
 /** createMockTransport builds the mock backend and starts its scenario. */
 export function createMockTransport(): Transport {
@@ -166,19 +237,23 @@ export function createMockTransport(): Transport {
     update: null,
   });
   // Pinned onboarding and card codes need a matching configuration.
+  // The mounted removable volumes; the selected card is state.card.
+  let mounted = [new CardView(mainCard), new CardView(otherCard), new CardView(spareCard)];
+  const unplugged = (c: CardView) => new CardView({ ...c, mounted: false, mountPoint: "", sizeBytes: 0 });
+
   if (pinned === "not_configured") {
     state.server = new ServerView();
     state.card = new CardView();
   } else if (pinned === "no_card_selected") {
     state.card = new CardView();
-  } else if (pinned === "waiting_for_card") {
-    state.card = new CardView({ ...mainCard, mounted: false, mountPoint: "", sizeBytes: 0 });
+  } else if (pinned === "waiting_for_card" || pinned === "other_card_mounted") {
+    mounted = mounted.filter((c) => c.uuid !== mainCard.uuid);
+    state.card = unplugged(mainCard);
   }
   if (pinned === "syncing") state.status = makeStatus("syncing", syncProgress(0.38, 0));
   if (pinned === "scanning") state.status = makeStatus("scanning");
 
-  let history = sampleHistory();
-  const cards = [new CardView(mainCard), new CardView(otherCard)];
+  let history = query.get("history") === "none" ? [] : sampleHistory();
 
   function setStatus(s: Status): void {
     state.status = s;
@@ -187,22 +262,30 @@ export function createMockTransport(): Transport {
   function pushState(): void {
     emit("state", new StateView({ ...state, status: state.status }));
   }
+  // As Go: a run is recorded when a sync starts and finished when it ends.
+  let current: SyncRun | null = null;
+  function startRun(): void {
+    current = new SyncRun({
+      id: Math.max(0, ...history.map((r) => r.id)) + 1,
+      startedAt: new Date().toISOString(),
+      volumeUUID: state.card.uuid,
+      volumeName: state.card.name,
+    });
+    history = [current, ...history].slice(0, 50);
+  }
   function record(code: string, p: Record<string, string>, uploaded: number): void {
-    const finished = new Date();
-    history = [
-      new SyncRun({
-        id: (history[0]?.id ?? 0) + 1,
-        startedAt: new Date(finished.getTime() - 14 * 60e3).toISOString(),
-        finishedAt: finished.toISOString(),
-        volumeUUID: state.card.uuid,
-        volumeName: state.card.name,
-        resultCode: code,
-        resultParams: p,
-        uploaded,
-        bytes: uploaded * 14.6e6,
-      }),
-      ...history,
-    ].slice(0, 50);
+    if (!current) return;
+    Object.assign(current, {
+      // The scenario is compressed; pretend the sync took a while.
+      startedAt: new Date(Date.now() - 14 * 60e3).toISOString(),
+      finishedAt: new Date().toISOString(),
+      resultCode: code,
+      resultParams: p,
+      uploaded,
+      skipped: 3,
+      bytes: uploaded * 14.6e6,
+    });
+    current = null;
   }
 
   // The scenario advances only while the page is visible: no timers run
@@ -220,11 +303,14 @@ export function createMockTransport(): Transport {
     const { code } = cycle[i];
     if (code === "syncing") {
       fraction = 0.2;
+      startRun();
       setStatus(makeStatus("syncing", syncProgress(fraction, tick)));
     } else if (code === "server_unreachable") {
       record(code, params[code], Math.round(FILES * fraction) - 412);
       setStatus(makeStatus(code, null, { ...params[code] }));
     } else {
+      // The automatic resume after the outage: a second run that completes.
+      if (!current) startRun();
       record(code, params.done, FILES);
       setStatus(makeStatus(code));
     }
@@ -260,33 +346,59 @@ export function createMockTransport(): Transport {
   }
 
   function interrupt(s: Status, ms = 4000): void {
+    if (current) record(s.code, s.params as Record<string, string>, Number(s.params?.uploaded ?? 0));
     setStatus(s);
     hold = pinned ? 0 : ms;
   }
 
   const delay = <T>(ms: number, v: T) => new Promise<T>((r) => setTimeout(() => r(v), ms));
 
+  // As Go's normalizeServer.
+  const normalizeUrl = (u: string) => u.trim().replace(/\/+$/, "").replace(/\/api$/, "").replace(/\/+$/, "");
+  const validUrl = (u: string) => {
+    try {
+      const parsed = new URL(normalizeUrl(u));
+      return (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.host !== "";
+    } catch {
+      return false;
+    }
+  };
+
   const backend: Backend = {
     State: async () => new StateView({ ...state }),
-    Cards: async () => cards.map((c) => new CardView({ ...c, selected: c.uuid === state.card.uuid })),
+    Cards: async () => {
+      const list = mounted.map((c) => new CardView({ ...c, selected: c.uuid === state.card.uuid }));
+      const i = list.findIndex((c) => c.selected);
+      if (i > 0) list.unshift(...list.splice(i, 1));
+      if (i < 0 && state.card.uuid) list.unshift(new CardView({ ...state.card, selected: true }));
+      return delay(120, list);
+    },
     SelectCard: async (uuid) => {
-      const card = cards.find((c) => c.uuid === uuid);
-      if (!card) throw new Error("card is not mounted");
+      const card = mounted.find((c) => c.uuid === uuid);
+      if (!card) throw new Error(`card ${uuid} is not mounted`);
       state.card = new CardView({ ...card, selected: true });
       pushState();
       if (!pinned) enter(0);
     },
     EjectCard: async () => {
+      const card = mounted.find((c) => c.uuid === state.card.uuid);
+      if (!card) throw new Error("the selected card is not mounted");
       await delay(400, null);
-      state.card = new CardView({ ...state.card, mounted: false, mountPoint: "", sizeBytes: 0 });
+      mounted = mounted.filter((c) => c !== card);
+      state.card = unplugged(card);
       pushState();
       interrupt(makeStatus("waiting_for_card", null, { name: state.card.name }), 5000);
+      // Plug it back in a moment later.
       setTimeout(() => {
-        state.card = new CardView(mainCard);
+        mounted = [card, ...mounted];
+        if (state.card.uuid === card.uuid) state.card = new CardView(card);
         pushState();
       }, 5000);
     },
     TestServer: async (url, apiKey) => {
+      if (!validUrl(url)) {
+        return delay(80, new ServerCheckView({ ok: false, code: "invalid_url", params: {} }));
+      }
       if (url.includes("bad")) {
         return delay(600, new ServerCheckView({ ok: false, code: "server_unreachable", params: { host: url, detail: "no such host" } }));
       }
@@ -296,10 +408,16 @@ export function createMockTransport(): Transport {
       return delay(220, new ServerCheckView({ ok: true, version: "v1.122.3", code: "", params: {} }));
     },
     SaveServer: async (url, apiKey) => {
-      state.server = new ServerView({ url, hasKey: state.server.hasKey || apiKey !== "" });
+      if (!validUrl(url)) throw new Error("server URL must start with http:// or https://");
+      await delay(200, null);
+      if (url.includes("readonly")) {
+        throw new Error("save server settings: open ~/.config/sd-sync-immich/config.yaml: permission denied");
+      }
+      state.server = new ServerView({ url: normalizeUrl(url), hasKey: state.server.hasKey || apiKey.trim() !== "" });
       pushState();
     },
     SaveSettings: async (v) => {
+      if (v.concurrency < 1 || v.concurrency > 16) throw new Error("concurrency must be between 1 and 16");
       state.settings = new SettingsView(v);
       state.language = resolveLanguage(v.language, navigator.languages);
       pushState();
@@ -316,23 +434,17 @@ export function createMockTransport(): Transport {
       enter(0);
     },
     History: async (limit) => history.slice(0, limit),
-    LogTail: async (lines) => {
-      const out: string[] = [];
-      const t0 = Date.now() - lines * 2000;
-      for (let i = 0; i < lines; i++) {
-        const ts = new Date(t0 + i * 2000).toISOString();
-        out.push(
-          i % 7 === 6
-            ? `${ts} WARN upload failed, retrying file=DSC0${7100 + i}.ARW err="dial tcp: lookup ${HOST}: no such host"`
-            : `${ts} INFO uploaded file=DSC0${7100 + i}.ARW bytes=${14_600_000 + i * 1013}`,
-        );
-      }
-      return out.join("\n");
-    },
+    LogTail: async (lines) => delay(150, sampleLog(lines)),
     RevealLog: async () => console.info("[mock] RevealLog"),
     OpenImmich: async () => console.info("[mock] OpenImmich", SERVER_URL),
     CheckForUpdates: async () => {
-      const u = await delay(700, new UpdateView({ version: "v0.5.0", notes: "Faster scanning.", url: "https://github.com/" }));
+      await delay(900, null);
+      if (query.get("update") === "none") return null;
+      const u = new UpdateView({
+        version: "v0.5.0",
+        notes: sampleNotes,
+        url: "https://github.com/dmitiigorshkov/sd-sync-immich/releases/tag/v0.5.0",
+      });
       state.update = u;
       pushState();
       return u;

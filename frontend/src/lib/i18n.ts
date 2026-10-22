@@ -19,6 +19,18 @@ for (const [path, messages] of Object.entries(modules)) {
 /** Supported languages, in the order language pickers offer them (as in Go). */
 export const supported = ["en", "ru", "de", "es", "fr", "pt-BR", "zh-Hans", "ja"];
 
+/** Each supported language in its own name, for language pickers. */
+export const languageNames: Record<string, string> = {
+  en: "English",
+  ru: "Русский",
+  de: "Deutsch",
+  es: "Español",
+  fr: "Français",
+  "pt-BR": "Português (Brasil)",
+  "zh-Hans": "简体中文",
+  ja: "日本語",
+};
+
 /** The resolved UI language; the backend sets it from StateView.language. */
 export const lang: Writable<string> = writable("en");
 
@@ -140,4 +152,39 @@ export function formatRelative(date: Date, now: Date = new Date()): string {
     }
   }
   return rtf.format(Math.round(diff / sizes.year), "year");
+}
+
+const dateFormats = new Map<string, Intl.DateTimeFormat>();
+
+function df(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const l = get(lang);
+  const id = l + JSON.stringify(options);
+  let f = dateFormats.get(id);
+  if (!f) {
+    f = new Intl.DateTimeFormat(l, options);
+    dateFormats.set(id, f);
+  }
+  return f;
+}
+
+/** formatTime formats the time of day: "14:05", "2:05 PM". */
+export function formatTime(date: Date): string {
+  return df({ timeStyle: "short" }).format(date);
+}
+
+/**
+ * formatDay names the calendar day of date: "Today", "Yesterday", then
+ * "Monday, October 19" within the year and "October 19, 2025" before it.
+ */
+export function formatDay(date: Date, now: Date = new Date()): string {
+  const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((midnight(date) - midnight(now)) / 86400e3);
+  if (days === 0 || days === -1) {
+    const text = new Intl.RelativeTimeFormat(get(lang), { numeric: "auto" }).format(days, "day");
+    return text.charAt(0).toLocaleUpperCase(get(lang)) + text.slice(1);
+  }
+  if (date.getFullYear() === now.getFullYear()) {
+    return df({ weekday: "long", month: "long", day: "numeric" }).format(date);
+  }
+  return df({ dateStyle: "long" }).format(date);
 }
