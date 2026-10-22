@@ -232,3 +232,37 @@ func TestUploadReturnsDuplicateWhenServerAnswersBeforeReadingBody(t *testing.T) 
 		t.Fatal("Upload() hung after an early duplicate response")
 	}
 }
+
+// endless writes spaces until the client goes away.
+func endless(w http.ResponseWriter) {
+	chunk := make([]byte, 32<<10)
+	for i := range chunk {
+		chunk[i] = ' '
+	}
+	for {
+		if _, err := w.Write(chunk); err != nil {
+			return
+		}
+	}
+}
+
+func TestCheckBoundsResponseBodies(t *testing.T) {
+	for _, path := range []string{"/api/server/version", "/api/assets/bulk-upload-check"} {
+		t.Run(path, func(t *testing.T) {
+			c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == path {
+					w.WriteHeader(http.StatusBadGateway)
+					endless(w)
+					return
+				}
+				fmt.Fprint(w, `{"major":2,"minor":3,"patch":1}`)
+			})
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, err := c.Check(ctx)
+			if err == nil || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+				t.Fatalf("Check() error = %v; want a prompt error after reading a bounded body", err)
+			}
+		})
+	}
+}

@@ -22,6 +22,11 @@ const (
 
 	// DefaultStallTimeout aborts an upload when the server stops accepting body bytes.
 	DefaultStallTimeout = 2 * time.Minute
+
+	// maxCheckBody bounds how much of a response Check reads: a misbehaving
+	// server (or the wrong URL) must not make "Test connection" read
+	// forever.
+	maxCheckBody = 1 << 20
 )
 
 // ErrUploadStalled means no body bytes were sent for StallTimeout.
@@ -356,7 +361,7 @@ func (c *Client) Check(ctx context.Context) (ServerInfo, error) {
 	if err != nil {
 		return ServerInfo{}, err
 	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCheckBody))
 	resp.Body.Close()
 	if err != nil {
 		return ServerInfo{}, err
@@ -380,7 +385,7 @@ func (c *Client) Check(ctx context.Context) (ServerInfo, error) {
 	if err != nil {
 		return ServerInfo{}, err
 	}
-	body, err = io.ReadAll(resp.Body)
+	body, err = io.ReadAll(io.LimitReader(resp.Body, maxCheckBody))
 	resp.Body.Close()
 	if err != nil {
 		return ServerInfo{}, err
