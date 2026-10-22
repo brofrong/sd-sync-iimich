@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/immich"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/notify"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/state"
@@ -26,13 +28,19 @@ type App struct {
 	mu            sync.RWMutex
 	status        Status
 	mountedTarget *volume.Info
-	syncCancel    context.CancelFunc
-	syncMu        sync.Mutex
-	onStatus      func(Status)
-	dryRun        bool
+	// syncCancel is non-nil while a sync goroutine is running, until it has
+	// published its result; cancelling does not clear it.
+	syncCancel context.CancelFunc
+	syncMu     sync.Mutex
+	onStatus   func(Status)
+	dryRun     bool
+
+	// resumer restarts a sync once Immich is reachable again; see resume().
+	resumer    *resumer
+	resumeOnce sync.Once
 
 	// cardRemoved is set just before cancelling an in-flight sync because its
-	// volume was unmounted, so SyncNow's goroutine can tell that apart from a
+	// volume was unmounted, so the sync goroutine can tell that apart from a
 	// user-requested stop once the sync unwinds.
 	cardRemoved atomic.Bool
 }
@@ -80,8 +88,41 @@ func (a *App) startupStatus() Status {
 	return statusFromRun(run)
 }
 
-func (a *App) SetStatusCallback(fn func(Status)) {
+// OnStatus registers fn to receive every status change. Call it before Run.
+func (a *App) OnStatus(fn func(Status)) {
 	a.onStatus = fn
+}
+
+// resume returns the App's resumer, creating it on first use (tests may
+// set a.resumer beforehand).
+func (a *App) resume() *resumer {
+	a.resumeOnce.Do(func() {
+		if a.resumer == nil {
+			a.resumer = newResumer(a.pingServer, a.canResume, a.startSync)
+		}
+	})
+	return a.resumer
+}
+
+// pingServer checks whether the configured Immich server is reachable.
+func (a *App) pingServer(ctx context.Context) error {
+	cfg := a.Config.Get()
+	return immich.NewClient(cfg.Immich.URL, cfg.Immich.APIKey).Ping(ctx)
+}
+
+// canResume reports whether an automatic resume may start a sync: none is
+// running and the selected card is still mounted.
+func (a *App) canResume() bool {
+	return !a.syncRunning() && a.MountedTarget() != nil
+}
+
+// maybeResume starts waiting for the server if a sync that finished with
+// code should be resumed automatically.
+func (a *App) maybeResume(code Code) {
+	if shouldResume(code, a.MountedTarget() != nil) {
+		logx.Info("waiting for immich to come back to resume sync", "code", code)
+		a.resume().Start()
+	}
 }
 
 func (a *App) Run(ctx context.Context) {
@@ -95,6 +136,7 @@ func (a *App) Run(ctx context.Context) {
 
 	<-ctx.Done()
 	logx.Info("app shutting down")
+	a.resume().Stop()
 	if a.Watcher != nil {
 		a.Watcher.Close()
 	}
@@ -139,24 +181,34 @@ func (a *App) handleVolumeEvent(ev volume.Event) {
 	case volume.EventUnmounted:
 		logx.Info("volume unmounted", "name", ev.Info.Name, "path", ev.Info.MountPoint)
 		a.mu.Lock()
-		if a.mountedTarget != nil && a.mountedTarget.MountPoint == ev.Info.MountPoint {
+		removed := a.mountedTarget != nil && a.mountedTarget.MountPoint == ev.Info.MountPoint
+		if removed {
 			a.mountedTarget = nil
-			a.cardRemoved.Store(true)
-			a.CancelSync()
 		}
 		a.mu.Unlock()
+		// Neither a.mu nor syncMu may be held here: Stop waits for an
+		// in-progress resume, which takes both.
+		a.resume().Stop()
+		if removed {
+			a.cardRemoved.Store(true)
+			a.cancelSync()
+		}
 		a.updateIdleStatus()
 	}
 }
 
+// refreshMountedTarget looks up whether the selected card is mounted. It
+// clears mountedTarget when it isn't (e.g. another card was just selected).
 func (a *App) refreshMountedTarget() {
 	cfg := a.Config.Get()
-	if cfg.Watch.VolumeUUID == "" {
-		return
-	}
-	info, err := volume.FindByUUID(cfg.Watch.VolumeUUID)
-	if err != nil || info == nil {
-		return
+	var info *volume.Info
+	if cfg.Watch.VolumeUUID != "" {
+		var err error
+		info, err = volume.FindByUUID(cfg.Watch.VolumeUUID)
+		if err != nil {
+			logx.Warn("failed to look up selected card", "err", err)
+			return
+		}
 	}
 	a.mu.Lock()
 	a.mountedTarget = info
@@ -179,7 +231,49 @@ func (a *App) MountedTarget() *volume.Info {
 	return &v
 }
 
+// SelectCard makes v the card to sync and, if it is mounted and the server
+// is configured, starts syncing it right away (as when it is plugged in).
+func (a *App) SelectCard(v volume.Info) error {
+	if err := a.Config.Update(func(c *config.Config) {
+		c.Watch.VolumeUUID = v.UUID
+		c.Watch.VolumeName = v.Name
+	}); err != nil {
+		return fmt.Errorf("save selected card: %w", err)
+	}
+	logx.Info("card selected", "name", v.Name, "uuid", v.UUID)
+	a.ConfigChanged()
+	if a.Config.IsConfigured() && a.MountedTarget() != nil {
+		a.SyncNow()
+	}
+	return nil
+}
+
+// EjectCard ejects the selected card. It fails if the card isn't mounted;
+// on success the unmount event updates the status.
+func (a *App) EjectCard() error {
+	vol := a.MountedTarget()
+	if vol == nil {
+		return errors.New("selected card is not mounted")
+	}
+	logx.Info("ejecting card", "name", vol.Name, "path", vol.MountPoint)
+	return volume.Eject(vol.MountPoint)
+}
+
+// SyncNow stops waiting for an automatic resume and starts a sync of the
+// selected card. It does nothing if a sync is already running.
 func (a *App) SyncNow() {
+	a.resume().Stop()
+	a.startSync()
+}
+
+// Retry is SyncNow, offered after a failed sync.
+func (a *App) Retry() {
+	a.SyncNow()
+}
+
+// startSync starts a sync unless one is already running. The resumer calls
+// it directly so that it doesn't stop itself.
+func (a *App) startSync() {
 	a.syncMu.Lock()
 	defer a.syncMu.Unlock()
 
@@ -192,8 +286,11 @@ func (a *App) SyncNow() {
 		logx.Debug("sync skipped: volume not mounted")
 		return
 	}
+	if a.syncCancel != nil {
+		logx.Debug("sync skipped: already running")
+		return
+	}
 
-	a.cancelSyncLocked()
 	ctx, cancel := context.WithCancel(context.Background())
 	a.syncCancel = cancel
 	a.cardRemoved.Store(false)
@@ -267,6 +364,12 @@ func (a *App) SyncNow() {
 		}
 
 		a.setStatus(st)
+		a.syncMu.Lock()
+		a.syncCancel = nil
+		a.syncMu.Unlock()
+		cancel()
+		a.maybeResume(st.Code)
+
 		if err == nil && !a.dryRun && result.Uploaded > 0 {
 			notify.SyncComplete(result.Uploaded)
 		}
@@ -298,17 +401,26 @@ func serverHostFromConfig(cfg config.Config) string {
 	return u.Host
 }
 
-func (a *App) CancelSync() {
-	a.syncMu.Lock()
-	defer a.syncMu.Unlock()
-	a.cancelSyncLocked()
+// StopSync stops waiting for an automatic resume and cancels a running
+// sync, which then finishes with CodeCancelled.
+func (a *App) StopSync() {
+	a.resume().Stop()
+	a.cancelSync()
 }
 
-func (a *App) cancelSyncLocked() {
+func (a *App) cancelSync() {
+	a.syncMu.Lock()
+	defer a.syncMu.Unlock()
 	if a.syncCancel != nil {
 		a.syncCancel()
-		a.syncCancel = nil
 	}
+}
+
+// syncRunning reports whether a sync goroutine is running.
+func (a *App) syncRunning() bool {
+	a.syncMu.Lock()
+	defer a.syncMu.Unlock()
+	return a.syncCancel != nil
 }
 
 // updateIdleStatus recomputes why sync isn't running right now and publishes

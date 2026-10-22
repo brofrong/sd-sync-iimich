@@ -53,7 +53,7 @@ func Run(application *app.App, cfg *config.Store) {
 		Config:  cfg,
 		updater: update.NewClient(version.Current),
 	}
-	application.SetStatusCallback(func(s app.Status) {
+	application.OnStatus(func(s app.Status) {
 		c.updateStatus(s)
 	})
 	systray.Run(c.onReady, c.onExit)
@@ -141,7 +141,7 @@ func (c *Controller) onExit() {
 	if c.updateCancel != nil {
 		c.updateCancel()
 	}
-	c.App.CancelSync()
+	c.App.StopSync()
 }
 
 func (c *Controller) listen(item *systray.MenuItem, fn func()) {

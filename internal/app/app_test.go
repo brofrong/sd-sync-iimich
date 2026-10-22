@@ -1,7 +1,9 @@
 package app
 
 import (
+	"context"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -54,7 +56,7 @@ func TestSyncNowRecordsRun(t *testing.T) {
 	}
 
 	done := make(chan Status, 1)
-	a.SetStatusCallback(func(s Status) {
+	a.OnStatus(func(s Status) {
 		if s.Code == CodeNothingNew {
 			select {
 			case done <- s:
@@ -133,5 +135,198 @@ func TestNewUsesLastFinishedRunAsStartupStatus(t *testing.T) {
 	// expected outcome given the config set above.
 	if got.Code != CodeWaitingForCard {
 		t.Errorf("Status().Code = %q, want %q", got.Code, CodeWaitingForCard)
+	}
+}
+
+// testApp returns an App with a configured server and selected card "CARD"
+// (VOL-UUID) whose mount point is an empty temp dir, plus a resumer whose
+// ping always fails so it keeps waiting until stopped.
+func testApp(t *testing.T) *App {
+	t.Helper()
+	cfgStore := testConfigStore(t)
+	if err := cfgStore.Update(func(c *config.Config) {
+		c.Immich = config.ImmichConfig{URL: "https://immich.example", APIKey: "key"}
+		c.Watch = config.WatchConfig{VolumeUUID: "VOL-UUID", VolumeName: "CARD"}
+	}); err != nil {
+		t.Fatalf("cfgStore.Update: %v", err)
+	}
+	st, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("state.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	vol := volume.Info{UUID: "VOL-UUID", Name: "CARD", MountPoint: t.TempDir()}
+	a := &App{
+		Config:        cfgStore,
+		State:         st,
+		Uploader:      &uploader.Service{Config: cfgStore, State: st},
+		mountedTarget: &vol,
+	}
+	fastResumeIntervals(t)
+	a.resumer = newResumer(
+		func(context.Context) error { return errPingDown },
+		func() bool { return true },
+		func() { t.Error("resumer started a sync unexpectedly") },
+	)
+	t.Cleanup(a.resumer.Stop)
+	return a
+}
+
+func TestSyncNowIsNoOpWhileSyncRuns(t *testing.T) {
+	a := testApp(t)
+
+	// Simulate an in-flight sync.
+	var cancelled atomic.Bool
+	a.syncCancel = func() { cancelled.Store(true) }
+
+	var statuses atomic.Int32
+	a.OnStatus(func(Status) { statuses.Add(1) })
+
+	a.SyncNow()
+
+	if cancelled.Load() {
+		t.Error("SyncNow cancelled the running sync, want no-op")
+	}
+	runs, err := a.State.RecentRuns(10)
+	if err != nil {
+		t.Fatalf("RecentRuns: %v", err)
+	}
+	if len(runs) != 0 {
+		t.Errorf("SyncNow started a new run while one was running: %d runs recorded", len(runs))
+	}
+	if got := statuses.Load(); got != 0 {
+		t.Errorf("SyncNow published %d statuses, want 0", got)
+	}
+}
+
+func TestSyncNowStopsResumer(t *testing.T) {
+	a := testApp(t)
+	a.resumer.Start()
+
+	done := make(chan struct{}, 1)
+	a.OnStatus(func(s Status) {
+		if s.Code == CodeNothingNew {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+	a.Retry()
+
+	if a.resumer.Waiting() {
+		t.Error("resumer still waiting after Retry")
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for sync to finish")
+	}
+}
+
+func TestSyncCanRunAgainAfterFinishing(t *testing.T) {
+	a := testApp(t)
+
+	finished := make(chan struct{}, 2)
+	a.OnStatus(func(s Status) {
+		if s.Code == CodeNothingNew {
+			finished <- struct{}{}
+		}
+	})
+	for i := 0; i < 2; i++ {
+		a.SyncNow()
+		select {
+		case <-finished:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("sync %d: timed out waiting for it to finish", i+1)
+		}
+		waitFor(t, "sync to be marked finished", func() bool { return !a.syncRunning() })
+	}
+
+	runs, err := a.State.RecentRuns(10)
+	if err != nil {
+		t.Fatalf("RecentRuns: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Errorf("got %d runs, want 2", len(runs))
+	}
+}
+
+func TestStopSyncCancelsSyncAndStopsResumer(t *testing.T) {
+	a := testApp(t)
+	a.resumer.Start()
+
+	var cancelled atomic.Bool
+	a.syncCancel = func() { cancelled.Store(true) }
+
+	a.StopSync()
+
+	if !cancelled.Load() {
+		t.Error("StopSync did not cancel the running sync")
+	}
+	if a.resumer.Waiting() {
+		t.Error("resumer still waiting after StopSync")
+	}
+}
+
+func TestMaybeResumeStartsResumerOnlyForServerErrors(t *testing.T) {
+	a := testApp(t)
+
+	a.maybeResume(CodeAuthFailed)
+	if a.resumer.Waiting() {
+		t.Fatal("resumer started after auth_failed")
+	}
+	a.maybeResume(CodeServerUnreachable)
+	if !a.resumer.Waiting() {
+		t.Fatal("resumer not started after server_unreachable with card mounted")
+	}
+	a.resumer.Stop()
+
+	a.mu.Lock()
+	a.mountedTarget = nil
+	a.mu.Unlock()
+	a.maybeResume(CodeServerError)
+	if a.resumer.Waiting() {
+		t.Fatal("resumer started after server_error without a mounted card")
+	}
+}
+
+func TestEjectCardWithoutMountedCardFails(t *testing.T) {
+	a := testApp(t)
+	a.mu.Lock()
+	a.mountedTarget = nil
+	a.mu.Unlock()
+	a.setStatus(newStatus(CodeWaitingForCard, nil))
+
+	if err := a.EjectCard(); err == nil {
+		t.Fatal("EjectCard() = nil, want error when the selected card is not mounted")
+	}
+	if got := a.Status().Code; got != CodeWaitingForCard {
+		t.Errorf("Status().Code = %q after failed eject, want unchanged %q", got, CodeWaitingForCard)
+	}
+}
+
+func TestSelectCardPersistsSelection(t *testing.T) {
+	a := testApp(t)
+
+	// The new card isn't mounted on the test machine.
+	if err := a.SelectCard(volume.Info{UUID: "NEW-UUID", Name: "NEWCARD"}); err != nil {
+		t.Fatalf("SelectCard: %v", err)
+	}
+
+	cfg := a.Config.Get()
+	if cfg.Watch.VolumeUUID != "NEW-UUID" || cfg.Watch.VolumeName != "NEWCARD" {
+		t.Errorf("watch = (%q, %q), want (NEW-UUID, NEWCARD)", cfg.Watch.VolumeUUID, cfg.Watch.VolumeName)
+	}
+	if mt := a.MountedTarget(); mt != nil {
+		t.Errorf("MountedTarget() = %+v after selecting an unmounted card, want nil", mt)
+	}
+	runs, err := a.State.RecentRuns(10)
+	if err != nil {
+		t.Fatalf("RecentRuns: %v", err)
+	}
+	if len(runs) != 0 {
+		t.Errorf("SelectCard started a sync for an unmounted card: %d runs", len(runs))
 	}
 }
