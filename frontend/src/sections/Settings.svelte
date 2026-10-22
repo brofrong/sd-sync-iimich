@@ -1,7 +1,8 @@
 <script lang="ts">
-  // The Settings section: language, parallel uploads and automatic camera
-  // paths (each saved as soon as it changes; Go answers with a "state"
-  // event, which also switches the UI language), then updates: the
+  // The Settings section: language, parallel uploads, automatic camera
+  // paths and autostart (each saved as soon as it changes; Go answers with
+  // a "state" event, which also switches the UI language; autostart is
+  // disabled when the app does not run from its bundle), then updates: the
   // running version, a manual check, and the available update's notes
   // with an Install button that asks first (the app restarts after it).
   import { onDestroy } from "svelte";
@@ -29,17 +30,25 @@
   let language = $state("");
   let concurrency = $state(DEFAULT_CONCURRENCY);
   let autoPaths = $state(true);
+  let autostart = $state(false);
 
   function syncFromState(s: SettingsView): void {
     language = s.language;
     concurrency = s.concurrency >= 1 && s.concurrency <= MAX_CONCURRENCY ? s.concurrency : DEFAULT_CONCURRENCY;
     autoPaths = s.autoPaths;
+    autostart = s.autostart;
   }
   $effect(() => syncFromState($appState.settings));
 
   let saveError = $state("");
   let saved = $state(false);
   let savedTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function showSaved(): void {
+    saved = true;
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(() => (saved = false), 2000);
+  }
 
   async function save(): Promise<void> {
     saveError = "";
@@ -51,9 +60,21 @@
       syncFromState($appState.settings);
       return;
     }
-    saved = true;
-    clearTimeout(savedTimer);
-    savedTimer = setTimeout(() => (saved = false), 2000);
+    showSaved();
+  }
+
+  async function saveAutostart(enabled: boolean): Promise<void> {
+    autostart = enabled;
+    saveError = "";
+    saved = false;
+    try {
+      await backend.SetAutostart(enabled);
+    } catch (err) {
+      saveError = t("settings.save_failed", { detail: message(err) });
+      autostart = $appState.settings.autostart;
+      return;
+    }
+    showSaved();
   }
 
   const fill = $derived(((concurrency - 1) / (MAX_CONCURRENCY - 1)) * 100);
@@ -155,6 +176,22 @@
           autoPaths = v;
           save();
         }}
+      />
+    </div>
+
+    <div class="row">
+      <div class="text">
+        <label for="set-autostart">{t("settings.autostart")}</label>
+        <p class="hint" id="set-autostart-hint">
+          {$appState.settings.autostartAvailable ? t("settings.autostart_hint") : t("settings.autostart_unavailable")}
+        </p>
+      </div>
+      <Switch
+        id="set-autostart"
+        checked={autostart}
+        disabled={!$appState.settings.autostartAvailable}
+        describedby="set-autostart-hint"
+        onchange={saveAutostart}
       />
     </div>
 

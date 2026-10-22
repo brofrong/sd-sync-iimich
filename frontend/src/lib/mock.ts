@@ -226,7 +226,15 @@ export function createMockTransport(): Transport {
     listeners[name].forEach((cb) => cb(data));
   }
 
-  const settings = new SettingsView({ language: query.get("lang") ?? "", concurrency: 4, autoPaths: true });
+  // ?bundle=none mimics a development build, where autostart is unavailable.
+  const inBundle = query.get("bundle") !== "none";
+  const settings = new SettingsView({
+    language: query.get("lang") ?? "",
+    concurrency: 4,
+    autoPaths: true,
+    autostart: inBundle,
+    autostartAvailable: inBundle,
+  });
   const state = new StateView({
     status: makeStatus(pinned ?? "syncing"),
     language: resolveLanguage(settings.language, navigator.languages),
@@ -418,8 +426,21 @@ export function createMockTransport(): Transport {
     },
     SaveSettings: async (v) => {
       if (v.concurrency < 1 || v.concurrency > 16) throw new Error("concurrency must be between 1 and 16");
-      state.settings = new SettingsView(v);
+      // As in Go, the autostart fields are not saved here.
+      state.settings = new SettingsView({
+        ...v,
+        autostart: state.settings.autostart,
+        autostartAvailable: state.settings.autostartAvailable,
+      });
       state.language = resolveLanguage(v.language, navigator.languages);
+      pushState();
+    },
+    SetAutostart: async (enabled) => {
+      if (!state.settings.autostartAvailable) {
+        throw new Error("autostart is only available when the app runs from SD Sync Immich.app");
+      }
+      await delay(150, null);
+      state.settings = new SettingsView({ ...state.settings, autostart: enabled });
       pushState();
     },
     SyncNow: async () => {

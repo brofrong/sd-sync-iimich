@@ -41,10 +41,17 @@ type CardView struct {
 
 // SettingsView holds the editable settings. Language is the preference
 // ("" follows the system language).
+//
+// Autostart (the LaunchAgent is installed) is changed with
+// Service.SetAutostart, not SaveSettings, which ignores it and
+// AutostartAvailable. AutostartAvailable is false when the app does not
+// run from its bundle (a development build): the switch is then disabled.
 type SettingsView struct {
-	Language    string `json:"language"`
-	Concurrency int    `json:"concurrency"`
-	AutoPaths   bool   `json:"autoPaths"`
+	Language           string `json:"language"`
+	Concurrency        int    `json:"concurrency"`
+	AutoPaths          bool   `json:"autoPaths"`
+	Autostart          bool   `json:"autostart"`
+	AutostartAvailable bool   `json:"autostartAvailable"`
 }
 
 // ServerCheckView is the result of Service.TestServer. Code is "" when OK,

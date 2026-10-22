@@ -16,8 +16,10 @@ import (
 	"time"
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/app"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/bundle"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/i18n"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/install"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/notify"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/state"
@@ -53,6 +55,11 @@ type Service struct {
 	updater *update.Client
 	shell   *shell
 
+	// executable is this program; bundlePath is the app bundle it runs
+	// from, "" when it runs outside one (a development build).
+	executable string
+	bundlePath string
+
 	systemLanguages []string
 	status          *throttle
 
@@ -75,6 +82,12 @@ func newService(a *app.App, cfg *config.Store, st *state.DB, ver string, sh *she
 		shell:           sh,
 		systemLanguages: i18n.SystemLanguages(),
 		lastCode:        a.Status().Code,
+	}
+	if exe, err := currentExecutable(); err != nil {
+		logx.Warn("gui: cannot resolve executable", "err", err)
+	} else {
+		s.executable = exe
+		s.bundlePath, _ = bundle.Containing(exe)
 	}
 	s.status = newThrottle(statusInterval, func(st app.Status) { sh.emit(eventStatus, st) })
 	s.cat = s.loadCatalog(cfg.Get().UI.Language)
@@ -193,6 +206,9 @@ func (s *Service) State() StateView {
 			Language:    cfg.UI.Language,
 			Concurrency: cfg.EffectiveConcurrency(),
 			AutoPaths:   cfg.Scan.AutoPaths,
+			// Autostart runs the bundle; outside one there is none to run.
+			Autostart:          s.bundlePath != "" && install.AutostartEnabled(),
+			AutostartAvailable: s.bundlePath != "",
 		},
 		Version: s.version,
 		Update:  updateView(rel),
@@ -349,6 +365,21 @@ func (s *Service) SaveSettings(v SettingsView) error {
 	return nil
 }
 
+// SetAutostart turns starting the app at login on or off. It needs the app
+// to run from its bundle (SettingsView.AutostartAvailable).
+func (s *Service) SetAutostart(enabled bool) error {
+	if s.bundlePath == "" {
+		return fmt.Errorf("autostart is only available when the app runs from %s", bundle.Name)
+	}
+	if err := install.SetAutostart(enabled, s.executable); err != nil {
+		logx.Error("failed to change autostart", "enabled", enabled, "err", err)
+		return fmt.Errorf("change autostart: %w", err)
+	}
+	logx.Info("autostart changed", "enabled", enabled)
+	s.stateChanged()
+	return nil
+}
+
 func (s *Service) SyncNow()  { s.app.SyncNow() }
 func (s *Service) StopSync() { s.app.StopSync() }
 func (s *Service) Retry()    { s.app.Retry() }
@@ -474,8 +505,9 @@ func (s *Service) checkForUpdates(ctx context.Context) (*update.Release, error) 
 }
 
 // InstallUpdate downloads and installs the available update over the
-// running executable, then quits with exitCodeRestart so launchd starts
-// the new version.
+// running executable, re-signs the app bundle, then quits with
+// exitCodeRestart so launchd starts the new version (or, when launchd did
+// not start the app, reopens the bundle once this process has exited).
 func (s *Service) InstallUpdate() error {
 	if !s.installMu.TryLock() {
 		return errors.New("an update is already being installed")
@@ -486,12 +518,9 @@ func (s *Service) InstallUpdate() error {
 	if rel == nil {
 		return errors.New("no update available")
 	}
-	executable, err := os.Executable()
+	executable, err := currentExecutable()
 	if err != nil {
-		return fmt.Errorf("resolve executable: %w", err)
-	}
-	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
-		executable = resolved
+		return err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), updateInstallTimeout)
@@ -500,7 +529,49 @@ func (s *Service) InstallUpdate() error {
 		logx.Error("update installation failed", "version", rel.Version, "err", err)
 		return fmt.Errorf("install update %s: %w", rel.Version, err)
 	}
+	if err := prepareRestart(executable); err != nil {
+		logx.Error("update installed but the app cannot restart", "version", rel.Version, "err", err)
+		return fmt.Errorf("install update %s: %w", rel.Version, err)
+	}
 	logx.Info("update installed, restarting", "version", rel.Version, "path", executable)
 	s.shell.quit(exitCodeRestart)
 	return nil
+}
+
+// Seams for tests.
+var (
+	resignBundle   = bundle.Resign
+	underLaunchd   = install.UnderLaunchd
+	openWhenExited = install.OpenWhenExited
+)
+
+// prepareRestart runs after an update replaced executable. Inside a bundle
+// it re-signs the bundle, whose signature the new executable broke; if
+// that fails the app must not quit, as the bundle would not launch again.
+// When launchd did not start the app it will not restart it either, so the
+// bundle is reopened once this process has exited.
+func prepareRestart(executable string) error {
+	bundlePath, ok := bundle.Containing(executable)
+	if !ok {
+		return nil
+	}
+	if err := resignBundle(bundlePath); err != nil {
+		return fmt.Errorf("re-sign %s: %w", bundlePath, err)
+	}
+	if underLaunchd() {
+		return nil
+	}
+	return openWhenExited(bundlePath)
+}
+
+// currentExecutable is the path of this program, with symlinks resolved.
+func currentExecutable() (string, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("resolve executable: %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
+		executable = resolved
+	}
+	return executable, nil
 }
