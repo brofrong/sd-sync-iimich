@@ -117,6 +117,26 @@ func TestIsRetryable(t *testing.T) {
 	}
 }
 
+func TestDetail(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"dns error", &net.DNSError{Err: "no such host", Name: "immich.example"}, "no such host"},
+		{"op error", &net.OpError{Op: "dial", Err: errors.New("connection refused")}, "connection refused"},
+		{"status error", &StatusError{Code: 502, Message: "bad gateway"}, "bad gateway"},
+		{"generic error", errors.New("boom"), "boom"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Detail(tt.err); got != tt.want {
+				t.Errorf("Detail(%v) = %q, want %q", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestUploadReturnsDuplicateWhenServerAnswersBeforeReadingBody(t *testing.T) {
 	c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
 		// Immich short-circuits known checksums without consuming the upload.

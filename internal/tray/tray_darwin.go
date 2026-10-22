@@ -154,15 +154,17 @@ func (c *Controller) updateStatus(s app.Status) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.statusItem != nil {
-		c.statusItem.SetTitle(c.App.StatusText())
+		// TODO(task 6): this menu is replaced by the Wails GUI, which
+		// renders s.Code (+ s.Params) through the i18n catalog.
+		c.statusItem.SetTitle(string(s.Code))
 	}
-	c.updateIconLocked(s.Kind)
+	c.updateIconLocked(s.Code)
 	c.updateSyncEnabledLocked()
 }
 
-func (c *Controller) updateIconLocked(kind app.StatusKind) {
-	switch kind {
-	case app.StatusScanning, app.StatusSyncing:
+func (c *Controller) updateIconLocked(code app.Code) {
+	switch code {
+	case app.CodeScanning, app.CodeSyncing:
 		c.startIconAnimation()
 	default:
 		c.stopIconAnimationLocked()

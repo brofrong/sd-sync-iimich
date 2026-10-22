@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
@@ -14,26 +16,6 @@ import (
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/uploader"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/volume"
 )
-
-type StatusKind int
-
-const (
-	StatusNotConfigured StatusKind = iota
-	StatusWaiting
-	StatusScanning
-	StatusSyncing
-	StatusDone
-	StatusError
-)
-
-type Status struct {
-	Kind     StatusKind
-	Message  string
-	Current  int
-	Total    int
-	Uploaded int
-	ETA      time.Duration
-}
 
 type App struct {
 	Config   *config.Store
@@ -48,6 +30,11 @@ type App struct {
 	syncMu        sync.Mutex
 	onStatus      func(Status)
 	dryRun        bool
+
+	// cardRemoved is set just before cancelling an in-flight sync because its
+	// volume was unmounted, so SyncNow's goroutine can tell that apart from a
+	// user-requested stop once the sync unwinds.
+	cardRemoved atomic.Bool
 }
 
 func New(cfg *config.Store, st *state.DB, dryRun bool) (*App, error) {
@@ -65,7 +52,7 @@ func New(cfg *config.Store, st *state.DB, dryRun bool) (*App, error) {
 		Watcher: w,
 		dryRun:  dryRun,
 	}
-	a.setStatus(Status{Kind: StatusNotConfigured, Message: "Ожидание — настройте SD-карту"})
+	a.updateIdleStatus()
 	logx.Info("app started", "configured", cfg.IsConfigured(), "dry_run", dryRun)
 	return a, nil
 }
@@ -131,6 +118,7 @@ func (a *App) handleVolumeEvent(ev volume.Event) {
 		a.mu.Lock()
 		if a.mountedTarget != nil && a.mountedTarget.MountPoint == ev.Info.MountPoint {
 			a.mountedTarget = nil
+			a.cardRemoved.Store(true)
 			a.CancelSync()
 		}
 		a.mu.Unlock()
@@ -185,55 +173,84 @@ func (a *App) SyncNow() {
 	a.cancelSyncLocked()
 	ctx, cancel := context.WithCancel(context.Background())
 	a.syncCancel = cancel
+	a.cardRemoved.Store(false)
 
 	logx.Info("sync requested", "volume", vol.Name, "path", vol.MountPoint)
 
 	go func() {
 		syncStart := time.Now()
-		a.setStatus(Status{Kind: StatusScanning, Message: "Сканирование..."})
+		a.setStatus(newStatus(CodeScanning, nil))
 
 		result, err := a.Uploader.Sync(ctx, *vol, a.dryRun, func(p uploader.Progress) {
 			switch p.Phase {
 			case "scanning":
-				a.setStatus(Status{Kind: StatusScanning, Message: "Сканирование..."})
+				a.setStatus(newStatus(CodeScanning, nil))
 			case "syncing":
-				a.setStatus(Status{
-					Kind:    StatusSyncing,
-					Message: "Синхронизация",
-					Current: p.Current,
-					Total:   p.Total,
-					ETA:     p.ETA,
-				})
+				st := newStatus(CodeSyncing, nil)
+				st.Progress = &Progress{
+					Current:     p.Current,
+					Total:       p.Total,
+					BytesDone:   p.BytesDone,
+					BytesTotal:  p.BytesTotal,
+					BytesPerSec: p.BytesPerSec,
+					ETASeconds:  int(p.ETA.Round(time.Second).Seconds()),
+					File:        p.File,
+				}
+				a.setStatus(st)
 			}
 		})
 
-		if err != nil {
-			if ctx.Err() != nil {
-				logx.Info("sync cancelled", "duration", time.Since(syncStart).Round(time.Second))
-				a.updateIdleStatus()
-				return
-			}
+		cardRemoved := a.cardRemoved.Load()
+		st := ResultStatus(result, err, cardRemoved, serverHostFromConfig(a.Config.Get()))
+
+		switch {
+		case err == nil:
+			logx.Info("sync finished",
+				"uploaded", result.Uploaded,
+				"skipped", result.Skipped,
+				"errors", result.Errors,
+				"duration", time.Since(syncStart).Round(time.Second).String(),
+			)
+		case errors.Is(err, context.Canceled):
+			logx.Info("sync cancelled",
+				"card_removed", cardRemoved,
+				"uploaded", result.Uploaded,
+				"duration", time.Since(syncStart).Round(time.Second),
+			)
+		default:
 			logx.Error("sync failed", "err", err, "duration", time.Since(syncStart).Round(time.Second))
-			a.setStatus(Status{Kind: StatusError, Message: err.Error()})
-			return
 		}
 
-		msg := fmt.Sprintf("Готово — %d загружено", result.Uploaded)
-		if a.dryRun {
-			msg = fmt.Sprintf("Dry-run — %d новых файлов", result.Skipped)
-		}
-		logx.Info("sync finished",
-			"uploaded", result.Uploaded,
-			"skipped", result.Skipped,
-			"errors", result.Errors,
-			"duration", time.Since(syncStart).Round(time.Second).String(),
-		)
-		a.setStatus(Status{Kind: StatusDone, Message: msg, Uploaded: result.Uploaded})
-		if !a.dryRun && result.Uploaded > 0 {
+		a.setStatus(st)
+		if err == nil && !a.dryRun && result.Uploaded > 0 {
 			notify.SyncComplete(result.Uploaded)
 		}
-		time.AfterFunc(5*time.Second, func() { a.updateIdleStatus() })
+		if revertsAutomatically(st.Code) {
+			time.AfterFunc(5*time.Second, func() { a.updateIdleStatus() })
+		}
 	}()
+}
+
+// revertsAutomatically reports whether a terminal sync status should fall
+// back to the idle status on its own after a short delay. Codes that need
+// user attention (errors, auth problems) stay on screen instead.
+func revertsAutomatically(code Code) bool {
+	switch code {
+	case CodeNothingNew, CodeDone, CodeCancelled, CodeCardRemoved:
+		return true
+	default:
+		return false
+	}
+}
+
+// serverHostFromConfig returns the host part of the configured Immich URL,
+// falling back to the raw URL when it cannot be parsed.
+func serverHostFromConfig(cfg config.Config) string {
+	u, err := url.Parse(cfg.Immich.URL)
+	if err != nil || u.Host == "" {
+		return cfg.Immich.URL
+	}
+	return u.Host
 }
 
 func (a *App) CancelSync() {
@@ -249,16 +266,19 @@ func (a *App) cancelSyncLocked() {
 	}
 }
 
+// updateIdleStatus recomputes why sync isn't running right now and publishes
+// it, unless the selected card is mounted: in that case a sync is about to
+// run (or just did), so the current status is left alone.
 func (a *App) updateIdleStatus() {
-	if !a.Config.IsConfigured() {
-		a.setStatus(Status{Kind: StatusNotConfigured, Message: "Ожидание — настройте SD-карту"})
-		return
+	cfg := a.Config.Get()
+	mounted, err := volume.ListRemovable()
+	if err != nil {
+		logx.Warn("failed to list removable volumes", "err", err)
+		mounted = nil
 	}
-	if a.MountedTarget() != nil {
-		a.setStatus(Status{Kind: StatusWaiting, Message: "Ожидание"})
-		return
+	if st, ok := IdleStatus(cfg, mounted); ok {
+		a.setStatus(st)
 	}
-	a.setStatus(Status{Kind: StatusWaiting, Message: "Ожидание"})
 }
 
 func (a *App) setStatus(s Status) {
@@ -274,41 +294,4 @@ func (a *App) Status() Status {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.status
-}
-
-func (a *App) StatusText() string {
-	s := a.Status()
-	switch s.Kind {
-	case StatusSyncing:
-		return formatProgressText("Синхронизация", s)
-	case StatusScanning:
-		if s.Total > 0 && s.Message == "Подготовка" {
-			return formatProgressText("Подготовка", s)
-		}
-		if s.Total > 0 {
-			return formatProgressText("Сканирование", s)
-		}
-		return "Сканирование..."
-	case StatusDone:
-		return s.Message
-	case StatusError:
-		return "Ошибка: " + s.Message
-	default:
-		return s.Message
-	}
-}
-
-func formatProgressText(label string, s Status) string {
-	if s.Total <= 0 {
-		return label + "..."
-	}
-	remaining := s.Total - s.Current
-	if remaining < 0 {
-		remaining = 0
-	}
-	text := fmt.Sprintf("%s %d/%d (осталось %d)", label, s.Current, s.Total, remaining)
-	if eta := FormatETA(s.ETA); eta != "" {
-		text += " " + eta
-	}
-	return text
 }

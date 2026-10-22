@@ -18,10 +18,14 @@ import (
 )
 
 type Progress struct {
-	Phase   string
-	Current int
-	Total   int
-	ETA     time.Duration
+	Phase       string
+	Current     int
+	Total       int
+	ETA         time.Duration
+	File        string
+	BytesDone   int64
+	BytesTotal  int64
+	BytesPerSec float64
 }
 
 type ProgressFunc func(Progress)
@@ -35,6 +39,10 @@ type Result struct {
 	Uploaded int
 	Skipped  int
 	Errors   int
+	Bytes    int64
+	// ErrorSummary counts failures by kind (see the errorKind* constants),
+	// e.g. {"rejected": 2, "network": 1}.
+	ErrorSummary map[string]int
 }
 
 func (s *Service) Sync(ctx context.Context, vol volume.Info, dryRun bool, onProgress ProgressFunc) (Result, error) {
@@ -93,8 +101,13 @@ func (s *Service) Sync(ctx context.Context, vol volume.Info, dryRun bool, onProg
 		return Result{Skipped: len(files)}, nil
 	}
 
+	var totalBytes int64
+	for _, f := range candidates {
+		totalBytes += f.Size
+	}
+
 	client := immich.NewClient(cfg.Immich.URL, cfg.Immich.APIKey)
-	prog := newSyncProgress(len(candidates), onProgress)
+	prog := newSyncProgress(len(candidates), totalBytes, onProgress)
 	prog.reportStart()
 
 	logx.Info("sync: upload started", "candidates", len(candidates))
@@ -121,6 +134,8 @@ func (s *Service) uploadAll(
 	var wg sync.WaitGroup
 	var uploaded atomic.Int64
 	var failed atomic.Int64
+	var bytesUploaded atomic.Int64
+	tally := newErrorTally()
 	uploadStart := time.Now()
 
 	defer checkpoint.flush()
@@ -133,7 +148,7 @@ func (s *Service) uploadAll(
 				if ctx.Err() != nil {
 					return
 				}
-				s.syncOne(ctx, abort, volumeUUID, client, f, prog, session, checkpoint, &uploaded, &failed)
+				s.syncOne(ctx, abort, volumeUUID, client, f, prog, session, checkpoint, &uploaded, &failed, &bytesUploaded, tally)
 			}
 		}()
 	}
@@ -152,15 +167,17 @@ feed:
 	upl := int(uploaded.Load())
 	errCount := int(failed.Load())
 	skipped := alreadySkipped + len(candidates) - upl - errCount
+	bytesDone := bytesUploaded.Load()
+	errSummary := tally.snapshot()
 
-	if cause := context.Cause(ctx); parent.Err() == nil && errors.Is(cause, ErrServerUnavailable) {
-		logx.Error("sync: stopped, server unavailable, progress saved",
+	if cause := context.Cause(ctx); parent.Err() == nil && (errors.Is(cause, ErrServerUnavailable) || errors.Is(cause, ErrAuthFailed)) {
+		logx.Error("sync: stopped, upload aborted, progress saved",
 			"uploaded", upl,
 			"errors", errCount,
 			"err", cause,
 			"duration", time.Since(uploadStart).Round(time.Second),
 		)
-		return Result{Uploaded: upl, Skipped: skipped, Errors: errCount}, cause
+		return Result{Uploaded: upl, Skipped: skipped, Errors: errCount, Bytes: bytesDone, ErrorSummary: errSummary}, cause
 	}
 
 	if parent.Err() != nil {
@@ -169,7 +186,7 @@ feed:
 			"errors", errCount,
 			"duration", time.Since(uploadStart).Round(time.Second),
 		)
-		return Result{Uploaded: upl, Skipped: skipped, Errors: errCount}, parent.Err()
+		return Result{Uploaded: upl, Skipped: skipped, Errors: errCount, Bytes: bytesDone, ErrorSummary: errSummary}, parent.Err()
 	}
 
 	logx.Info("sync: complete",
@@ -178,7 +195,7 @@ feed:
 		"errors", errCount,
 		"upload_duration", time.Since(uploadStart).Round(time.Second).String(),
 	)
-	return Result{Uploaded: upl, Skipped: skipped, Errors: errCount}, nil
+	return Result{Uploaded: upl, Skipped: skipped, Errors: errCount, Bytes: bytesDone, ErrorSummary: errSummary}, nil
 }
 
 func (s *Service) syncOne(
@@ -190,14 +207,16 @@ func (s *Service) syncOne(
 	prog *syncProgress,
 	session *syncSession,
 	checkpoint *syncCheckpoint,
-	uploaded, failed *atomic.Int64,
+	uploaded, failed, bytesUploaded *atomic.Int64,
+	tally *errorTally,
 ) {
-	defer prog.done()
+	defer prog.done(f.Size, f.RelativePath)
 
 	sha1hex, err := s.fileSHA1(volumeUUID, f)
 	if err != nil {
 		logx.Warn("sync: sha1 failed", "file", f.RelativePath, "err", err)
 		failed.Add(1)
+		tally.add(errorKindReadFailed)
 		return
 	}
 
@@ -207,8 +226,12 @@ func (s *Service) syncOne(
 	if err != nil {
 		logx.Error("sync: upload failed", "file", f.RelativePath, "err", err)
 		failed.Add(1)
-		if immich.IsRetryable(err) {
-			abort(fmt.Errorf("%w: %v", ErrServerUnavailable, err))
+		tally.add(errorKind(err))
+		switch {
+		case isAuthError(err):
+			abort(fmt.Errorf("%w: %w", ErrAuthFailed, err))
+		case immich.IsRetryable(err):
+			abort(fmt.Errorf("%w: %w", ErrServerUnavailable, err))
 		}
 		return
 	}
@@ -216,11 +239,13 @@ func (s *Service) syncOne(
 	if err := session.recordSuccess(f); err != nil {
 		logx.Error("sync: failed to save progress", "file", f.RelativePath, "err", err)
 		failed.Add(1)
+		tally.add(errorKindState)
 		return
 	}
 
 	checkpoint.onFileSaved()
 	uploaded.Add(1)
+	bytesUploaded.Add(f.Size)
 	if resp != nil && resp.Status == "duplicate" {
 		logx.Debug("sync: already on server", "file", f.RelativePath)
 	}

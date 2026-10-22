@@ -46,6 +46,26 @@ func (e *StatusError) Error() string {
 	return "upload: " + e.Message
 }
 
+// Detail returns a short, language-agnostic reason for err suitable for
+// substitution into a localized UI message: the underlying OS/DNS failure
+// text for network errors, the server's own message for a StatusError, or
+// the error's own text as a fallback.
+func Detail(err error) string {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return dnsErr.Err
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return opErr.Err.Error()
+	}
+	var se *StatusError
+	if errors.As(err, &se) {
+		return se.Message
+	}
+	return err.Error()
+}
+
 // IsRetryable reports whether an upload error is transient (network, stall,
 // server overload) rather than a rejection of the file itself.
 func IsRetryable(err error) bool {

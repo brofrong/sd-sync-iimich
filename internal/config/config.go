@@ -218,6 +218,12 @@ func (s *Store) IsConfigured() bool {
 		strings.TrimSpace(cfg.Watch.VolumeUUID) != ""
 }
 
+// ServerConfigured reports whether the Immich URL and API key are both set,
+// regardless of whether a card has been selected yet.
+func (c Config) ServerConfigured() bool {
+	return strings.TrimSpace(c.Immich.URL) != "" && strings.TrimSpace(c.Immich.APIKey) != ""
+}
+
 func (s *Store) ResolvedDBPath() (string, error) {
 	return ExpandPath(s.Get().State.DBPath)
 }
