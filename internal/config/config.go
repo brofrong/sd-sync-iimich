@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -165,14 +164,6 @@ func (c Config) EffectiveCheckpointInterval() int {
 		return 200
 	}
 	return n
-}
-
-// WorkerLabel formats a worker setting for display in the menu.
-func (c Config) WorkerLabel(raw int, effectiveFn func(Config) int) string {
-	if raw == 0 {
-		return fmt.Sprintf("авто (%d)", effectiveFn(c))
-	}
-	return fmt.Sprintf("%d", raw)
 }
 
 func (s *Store) Get() Config {

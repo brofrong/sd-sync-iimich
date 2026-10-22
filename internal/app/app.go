@@ -13,7 +13,6 @@ import (
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/immich"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
-	"github.com/dmitiigorshkov/sd-sync-immich/internal/notify"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/state"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/uploader"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/volume"
@@ -370,9 +369,6 @@ func (a *App) startSync() {
 		cancel()
 		a.maybeResume(st.Code)
 
-		if err == nil && !a.dryRun && result.Uploaded > 0 {
-			notify.SyncComplete(result.Uploaded)
-		}
 		if revertsAutomatically(st.Code) {
 			time.AfterFunc(5*time.Second, func() { a.updateIdleStatus() })
 		}

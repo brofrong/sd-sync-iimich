@@ -3,19 +3,17 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/app"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/gui"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/install"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/scanner"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/state"
-	"github.com/dmitiigorshkov/sd-sync-immich/internal/tray"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/version"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/volume"
 )
 
@@ -55,7 +53,7 @@ func main() {
 
 func usage() {
 	fmt.Println(`Usage:
-  sd-sync-immich run          Run with systray
+  sd-sync-immich run          Run the menu bar app
   sd-sync-immich install      Install LaunchAgent autostart
   sd-sync-immich uninstall    Remove LaunchAgent
   sd-sync-immich scan-test    Scan Brofrong SD card (dry-run)`)
@@ -94,24 +92,12 @@ func runApp(dryRun bool) {
 		os.Exit(1)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go func() {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-		<-sig
-		cancel()
-		systrayQuit()
-	}()
-
-	go application.Run(ctx)
-	tray.Run(application, cfg)
-}
-
-func systrayQuit() {
-	// systray.Quit must be called from menu; signal handler exits process
-	os.Exit(0)
+	// gui.Run handles SIGINT/SIGTERM (through Wails) and exits the process
+	// itself when the app quits; it only returns if the GUI fails to start.
+	if err := gui.Run(application, cfg, st, version.Current); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 func runScanTest() {

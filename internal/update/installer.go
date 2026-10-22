@@ -19,11 +19,11 @@ const (
 
 func (c *Client) Install(ctx context.Context, release *Release, destination string) error {
 	if release == nil {
-		return fmt.Errorf("релиз не задан")
+		return fmt.Errorf("no release given")
 	}
 	checksums, err := c.download(ctx, release.Checksums.URL, maxChecksumBytes)
 	if err != nil {
-		return fmt.Errorf("скачивание checksums.txt: %w", err)
+		return fmt.Errorf("download checksums.txt: %w", err)
 	}
 	expectedHex, err := parseChecksum(checksums, release.Binary.Name)
 	if err != nil {
@@ -31,50 +31,50 @@ func (c *Client) Install(ctx context.Context, release *Release, destination stri
 	}
 	expected, err := hex.DecodeString(expectedHex)
 	if err != nil {
-		return fmt.Errorf("некорректный SHA-256 для %s: %w", release.Binary.Name, err)
+		return fmt.Errorf("invalid SHA-256 for %s: %w", release.Binary.Name, err)
 	}
 
 	binary, err := c.download(ctx, release.Binary.URL, maxBinaryBytes)
 	if err != nil {
-		return fmt.Errorf("скачивание %s: %w", release.Binary.Name, err)
+		return fmt.Errorf("download %s: %w", release.Binary.Name, err)
 	}
 	actual := sha256.Sum256(binary)
 	if !equalBytes(actual[:], expected) {
-		return fmt.Errorf("SHA-256 скачанного файла не совпадает с checksums.txt")
+		return fmt.Errorf("SHA-256 of the downloaded file does not match checksums.txt")
 	}
 
 	dir := filepath.Dir(destination)
 	tmp, err := os.CreateTemp(dir, ".sd-sync-immich-update-*")
 	if err != nil {
-		return fmt.Errorf("создание временного файла: %w", err)
+		return fmt.Errorf("create temporary file: %w", err)
 	}
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
 
 	if _, err := tmp.Write(binary); err != nil {
 		tmp.Close()
-		return fmt.Errorf("запись обновления: %w", err)
+		return fmt.Errorf("write update: %w", err)
 	}
 	if err := tmp.Chmod(0o755); err != nil {
 		tmp.Close()
-		return fmt.Errorf("права обновления: %w", err)
+		return fmt.Errorf("set update permissions: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
-		return fmt.Errorf("синхронизация обновления: %w", err)
+		return fmt.Errorf("sync update: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("закрытие обновления: %w", err)
+		return fmt.Errorf("close update: %w", err)
 	}
 	if err := os.Rename(tmpPath, destination); err != nil {
-		return fmt.Errorf("установка обновления: %w", err)
+		return fmt.Errorf("install update: %w", err)
 	}
 	return nil
 }
 
 func (c *Client) download(ctx context.Context, url string, maxBytes int64) ([]byte, error) {
 	if url == "" {
-		return nil, fmt.Errorf("пустой URL")
+		return nil, fmt.Errorf("empty URL")
 	}
 	if err := validateDownloadURL(url, c.allowLocalDownloads); err != nil {
 		return nil, err
@@ -99,14 +99,14 @@ func (c *Client) download(ctx context.Context, url string, maxBytes int64) ([]by
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 	if resp.ContentLength > maxBytes {
-		return nil, fmt.Errorf("файл превышает лимит %d байт", maxBytes)
+		return nil, fmt.Errorf("file exceeds the %d byte limit", maxBytes)
 	}
 	content, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
 		return nil, err
 	}
 	if int64(len(content)) > maxBytes {
-		return nil, fmt.Errorf("файл превышает лимит %d байт", maxBytes)
+		return nil, fmt.Errorf("file exceeds the %d byte limit", maxBytes)
 	}
 	return content, nil
 }
@@ -123,14 +123,14 @@ func parseChecksum(content []byte, assetName string) (string, error) {
 		}
 		sum := strings.ToLower(fields[0])
 		if len(sum) != sha256.Size*2 {
-			return "", fmt.Errorf("некорректный SHA-256 для %s", assetName)
+			return "", fmt.Errorf("invalid SHA-256 for %s", assetName)
 		}
 		if _, err := hex.DecodeString(sum); err != nil {
-			return "", fmt.Errorf("некорректный SHA-256 для %s", assetName)
+			return "", fmt.Errorf("invalid SHA-256 for %s", assetName)
 		}
 		return sum, nil
 	}
-	return "", fmt.Errorf("checksums.txt не содержит SHA-256 для %s", assetName)
+	return "", fmt.Errorf("checksums.txt has no SHA-256 for %s", assetName)
 }
 
 func equalBytes(a, b []byte) bool {

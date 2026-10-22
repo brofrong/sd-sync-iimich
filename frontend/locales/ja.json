@@ -47,7 +47,7 @@
   "tray.sync_now": "今すぐ同期",
   "tray.stop": "停止",
   "tray.quit": "終了",
-  "tray.update_available": "アップデートがあります",
+  "tray.update_available": "アップデート {version} があります",
   "notify.done.title": "同期が完了しました",
   "notify.done.body": "{count} 件のファイルをアップロードしました。",
   "error_kind.rejected": "サーバーに拒否されました",

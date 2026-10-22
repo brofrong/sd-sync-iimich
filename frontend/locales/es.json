@@ -47,7 +47,7 @@
   "tray.sync_now": "Sincronizar ahora",
   "tray.stop": "Detener",
   "tray.quit": "Salir",
-  "tray.update_available": "Actualización disponible",
+  "tray.update_available": "Actualización {version} disponible",
   "notify.done.title": "Sincronización completada",
   "notify.done.body": "Se subieron {count} archivos.",
   "error_kind.rejected": "Rechazado por el servidor",

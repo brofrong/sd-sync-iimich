@@ -47,10 +47,10 @@ func NewClient(currentVersion string) *Client {
 			Timeout: 30 * time.Second,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				if len(via) >= 10 {
-					return fmt.Errorf("слишком много перенаправлений")
+					return fmt.Errorf("too many redirects")
 				}
 				if !isTrustedGitHubHost(req.URL.Hostname()) || req.URL.Scheme != "https" {
-					return fmt.Errorf("небезопасное перенаправление на %s", req.URL.Redacted())
+					return fmt.Errorf("unsafe redirect to %s", req.URL.Redacted())
 				}
 				return nil
 			},
@@ -60,7 +60,7 @@ func NewClient(currentVersion string) *Client {
 
 func (c *Client) Check(ctx context.Context) (*Release, error) {
 	if _, err := parseVersion(c.CurrentVersion); err != nil {
-		return nil, fmt.Errorf("текущая версия %q не является релизной: %w", c.CurrentVersion, err)
+		return nil, fmt.Errorf("current version %q is not a release version: %w", c.CurrentVersion, err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.APIURL, nil)
@@ -77,12 +77,12 @@ func (c *Client) Check(ctx context.Context) (*Release, error) {
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("проверка GitHub Releases: %w", err)
+		return nil, fmt.Errorf("check GitHub Releases: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("GitHub Releases вернул HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("GitHub Releases returned HTTP %d", resp.StatusCode)
 	}
 
 	var payload struct {
@@ -97,12 +97,12 @@ func (c *Client) Check(ctx context.Context) (*Release, error) {
 	}
 	decoder := json.NewDecoder(io.LimitReader(resp.Body, maxAPIBytes))
 	if err := decoder.Decode(&payload); err != nil {
-		return nil, fmt.Errorf("декодирование ответа GitHub: %w", err)
+		return nil, fmt.Errorf("decode GitHub response: %w", err)
 	}
 
 	comparison, err := CompareVersions(c.CurrentVersion, payload.TagName)
 	if err != nil {
-		return nil, fmt.Errorf("версия релиза: %w", err)
+		return nil, fmt.Errorf("release version: %w", err)
 	}
 	if comparison >= 0 {
 		return nil, nil
@@ -123,10 +123,10 @@ func (c *Client) Check(ctx context.Context) (*Release, error) {
 		}
 	}
 	if release.Binary.URL == "" || release.Checksums.URL == "" {
-		return nil, fmt.Errorf("релиз %s не содержит sd-sync-immich и checksums.txt", release.Version)
+		return nil, fmt.Errorf("release %s does not contain sd-sync-immich and checksums.txt", release.Version)
 	}
 	if err := validateDownloadURL(release.Binary.URL, c.allowLocalDownloads); err != nil {
-		return nil, fmt.Errorf("URL бинарника: %w", err)
+		return nil, fmt.Errorf("binary URL: %w", err)
 	}
 	if err := validateDownloadURL(release.Checksums.URL, c.allowLocalDownloads); err != nil {
 		return nil, fmt.Errorf("URL checksums.txt: %w", err)
@@ -159,15 +159,15 @@ func parseVersion(value string) ([3]int, error) {
 	value = strings.TrimPrefix(strings.TrimSpace(value), "v")
 	parts := strings.Split(value, ".")
 	if len(parts) != len(version) {
-		return version, fmt.Errorf("ожидалась версия вида v1.2.3")
+		return version, fmt.Errorf("expected a version like v1.2.3")
 	}
 	for i, part := range parts {
 		if part == "" || strings.ContainsAny(part, "+-") {
-			return version, fmt.Errorf("неподдерживаемая версия %q", value)
+			return version, fmt.Errorf("unsupported version %q", value)
 		}
 		n, err := strconv.Atoi(part)
 		if err != nil || n < 0 {
-			return version, fmt.Errorf("неподдерживаемая версия %q", value)
+			return version, fmt.Errorf("unsupported version %q", value)
 		}
 		version[i] = n
 	}
@@ -177,13 +177,13 @@ func parseVersion(value string) ([3]int, error) {
 func validateDownloadURL(rawURL string, allowLocal bool) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Errorf("некорректный URL: %w", err)
+		return fmt.Errorf("invalid URL: %w", err)
 	}
 	if allowLocal && (parsed.Hostname() == "127.0.0.1" || parsed.Hostname() == "::1" || parsed.Hostname() == "localhost") {
 		return nil
 	}
 	if parsed.Scheme != "https" || parsed.Hostname() != "github.com" {
-		return fmt.Errorf("разрешены только HTTPS-загрузки с github.com")
+		return fmt.Errorf("only HTTPS downloads from github.com are allowed")
 	}
 	return nil
 }

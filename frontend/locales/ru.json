@@ -47,7 +47,7 @@
   "tray.sync_now": "Синхронизировать сейчас",
   "tray.stop": "Остановить",
   "tray.quit": "Выход",
-  "tray.update_available": "Доступно обновление",
+  "tray.update_available": "Доступно обновление {version}",
   "notify.done.title": "Синхронизация завершена",
   "notify.done.body": "Загружено файлов: {count}.",
   "error_kind.rejected": "Отклонено сервером",

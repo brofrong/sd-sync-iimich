@@ -47,7 +47,7 @@
   "tray.sync_now": "Sync Now",
   "tray.stop": "Stop",
   "tray.quit": "Quit",
-  "tray.update_available": "Update Available",
+  "tray.update_available": "Update {version} Available",
   "notify.done.title": "Sync complete",
   "notify.done.body": "Uploaded {count} files.",
   "error_kind.rejected": "Rejected by server",
