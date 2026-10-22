@@ -21,6 +21,7 @@ type Config struct {
 	Scan   ScanConfig   `yaml:"scan"`
 	Upload UploadConfig `yaml:"upload"`
 	State  StateConfig  `yaml:"state"`
+	UI     UIConfig     `yaml:"ui"`
 }
 
 type ImmichConfig struct {
@@ -49,6 +50,13 @@ type StateConfig struct {
 	DBPath string `yaml:"db_path"`
 }
 
+// UIConfig holds settings for the GUI.
+type UIConfig struct {
+	// Language is a BCP-47-ish tag from i18n.Supported (e.g. "ru", "pt-BR").
+	// Empty means "follow the system language".
+	Language string `yaml:"language"`
+}
+
 type Store struct {
 	mu   sync.RWMutex
 	path string
@@ -71,6 +79,9 @@ func Default() Config {
 		},
 		State: StateConfig{
 			DBPath: "~/.config/sd-sync-immich/state.db",
+		},
+		UI: UIConfig{
+			Language: "",
 		},
 	}
 }
