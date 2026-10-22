@@ -202,14 +202,11 @@ func (s *Service) State() StateView {
 			HasKey: strings.TrimSpace(cfg.Immich.APIKey) != "",
 		},
 		Card: s.selectedCard(cfg),
-		Settings: SettingsView{
+		Settings: s.autostartSettings(SettingsView{
 			Language:    cfg.UI.Language,
 			Concurrency: cfg.EffectiveConcurrency(),
 			AutoPaths:   cfg.Scan.AutoPaths,
-			// Autostart runs the bundle; outside one there is none to run.
-			Autostart:          s.bundlePath != "" && install.AutostartEnabled(),
-			AutostartAvailable: s.bundlePath != "",
-		},
+		}),
 		Version: s.version,
 		Update:  updateView(rel),
 	}
@@ -365,14 +362,42 @@ func (s *Service) SaveSettings(v SettingsView) error {
 	return nil
 }
 
+// autostartSettings fills in the autostart fields of v. Autostart runs the
+// bundle: outside one (a development build) there is none to run, and a
+// translocated bundle's path does not survive a restart.
+func (s *Service) autostartSettings(v SettingsView) SettingsView {
+	v.AutostartTranslocated = s.bundlePath != "" && install.Translocated(s.executable)
+	v.AutostartAvailable = s.bundlePath != "" && !v.AutostartTranslocated
+	v.Autostart = v.AutostartAvailable && autostartEnabled(s.executable)
+	return v
+}
+
+// errAutostartTranslocated is the message of the error SetAutostart
+// returns for a translocated app; the window shows
+// "settings.autostart_translocated" for it.
+const errAutostartTranslocated = "autostart_translocated"
+
+// codeError is an error whose message is a code the window translates.
+type codeError struct {
+	code string
+	err  error
+}
+
+func (e *codeError) Error() string { return e.code }
+func (e *codeError) Unwrap() error { return e.err }
+
 // SetAutostart turns starting the app at login on or off. It needs the app
-// to run from its bundle (SettingsView.AutostartAvailable).
+// to run from its bundle (SettingsView.AutostartAvailable); a translocated
+// app is refused with errAutostartTranslocated.
 func (s *Service) SetAutostart(enabled bool) error {
 	if s.bundlePath == "" {
 		return fmt.Errorf("autostart is only available when the app runs from %s", bundle.Name)
 	}
-	if err := install.SetAutostart(enabled, s.executable); err != nil {
+	if err := setAutostart(enabled, s.executable); err != nil {
 		logx.Error("failed to change autostart", "enabled", enabled, "err", err)
+		if errors.Is(err, install.ErrTranslocated) {
+			return &codeError{code: errAutostartTranslocated, err: err}
+		}
 		return fmt.Errorf("change autostart: %w", err)
 	}
 	logx.Info("autostart changed", "enabled", enabled)
@@ -540,9 +565,11 @@ func (s *Service) InstallUpdate() error {
 
 // Seams for tests.
 var (
-	resignBundle   = bundle.Resign
-	underLaunchd   = install.UnderLaunchd
-	openWhenExited = install.OpenWhenExited
+	autostartEnabled = install.AutostartEnabled
+	setAutostart     = install.SetAutostart
+	resignBundle     = bundle.Resign
+	underLaunchd     = install.UnderLaunchd
+	openWhenExited   = install.OpenWhenExited
 )
 
 // prepareRestart runs after an update replaced executable. Inside a bundle

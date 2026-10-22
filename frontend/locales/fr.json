@@ -127,6 +127,7 @@
   "settings.autostart": "Ouvrir à l'ouverture de session",
   "settings.autostart_hint": "Lancer SD Sync Immich dans la barre des menus à l'ouverture de session.",
   "settings.autostart_unavailable": "Disponible quand l'app est lancée depuis SD Sync Immich.app.",
+  "settings.autostart_translocated": "Déplacez SD Sync Immich dans le dossier Applications et ouvrez-le depuis celui-ci pour le lancer à l'ouverture de session.",
   "settings.saved": "Enregistré",
   "settings.save_failed": "Impossible d'enregistrer les réglages : {detail}",
   "settings.updates": "Mises à jour",

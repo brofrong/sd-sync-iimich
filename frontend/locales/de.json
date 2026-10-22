@@ -127,6 +127,7 @@
   "settings.autostart": "Beim Anmelden öffnen",
   "settings.autostart_hint": "SD Sync Immich beim Anmelden in der Menüleiste starten.",
   "settings.autostart_unavailable": "Verfügbar, wenn die App aus SD Sync Immich.app gestartet wird.",
+  "settings.autostart_translocated": "Bewege SD Sync Immich in den Ordner „Programme“ und öffne es von dort, um es beim Anmelden zu starten.",
   "settings.saved": "Gespeichert",
   "settings.save_failed": "Die Einstellungen konnten nicht gespeichert werden: {detail}",
   "settings.updates": "Updates",

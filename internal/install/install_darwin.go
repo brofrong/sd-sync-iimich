@@ -283,14 +283,102 @@ func samePath(a, b string) bool {
 	return resolve(a) == resolve(b)
 }
 
-// AutostartEnabled reports whether the LaunchAgent is installed.
-func AutostartEnabled() bool {
+// Takeover is what TakeOverAgent found and did.
+type Takeover struct {
+	// Previous is the program the LaunchAgent ran, "" without an agent.
+	Previous string
+	// Done means the agent now runs the executable and the old job was
+	// stopped.
+	Done bool
+	// Kept means the agent runs another program that was left alone: an
+	// existing copy of the bundle elsewhere, or something that is not
+	// sd-sync-immich.
+	Kept bool
+	// Translocated means the executable runs from App Translocation, a
+	// path that does not survive a restart, so the agent was left alone.
+	Translocated bool
+}
+
+// TakeOverAgent makes the LaunchAgent run executable, the bundle that is
+// starting, when the agent still runs an older install: v0.3.0's bare
+// binary (or any sd-sync-immich binary outside a bundle), or a bundle that
+// no longer exists. Without that, a v0.3.0 user who opens the downloaded
+// bundle would run two sync engines on one database.
+//
+// It rewrites the agent, removes v0.3.0's binary from ~/Applications and
+// stops the old job, but does not load the new agent: this process is
+// already running, and launchd starts the bundle at the next login. It
+// leaves the agent alone when there is none, when it already runs
+// executable, when it runs another bundle that still exists, when
+// executable is outside a bundle (see MigrateIfNeeded) or translocated.
+func TakeOverAgent(executable string) (Takeover, error) {
+	if _, ok := bundle.Containing(executable); !ok {
+		return Takeover{}, nil
+	}
+	p, err := userPaths()
+	if err != nil {
+		return Takeover{}, err
+	}
+	program, err := agentProgram(p.plist)
+	if errors.Is(err, os.ErrNotExist) {
+		return Takeover{}, nil
+	}
+	if err != nil {
+		return Takeover{}, err
+	}
+	res := Takeover{Previous: program}
+	switch {
+	case program == "" || samePath(program, executable):
+		return res, nil
+	case Translocated(executable):
+		res.Translocated = true
+		return res, nil
+	}
+	if _, inBundle := bundle.Containing(program); inBundle {
+		if _, err := os.Stat(program); err == nil {
+			res.Kept = true
+			return res, nil
+		}
+	} else if filepath.Base(program) != legacyName {
+		res.Kept = true
+		return res, nil
+	}
+
+	if err := writeAgent(p, executable); err != nil {
+		return res, err
+	}
+	if err := os.Remove(p.legacy); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return res, fmt.Errorf("remove %s: %w", p.legacy, err)
+	}
+	// Stops the old job (KeepAlive no longer applies once it is booted
+	// out). Under launchd this process is the job: bootout would kill it.
+	if !underLaunchd() {
+		// Fails when the agent is not loaded, which is fine.
+		_, _ = runCommand("launchctl", "bootout", domain(), p.plist)
+	}
+	res.Done = true
+	return res, nil
+}
+
+// ErrTranslocated means the app runs from App Translocation (a quarantined
+// download opened in place), whose path changes on every launch: it must
+// be moved to an Applications folder before it can start at login.
+var ErrTranslocated = errors.New("the app runs from App Translocation; move it to the Applications folder first")
+
+// Translocated reports whether path is inside App Translocation.
+func Translocated(path string) bool {
+	return strings.Contains(path, "/AppTranslocation/")
+}
+
+// AutostartEnabled reports whether the LaunchAgent is installed and runs
+// executable.
+func AutostartEnabled(executable string) bool {
 	p, err := userPaths()
 	if err != nil {
 		return false
 	}
-	_, err = os.Stat(p.plist)
-	return err == nil
+	program, err := agentProgram(p.plist)
+	return err == nil && samePath(program, executable)
 }
 
 // SetAutostart installs (enabled) or removes the LaunchAgent that starts
@@ -300,13 +388,17 @@ func AutostartEnabled() bool {
 // Loading it now would start a second copy of the running app (RunAtLoad),
 // or fail if this process already is the agent's job. Disabling removes
 // the plist and, unless this process is the agent's job (bootout would
-// kill it), unloads the agent.
+// kill it), unloads the agent. Enabling fails with ErrTranslocated when
+// bundleBinary runs from App Translocation.
 func SetAutostart(enabled bool, bundleBinary string) error {
 	p, err := userPaths()
 	if err != nil {
 		return err
 	}
 	if enabled {
+		if Translocated(bundleBinary) {
+			return ErrTranslocated
+		}
 		return writeAgent(p, bundleBinary)
 	}
 	if !underLaunchd() {

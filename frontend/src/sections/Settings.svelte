@@ -70,7 +70,11 @@
     try {
       await backend.SetAutostart(enabled);
     } catch (err) {
-      saveError = t("settings.save_failed", { detail: message(err) });
+      // Go answers a translocated app with this code instead of a message.
+      saveError =
+        message(err) === "autostart_translocated"
+          ? t("settings.autostart_translocated")
+          : t("settings.save_failed", { detail: message(err) });
       autostart = $appState.settings.autostart;
       return;
     }
@@ -183,7 +187,13 @@
       <div class="text">
         <label for="set-autostart">{t("settings.autostart")}</label>
         <p class="hint" id="set-autostart-hint">
-          {$appState.settings.autostartAvailable ? t("settings.autostart_hint") : t("settings.autostart_unavailable")}
+          {#if $appState.settings.autostartTranslocated}
+            {t("settings.autostart_translocated")}
+          {:else if $appState.settings.autostartAvailable}
+            {t("settings.autostart_hint")}
+          {:else}
+            {t("settings.autostart_unavailable")}
+          {/if}
         </p>
       </div>
       <Switch

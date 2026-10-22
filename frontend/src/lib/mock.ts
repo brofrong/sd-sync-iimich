@@ -226,14 +226,18 @@ export function createMockTransport(): Transport {
     listeners[name].forEach((cb) => cb(data));
   }
 
-  // ?bundle=none mimics a development build, where autostart is unavailable.
-  const inBundle = query.get("bundle") !== "none";
+  // ?bundle=none mimics a development build, where autostart is
+  // unavailable; ?bundle=translocated an app opened from a quarantined
+  // download in place.
+  const translocated = query.get("bundle") === "translocated";
+  const inBundle = query.get("bundle") !== "none" && !translocated;
   const settings = new SettingsView({
     language: query.get("lang") ?? "",
     concurrency: 4,
     autoPaths: true,
     autostart: inBundle,
     autostartAvailable: inBundle,
+    autostartTranslocated: translocated,
   });
   const state = new StateView({
     status: makeStatus(pinned ?? "syncing"),
@@ -431,11 +435,13 @@ export function createMockTransport(): Transport {
         ...v,
         autostart: state.settings.autostart,
         autostartAvailable: state.settings.autostartAvailable,
+        autostartTranslocated: state.settings.autostartTranslocated,
       });
       state.language = resolveLanguage(v.language, navigator.languages);
       pushState();
     },
     SetAutostart: async (enabled) => {
+      if (enabled && state.settings.autostartTranslocated) throw new Error("autostart_translocated");
       if (!state.settings.autostartAvailable) {
         throw new Error("autostart is only available when the app runs from SD Sync Immich.app");
       }

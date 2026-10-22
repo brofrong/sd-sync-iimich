@@ -127,6 +127,7 @@
   "settings.autostart": "Автозапуск",
   "settings.autostart_hint": "Запускать SD Sync Immich в строке меню при входе в систему.",
   "settings.autostart_unavailable": "Доступно, когда приложение запущено из SD Sync Immich.app.",
+  "settings.autostart_translocated": "Чтобы включить автозапуск, переместите SD Sync Immich в папку «Программы» и откройте его оттуда.",
   "settings.saved": "Сохранено",
   "settings.save_failed": "Не удалось сохранить настройки: {detail}",
   "settings.updates": "Обновления",

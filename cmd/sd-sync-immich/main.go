@@ -78,6 +78,7 @@ func runApp(dryRun bool) {
 		logx.Close()
 		os.Exit(0)
 	}
+	takeOverLaunchAgent()
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -131,6 +132,29 @@ func migrateFromBareBinary() bool {
 		logx.Info("migrated to the app bundle; the LaunchAgent restarts it", "from", exe)
 	}
 	return migrated
+}
+
+// takeOverLaunchAgent points the LaunchAgent at this bundle when it still
+// runs an older install (v0.3.0's bare binary, typically: its user opened
+// the downloaded bundle), and stops that install, so two sync engines never
+// share the database. It must run before the sync engine starts.
+func takeOverLaunchAgent() {
+	exe, err := os.Executable()
+	if err != nil {
+		logx.Warn("launch agent: cannot resolve executable", "err", err)
+		return
+	}
+	res, err := install.TakeOverAgent(exe)
+	switch {
+	case err != nil:
+		logx.Error("failed to take over the LaunchAgent", "from", res.Previous, "err", err)
+	case res.Done:
+		logx.Info("LaunchAgent now starts this app; stopped the previous install", "from", res.Previous, "to", exe)
+	case res.Kept:
+		logx.Warn("LaunchAgent starts another copy of the app; leaving it", "program", res.Previous, "this", exe)
+	case res.Translocated:
+		logx.Warn("app runs from App Translocation; LaunchAgent left alone until it is moved to Applications", "program", res.Previous, "this", exe)
+	}
 }
 
 // makeBundle wraps this executable into an app bundle at the given path.

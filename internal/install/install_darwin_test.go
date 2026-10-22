@@ -3,6 +3,7 @@
 package install
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -357,7 +358,7 @@ func TestSetAutostartTogglesAgent(t *testing.T) {
 	if err := SetAutostart(false, exe); err != nil {
 		t.Fatalf("SetAutostart(false): %v", err)
 	}
-	if exists(plistPath) || AutostartEnabled() {
+	if exists(plistPath) || AutostartEnabled(exe) {
 		t.Fatalf("LaunchAgent still exists after disabling")
 	}
 	if !exists(exe) {
@@ -372,8 +373,8 @@ func TestSetAutostartTogglesAgent(t *testing.T) {
 	if err := SetAutostart(true, exe); err != nil {
 		t.Fatalf("SetAutostart(true): %v", err)
 	}
-	if !AutostartEnabled() {
-		t.Fatalf("AutostartEnabled() = false after enabling")
+	if !AutostartEnabled(exe) {
+		t.Fatalf("AutostartEnabled = false after enabling")
 	}
 	if got := readAgent(t, home).ProgramArguments; !reflect.DeepEqual(got, []string{exe, "run"}) {
 		t.Fatalf("ProgramArguments = %q", got)
@@ -397,7 +398,7 @@ func TestSetAutostartUnderLaunchdLeavesJobLoaded(t *testing.T) {
 	if err := SetAutostart(false, exe); err != nil {
 		t.Fatalf("SetAutostart(false): %v", err)
 	}
-	if AutostartEnabled() {
+	if AutostartEnabled(exe) {
 		t.Fatalf("LaunchAgent still exists")
 	}
 	// bootout would kill this very process.
@@ -456,5 +457,277 @@ func TestUnderLaunchd(t *testing.T) {
 	t.Setenv("XPC_SERVICE_NAME", "application.com.sd-sync-immich.123.456")
 	if UnderLaunchd() {
 		t.Fatal("UnderLaunchd() = true for an app opened from Finder")
+	}
+}
+
+// bundleExeIn is the executable of a bundle named SD Sync Immich.app in dir.
+func bundleExeIn(dir string) string {
+	return filepath.Join(dir, "SD Sync Immich.app", "Contents", "MacOS", "sd-sync-immich")
+}
+
+func TestAutostartEnabledOnlyWhenAgentRunsThisExecutable(t *testing.T) {
+	home, _ := setup(t)
+	exe := bundleExeIn(filepath.Join(home, "Applications"))
+	writeFile(t, exe, "x")
+	if AutostartEnabled(exe) {
+		t.Fatal("AutostartEnabled = true without a LaunchAgent")
+	}
+
+	legacy := filepath.Join(home, "Applications", "sd-sync-immich")
+	writeFile(t, legacy, "v0.3.0")
+	writeLegacyAgent(t, home, legacy)
+	if AutostartEnabled(exe) {
+		t.Fatal("AutostartEnabled = true while the LaunchAgent runs v0.3.0's binary")
+	}
+
+	writeLegacyAgent(t, home, exe)
+	if !AutostartEnabled(exe) {
+		t.Fatal("AutostartEnabled = false while the LaunchAgent runs this executable")
+	}
+
+	link := filepath.Join(home, "link")
+	if err := os.Symlink(filepath.Join(home, "Applications"), link); err != nil {
+		t.Fatal(err)
+	}
+	writeLegacyAgent(t, home, bundleExeIn(link))
+	if !AutostartEnabled(exe) {
+		t.Fatal("AutostartEnabled = false when the LaunchAgent names this executable through a symlink")
+	}
+}
+
+func TestTranslocated(t *testing.T) {
+	for path, want := range map[string]bool{
+		"/private/var/folders/ab/T/AppTranslocation/0F3B-11/d/SD Sync Immich.app/Contents/MacOS/sd-sync-immich": true,
+		"/Users/x/Applications/SD Sync Immich.app/Contents/MacOS/sd-sync-immich":                                false,
+		"/Applications/AppTranslocationTool.app/Contents/MacOS/x":                                               false,
+	} {
+		if got := Translocated(path); got != want {
+			t.Errorf("Translocated(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
+
+func TestSetAutostartRefusesTranslocatedExecutable(t *testing.T) {
+	home, rec := setup(t)
+	exe := bundleExeIn(filepath.Join(home, "private", "var", "folders", "ab", "T", "AppTranslocation", "0F3B-11", "d"))
+	writeFile(t, exe, "x")
+
+	err := SetAutostart(true, exe)
+	if !errors.Is(err, ErrTranslocated) {
+		t.Fatalf("SetAutostart(true) error = %v, want ErrTranslocated", err)
+	}
+	if exists(filepath.Join(home, "Library", "LaunchAgents", "com.sd-sync-immich.plist")) {
+		t.Fatal("a LaunchAgent pointing into AppTranslocation was written")
+	}
+	if len(rec.commands)+len(rec.detached) != 0 {
+		t.Fatalf("ran %q %q", rec.commands, rec.detached)
+	}
+	// Turning it off is always allowed.
+	if err := SetAutostart(false, exe); err != nil {
+		t.Fatalf("SetAutostart(false): %v", err)
+	}
+}
+
+func TestTakeOverAgentFromLegacyBinary(t *testing.T) {
+	home, rec := setup(t)
+	legacy := filepath.Join(home, "Applications", "sd-sync-immich")
+	writeFile(t, legacy, "v0.3.0")
+	plistPath := writeLegacyAgent(t, home, legacy)
+	// Unzipped into ~/Downloads and opened from there.
+	exe := bundleExeIn(filepath.Join(home, "Downloads"))
+	writeFile(t, exe, "x")
+
+	got, err := TakeOverAgent(exe)
+	if err != nil {
+		t.Fatalf("TakeOverAgent: %v", err)
+	}
+	if want := (Takeover{Previous: legacy, Done: true}); got != want {
+		t.Fatalf("TakeOverAgent = %+v, want %+v", got, want)
+	}
+	if args := readAgent(t, home).ProgramArguments; !reflect.DeepEqual(args, []string{exe, "run"}) {
+		t.Fatalf("ProgramArguments = %q, want this executable", args)
+	}
+	if exists(legacy) {
+		t.Fatal("v0.3.0's binary was not removed")
+	}
+	// The old job stops; the new agent loads at the next login, as this
+	// instance is already running (bootstrap would start a second one).
+	domain := fmt.Sprintf("gui/%d", os.Getuid())
+	if want := []string{"launchctl bootout " + domain + " " + plistPath}; !reflect.DeepEqual(rec.commands, want) {
+		t.Fatalf("commands = %q, want %q", rec.commands, want)
+	}
+	if len(rec.detached) != 0 {
+		t.Fatalf("detached = %q, want none", rec.detached)
+	}
+	if !AutostartEnabled(exe) {
+		t.Fatal("AutostartEnabled = false after the takeover")
+	}
+}
+
+func TestTakeOverAgentFromOtherBareBinary(t *testing.T) {
+	home, rec := setup(t)
+	other := filepath.Join(home, "bin", "sd-sync-immich")
+	writeFile(t, other, "dev build")
+	writeLegacyAgent(t, home, other)
+	exe := bundleExeIn(filepath.Join(home, "Applications"))
+	writeFile(t, exe, "x")
+
+	got, err := TakeOverAgent(exe)
+	if err != nil {
+		t.Fatalf("TakeOverAgent: %v", err)
+	}
+	if !got.Done {
+		t.Fatalf("TakeOverAgent = %+v, want Done", got)
+	}
+	if args := readAgent(t, home).ProgramArguments; !reflect.DeepEqual(args, []string{exe, "run"}) {
+		t.Fatalf("ProgramArguments = %q, want this executable", args)
+	}
+	// Only v0.3.0's install location is cleaned up.
+	if !exists(other) {
+		t.Fatal("a binary outside ~/Applications was removed")
+	}
+	if len(rec.commands) != 1 || !strings.HasPrefix(rec.commands[0], "launchctl bootout ") {
+		t.Fatalf("commands = %q, want one bootout", rec.commands)
+	}
+}
+
+func TestTakeOverAgentReplacesMissingBundle(t *testing.T) {
+	home, rec := setup(t)
+	writeLegacyAgent(t, home, bundleExeIn(filepath.Join(home, "Old")))
+	exe := bundleExeIn(filepath.Join(home, "Applications"))
+	writeFile(t, exe, "x")
+
+	got, err := TakeOverAgent(exe)
+	if err != nil || !got.Done {
+		t.Fatalf("TakeOverAgent = %+v, %v; want Done", got, err)
+	}
+	if args := readAgent(t, home).ProgramArguments; !reflect.DeepEqual(args, []string{exe, "run"}) {
+		t.Fatalf("ProgramArguments = %q, want this executable", args)
+	}
+	if len(rec.commands) != 1 {
+		t.Fatalf("commands = %q, want one bootout", rec.commands)
+	}
+}
+
+func TestTakeOverAgentLeavesAlone(t *testing.T) {
+	tests := []struct {
+		name string
+		// prepare returns this executable and writes the agent (if any).
+		prepare func(t *testing.T, home string) (exe string)
+		want    func(home, exe string) Takeover
+	}{
+		{
+			name: "no agent",
+			prepare: func(t *testing.T, home string) string {
+				exe := bundleExeIn(filepath.Join(home, "Applications"))
+				writeFile(t, exe, "x")
+				return exe
+			},
+			want: func(string, string) Takeover { return Takeover{} },
+		},
+		{
+			name: "agent runs this executable",
+			prepare: func(t *testing.T, home string) string {
+				exe := bundleExeIn(filepath.Join(home, "Applications"))
+				writeFile(t, exe, "x")
+				writeLegacyAgent(t, home, exe)
+				return exe
+			},
+			want: func(_, exe string) Takeover { return Takeover{Previous: exe} },
+		},
+		{
+			name: "agent runs another bundle that still exists",
+			prepare: func(t *testing.T, home string) string {
+				writeFile(t, bundleExeIn(filepath.Join(home, "Applications")), "installed")
+				writeLegacyAgent(t, home, bundleExeIn(filepath.Join(home, "Applications")))
+				exe := bundleExeIn(filepath.Join(home, "Downloads"))
+				writeFile(t, exe, "x")
+				return exe
+			},
+			want: func(home, _ string) Takeover {
+				return Takeover{Previous: bundleExeIn(filepath.Join(home, "Applications")), Kept: true}
+			},
+		},
+		{
+			name: "agent runs an unrelated program",
+			prepare: func(t *testing.T, home string) string {
+				writeLegacyAgent(t, home, "/usr/bin/true")
+				exe := bundleExeIn(filepath.Join(home, "Applications"))
+				writeFile(t, exe, "x")
+				return exe
+			},
+			want: func(string, string) Takeover { return Takeover{Previous: "/usr/bin/true", Kept: true} },
+		},
+		{
+			name: "this executable is translocated",
+			prepare: func(t *testing.T, home string) string {
+				legacy := filepath.Join(home, "Applications", "sd-sync-immich")
+				writeFile(t, legacy, "v0.3.0")
+				writeLegacyAgent(t, home, legacy)
+				exe := bundleExeIn(filepath.Join(home, "AppTranslocation", "0F3B-11", "d"))
+				writeFile(t, exe, "x")
+				return exe
+			},
+			want: func(home, _ string) Takeover {
+				return Takeover{Previous: filepath.Join(home, "Applications", "sd-sync-immich"), Translocated: true}
+			},
+		},
+		{
+			name: "this executable is outside a bundle",
+			prepare: func(t *testing.T, home string) string {
+				legacy := filepath.Join(home, "Applications", "sd-sync-immich")
+				writeFile(t, legacy, "v0.3.0")
+				writeLegacyAgent(t, home, legacy)
+				exe := filepath.Join(home, "dev", "sd-sync-immich")
+				writeFile(t, exe, "x")
+				return exe
+			},
+			want: func(string, string) Takeover { return Takeover{} },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home, rec := setup(t)
+			exe := tt.prepare(t, home)
+			plistPath := filepath.Join(home, "Library", "LaunchAgents", "com.sd-sync-immich.plist")
+			before, _ := os.ReadFile(plistPath)
+			legacy := filepath.Join(home, "Applications", "sd-sync-immich")
+			hadLegacy := exists(legacy)
+
+			got, err := TakeOverAgent(exe)
+			if err != nil {
+				t.Fatalf("TakeOverAgent: %v", err)
+			}
+			if want := tt.want(home, exe); got != want {
+				t.Fatalf("TakeOverAgent = %+v, want %+v", got, want)
+			}
+			if after, _ := os.ReadFile(plistPath); string(after) != string(before) {
+				t.Fatalf("LaunchAgent changed:\n%s", after)
+			}
+			if exists(legacy) != hadLegacy {
+				t.Fatal("v0.3.0's binary was removed")
+			}
+			if len(rec.commands)+len(rec.detached) != 0 {
+				t.Fatalf("ran %q %q", rec.commands, rec.detached)
+			}
+		})
+	}
+}
+
+func TestTakeOverAgentUnderLaunchdDoesNotBootOutItself(t *testing.T) {
+	home, rec := setup(t)
+	t.Setenv("XPC_SERVICE_NAME", "com.sd-sync-immich")
+	legacy := filepath.Join(home, "Applications", "sd-sync-immich")
+	writeFile(t, legacy, "v0.3.0")
+	writeLegacyAgent(t, home, legacy)
+	exe := bundleExeIn(filepath.Join(home, "Applications"))
+	writeFile(t, exe, "x")
+
+	got, err := TakeOverAgent(exe)
+	if err != nil || !got.Done {
+		t.Fatalf("TakeOverAgent = %+v, %v; want Done", got, err)
+	}
+	if len(rec.commands)+len(rec.detached) != 0 {
+		t.Fatalf("ran %q %q: bootout would stop this very process", rec.commands, rec.detached)
 	}
 }

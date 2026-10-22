@@ -127,6 +127,7 @@
   "settings.autostart": "登录时打开",
   "settings.autostart_hint": "登录时在菜单栏中启动 SD Sync Immich。",
   "settings.autostart_unavailable": "从 SD Sync Immich.app 运行时可用。",
+  "settings.autostart_translocated": "请将 SD Sync Immich 移到“应用程序”文件夹并从那里打开，才能在登录时启动。",
   "settings.saved": "已保存",
   "settings.save_failed": "无法保存设置：{detail}",
   "settings.updates": "更新",

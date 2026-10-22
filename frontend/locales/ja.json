@@ -127,6 +127,7 @@
   "settings.autostart": "ログイン時に開く",
   "settings.autostart_hint": "ログイン時に SD Sync Immich をメニューバーで起動します。",
   "settings.autostart_unavailable": "SD Sync Immich.app から実行しているときに使用できます。",
+  "settings.autostart_translocated": "ログイン時に起動するには、SD Sync Immich を「アプリケーション」フォルダに移動し、そこから開いてください。",
   "settings.saved": "保存しました",
   "settings.save_failed": "設定を保存できませんでした: {detail}",
   "settings.updates": "アップデート",
