@@ -2,6 +2,7 @@ package uploader
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -112,10 +113,14 @@ func (s *Service) uploadAll(
 	session *syncSession,
 	checkpoint *syncCheckpoint,
 ) (Result, error) {
+	parent := ctx
+	ctx, abort := context.WithCancelCause(ctx)
+	defer abort(nil)
+
 	jobs := make(chan scanner.File, workers)
 	var wg sync.WaitGroup
 	var uploaded atomic.Int64
-	var errors atomic.Int64
+	var failed atomic.Int64
 	uploadStart := time.Now()
 
 	defer checkpoint.flush()
@@ -128,7 +133,7 @@ func (s *Service) uploadAll(
 				if ctx.Err() != nil {
 					return
 				}
-				s.syncOne(ctx, volumeUUID, client, f, prog, session, checkpoint, &uploaded, &errors)
+				s.syncOne(ctx, abort, volumeUUID, client, f, prog, session, checkpoint, &uploaded, &failed)
 			}
 		}()
 	}
@@ -145,16 +150,26 @@ feed:
 	wg.Wait()
 
 	upl := int(uploaded.Load())
-	errCount := int(errors.Load())
+	errCount := int(failed.Load())
 	skipped := alreadySkipped + len(candidates) - upl - errCount
 
-	if ctx.Err() != nil {
+	if cause := context.Cause(ctx); parent.Err() == nil && errors.Is(cause, ErrServerUnavailable) {
+		logx.Error("sync: stopped, server unavailable, progress saved",
+			"uploaded", upl,
+			"errors", errCount,
+			"err", cause,
+			"duration", time.Since(uploadStart).Round(time.Second),
+		)
+		return Result{Uploaded: upl, Skipped: skipped, Errors: errCount}, cause
+	}
+
+	if parent.Err() != nil {
 		logx.Info("sync: interrupted, progress saved",
 			"uploaded", upl,
 			"errors", errCount,
 			"duration", time.Since(uploadStart).Round(time.Second),
 		)
-		return Result{Uploaded: upl, Skipped: skipped, Errors: errCount}, ctx.Err()
+		return Result{Uploaded: upl, Skipped: skipped, Errors: errCount}, parent.Err()
 	}
 
 	logx.Info("sync: complete",
@@ -168,33 +183,39 @@ feed:
 
 func (s *Service) syncOne(
 	ctx context.Context,
+	abort context.CancelCauseFunc,
 	volumeUUID string,
 	client *immich.Client,
 	f scanner.File,
 	prog *syncProgress,
 	session *syncSession,
 	checkpoint *syncCheckpoint,
-	uploaded, errors *atomic.Int64,
+	uploaded, failed *atomic.Int64,
 ) {
 	defer prog.done()
 
 	sha1hex, err := s.fileSHA1(volumeUUID, f)
 	if err != nil {
 		logx.Warn("sync: sha1 failed", "file", f.RelativePath, "err", err)
-		errors.Add(1)
+		failed.Add(1)
 		return
 	}
 
-	resp, err := client.Upload(ctx, f.AbsolutePath, sha1hex, f.Mtime, f.SidecarPath)
+	resp, err := uploadWithRetry(ctx, func() (*immich.UploadResponse, error) {
+		return client.Upload(ctx, f.AbsolutePath, sha1hex, f.Mtime, f.SidecarPath)
+	})
 	if err != nil {
 		logx.Error("sync: upload failed", "file", f.RelativePath, "err", err)
-		errors.Add(1)
+		failed.Add(1)
+		if immich.IsRetryable(err) {
+			abort(fmt.Errorf("%w: %v", ErrServerUnavailable, err))
+		}
 		return
 	}
 
 	if err := session.recordSuccess(f); err != nil {
 		logx.Error("sync: failed to save progress", "file", f.RelativePath, "err", err)
-		errors.Add(1)
+		failed.Add(1)
 		return
 	}
 
@@ -210,7 +231,7 @@ func (s *Service) syncOne(
 			"done", cur,
 			"total", prog.total,
 			"uploaded", uploaded.Load(),
-			"errors", errors.Load(),
+			"errors", failed.Load(),
 		)
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 
@@ -42,7 +41,7 @@ type ScanConfig struct {
 }
 
 type UploadConfig struct {
-	Concurrency        int `yaml:"concurrency"`         // 0 = auto (NumCPU, max 16)
+	Concurrency        int `yaml:"concurrency"`         // 0 = auto (DefaultConcurrency)
 	CheckpointInterval int `yaml:"checkpoint_interval"` // flush WAL every N files (100–200, default 150)
 }
 
@@ -129,19 +128,17 @@ func (s *Store) applyDefaults() {
 	}
 }
 
-// EffectiveConcurrency returns upload parallelism (defaults to NumCPU, capped at 16).
+// DefaultConcurrency is the number of parallel uploads. Uploads are bound by the
+// network and the SD card, not the CPU: in measurements 4 HTTP/1.1 connections
+// beat 10, and more parallel reads slow the card down.
+const DefaultConcurrency = 4
+
+// EffectiveConcurrency returns upload parallelism (DefaultConcurrency unless set).
 func (c Config) EffectiveConcurrency() int {
 	if c.Upload.Concurrency > 0 {
 		return c.Upload.Concurrency
 	}
-	n := runtime.NumCPU()
-	if n < 4 {
-		return 4
-	}
-	if n > 16 {
-		return 16
-	}
-	return n
+	return DefaultConcurrency
 }
 
 // EffectiveCheckpointInterval returns how often to flush state to disk (default 150, clamped 100–200).

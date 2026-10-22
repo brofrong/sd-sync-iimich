@@ -117,3 +117,15 @@ func TestAutomaticExtensionsCoverCommonCameraMedia(t *testing.T) {
 		}
 	}
 }
+
+func TestEffectiveConcurrencyDefaultsToFourIndependentOfCPUCount(t *testing.T) {
+	if got := Default().EffectiveConcurrency(); got != 4 {
+		t.Fatalf("EffectiveConcurrency() = %d, want 4", got)
+	}
+
+	cfg := Default()
+	cfg.Upload.Concurrency = 7
+	if got := cfg.EffectiveConcurrency(); got != 7 {
+		t.Fatalf("EffectiveConcurrency() with explicit value = %d, want 7", got)
+	}
+}

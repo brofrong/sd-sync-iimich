@@ -45,6 +45,52 @@ func TestScanVolumeRespectsDisabledAutomaticDiscovery(t *testing.T) {
 	}
 }
 
+func TestScanVolumeDoesNotAttachSonyXMLAsSidecar(t *testing.T) {
+	mount := t.TempDir()
+	writeTestFile(t, mount, "PRIVATE/M4ROOT/CLIP/C0001.MP4")
+	writeTestFile(t, mount, "PRIVATE/M4ROOT/CLIP/C0001M01.XML")
+
+	files, err := ScanVolume(mount, config.Default())
+	if err != nil {
+		t.Fatalf("ScanVolume() error = %v", err)
+	}
+	// Immich rejects the whole upload ("Unsupported file type") for non-XMP sidecars.
+	if len(files) != 1 || files[0].SidecarPath != "" {
+		t.Fatalf("ScanVolume() returned %#v, want the MP4 without a sidecar", files)
+	}
+}
+
+func TestScanVolumeAttachesXMPSidecars(t *testing.T) {
+	mount := t.TempDir()
+	writeTestFile(t, mount, "DCIM/100SONY/DSC00001.ARW")
+	writeTestFile(t, mount, "DCIM/100SONY/DSC00001.xmp")
+	writeTestFile(t, mount, "DCIM/100SONY/DSC00002.JPG")
+	writeTestFile(t, mount, "DCIM/100SONY/DSC00002.JPG.xmp")
+	writeTestFile(t, mount, "DCIM/100SONY/DSC00003.JPG")
+
+	files, err := ScanVolume(mount, config.Default())
+	if err != nil {
+		t.Fatalf("ScanVolume() error = %v", err)
+	}
+	want := map[string]string{
+		"DCIM/100SONY/DSC00001.ARW": "DSC00001.xmp",
+		"DCIM/100SONY/DSC00002.JPG": "DSC00002.JPG.xmp",
+		"DCIM/100SONY/DSC00003.JPG": "",
+	}
+	if len(files) != len(want) {
+		t.Fatalf("ScanVolume() returned %d files, want %d: %#v", len(files), len(want), files)
+	}
+	for _, f := range files {
+		got := ""
+		if f.SidecarPath != "" {
+			got = filepath.Base(f.SidecarPath)
+		}
+		if got != want[f.RelativePath] {
+			t.Errorf("%s sidecar = %q, want %q", f.RelativePath, got, want[f.RelativePath])
+		}
+	}
+}
+
 func writeTestFile(t *testing.T, root, relativePath string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(relativePath))

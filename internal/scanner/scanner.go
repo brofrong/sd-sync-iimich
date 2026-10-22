@@ -25,6 +25,8 @@ type File struct {
 func ScanVolume(mountPoint string, cfg config.Config) ([]File, error) {
 	exts := cfg.ExtensionSet()
 	var files []File
+	// Lower-cased absolute paths of XMP files, the only sidecar format Immich accepts.
+	xmps := make(map[string]string)
 
 	for _, relDir := range cfg.ScanPaths() {
 		root := filepath.Join(mountPoint, relDir)
@@ -43,6 +45,10 @@ func ScanVolume(mountPoint string, cfg config.Config) ([]File, error) {
 				return nil
 			}
 			ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(name), "."))
+			if ext == "xmp" {
+				xmps[strings.ToLower(path)] = path
+				return nil
+			}
 			if _, ok := exts[ext]; !ok {
 				return nil
 			}
@@ -56,21 +62,20 @@ func ScanVolume(mountPoint string, cfg config.Config) ([]File, error) {
 			}
 			rel = filepath.ToSlash(rel)
 
-			f := File{
+			files = append(files, File{
 				AbsolutePath: path,
 				RelativePath: rel,
 				Size:         info.Size(),
 				Mtime:        info.ModTime(),
-			}
-			if ext == "mp4" {
-				f.SidecarPath = findSidecar(path)
-			}
-			files = append(files, f)
+			})
 			return nil
 		})
 		if err != nil {
 			return nil, fmt.Errorf("scan %s: %w", root, err)
 		}
+	}
+	for i := range files {
+		files[i].SidecarPath = findSidecar(files[i].AbsolutePath, xmps)
 	}
 	return files, nil
 }
@@ -88,17 +93,14 @@ func shouldExclude(name string, patterns []string) bool {
 	return false
 }
 
-func findSidecar(videoPath string) string {
-	dir := filepath.Dir(videoPath)
-	base := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath))
-	candidates := []string{
-		filepath.Join(dir, base+"M01.XML"),
-		filepath.Join(dir, base+".XML"),
-		filepath.Join(dir, base+".xml"),
-	}
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			return c
+// findSidecar returns the XMP sidecar for a media file ("IMG.JPG.xmp" or "IMG.xmp").
+// Camera XML metadata such as Sony "C0001M01.XML" is not XMP: Immich rejects the
+// whole upload with "Unsupported file type" when it is sent as a sidecar.
+func findSidecar(mediaPath string, xmps map[string]string) string {
+	withoutExt := strings.TrimSuffix(mediaPath, filepath.Ext(mediaPath))
+	for _, c := range []string{mediaPath + ".xmp", withoutExt + ".xmp"} {
+		if p, ok := xmps[strings.ToLower(c)]; ok {
+			return p
 		}
 	}
 	return ""

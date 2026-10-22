@@ -22,10 +22,10 @@ func PromptAPIKey() (string, error) {
 	return runDialog(script)
 }
 
-// PromptWorkers asks for worker count. 0 = auto (use CPU cores).
+// PromptWorkers asks for worker count. 0 = auto (config.DefaultConcurrency).
 func PromptWorkers(kind string, current int) (int, error) {
 	hint := fmt.Sprintf(
-		"Количество воркеров (%s).\n0 = автоматически (по числу ядер CPU).\nДопустимо: 0–32.",
+		"Количество воркеров (%s).\n0 = автоматически (4).\nДопустимо: 0–32.",
 		kind,
 	)
 	script := fmt.Sprintf(
