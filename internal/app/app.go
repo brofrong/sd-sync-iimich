@@ -2,38 +2,21 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/immich"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
-	"github.com/dmitiigorshkov/sd-sync-immich/internal/notify"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/state"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/uploader"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/volume"
 )
-
-type StatusKind int
-
-const (
-	StatusNotConfigured StatusKind = iota
-	StatusWaiting
-	StatusScanning
-	StatusSyncing
-	StatusDone
-	StatusError
-)
-
-type Status struct {
-	Kind     StatusKind
-	Message  string
-	Current  int
-	Total    int
-	Uploaded int
-	ETA      time.Duration
-}
 
 type App struct {
 	Config   *config.Store
@@ -44,10 +27,21 @@ type App struct {
 	mu            sync.RWMutex
 	status        Status
 	mountedTarget *volume.Info
-	syncCancel    context.CancelFunc
-	syncMu        sync.Mutex
-	onStatus      func(Status)
-	dryRun        bool
+	// syncCancel is non-nil while a sync goroutine is running, until it has
+	// published its result; cancelling does not clear it.
+	syncCancel context.CancelFunc
+	syncMu     sync.Mutex
+	onStatus   func(Status)
+	dryRun     bool
+
+	// resumer restarts a sync once Immich is reachable again; see resume().
+	resumer    *resumer
+	resumeOnce sync.Once
+
+	// cardRemoved is set just before cancelling an in-flight sync because its
+	// volume was unmounted, so the sync goroutine can tell that apart from a
+	// user-requested stop once the sync unwinds.
+	cardRemoved atomic.Bool
 }
 
 func New(cfg *config.Store, st *state.DB, dryRun bool) (*App, error) {
@@ -65,13 +59,69 @@ func New(cfg *config.Store, st *state.DB, dryRun bool) (*App, error) {
 		Watcher: w,
 		dryRun:  dryRun,
 	}
-	a.setStatus(Status{Kind: StatusNotConfigured, Message: "Ожидание — настройте SD-карту"})
+	a.setStatus(a.startupStatus())
 	logx.Info("app started", "configured", cfg.IsConfigured(), "dry_run", dryRun)
 	return a, nil
 }
 
-func (a *App) SetStatusCallback(fn func(Status)) {
+// startupStatus computes the status to show right when the app starts,
+// before Run() begins watching volumes or kicks off a sync. It is
+// IdleStatus, unless the selected card is already mounted — in that case
+// Run() is about to start a sync, so the last finished run's outcome is
+// shown instead (see statusFromRun) rather than a blank status.
+func (a *App) startupStatus() Status {
+	cfg := a.Config.Get()
+	mounted, err := volume.ListRemovable()
+	if err != nil {
+		logx.Warn("failed to list removable volumes", "err", err)
+		mounted = nil
+	}
+	if st, ok := IdleStatus(cfg, mounted); ok {
+		return st
+	}
+	run, err := a.State.LastFinishedRun()
+	if err != nil {
+		logx.Warn("failed to load last finished run", "err", err)
+		return newStatus(CodeScanning, nil)
+	}
+	return statusFromRun(run)
+}
+
+// OnStatus registers fn to receive every status change. Call it before Run.
+func (a *App) OnStatus(fn func(Status)) {
 	a.onStatus = fn
+}
+
+// resume returns the App's resumer, creating it on first use (tests may
+// set a.resumer beforehand).
+func (a *App) resume() *resumer {
+	a.resumeOnce.Do(func() {
+		if a.resumer == nil {
+			a.resumer = newResumer(a.pingServer, a.canResume, a.startSync)
+		}
+	})
+	return a.resumer
+}
+
+// pingServer checks whether the configured Immich server is reachable.
+func (a *App) pingServer(ctx context.Context) error {
+	cfg := a.Config.Get()
+	return immich.NewClient(cfg.Immich.URL, cfg.Immich.APIKey).Ping(ctx)
+}
+
+// canResume reports whether an automatic resume may start a sync: none is
+// running and the selected card is still mounted.
+func (a *App) canResume() bool {
+	return !a.syncRunning() && a.MountedTarget() != nil
+}
+
+// maybeResume starts waiting for the server if a sync that finished with
+// code should be resumed automatically.
+func (a *App) maybeResume(code Code) {
+	if shouldResume(code, a.MountedTarget() != nil) {
+		logx.Info("waiting for immich to come back to resume sync", "code", code)
+		a.resume().Start()
+	}
 }
 
 func (a *App) Run(ctx context.Context) {
@@ -85,6 +135,7 @@ func (a *App) Run(ctx context.Context) {
 
 	<-ctx.Done()
 	logx.Info("app shutting down")
+	a.resume().Stop()
 	if a.Watcher != nil {
 		a.Watcher.Close()
 	}
@@ -129,23 +180,34 @@ func (a *App) handleVolumeEvent(ev volume.Event) {
 	case volume.EventUnmounted:
 		logx.Info("volume unmounted", "name", ev.Info.Name, "path", ev.Info.MountPoint)
 		a.mu.Lock()
-		if a.mountedTarget != nil && a.mountedTarget.MountPoint == ev.Info.MountPoint {
+		removed := a.mountedTarget != nil && a.mountedTarget.MountPoint == ev.Info.MountPoint
+		if removed {
 			a.mountedTarget = nil
-			a.CancelSync()
 		}
 		a.mu.Unlock()
+		if removed {
+			// Neither a.mu nor syncMu may be held here: Stop waits for an
+			// in-progress resume, which takes both.
+			a.resume().Stop()
+			a.cardRemoved.Store(true)
+			a.cancelSync()
+		}
 		a.updateIdleStatus()
 	}
 }
 
+// refreshMountedTarget looks up whether the selected card is mounted. It
+// clears mountedTarget when it isn't (e.g. another card was just selected).
 func (a *App) refreshMountedTarget() {
 	cfg := a.Config.Get()
-	if cfg.Watch.VolumeUUID == "" {
-		return
-	}
-	info, err := volume.FindByUUID(cfg.Watch.VolumeUUID)
-	if err != nil || info == nil {
-		return
+	var info *volume.Info
+	if cfg.Watch.VolumeUUID != "" {
+		var err error
+		info, err = volume.FindByUUID(cfg.Watch.VolumeUUID)
+		if err != nil {
+			logx.Warn("failed to look up selected card", "err", err)
+			return
+		}
 	}
 	a.mu.Lock()
 	a.mountedTarget = info
@@ -168,7 +230,49 @@ func (a *App) MountedTarget() *volume.Info {
 	return &v
 }
 
+// SelectCard makes v the card to sync and, if it is mounted and the server
+// is configured, starts syncing it right away (as when it is plugged in).
+func (a *App) SelectCard(v volume.Info) error {
+	if err := a.Config.Update(func(c *config.Config) {
+		c.Watch.VolumeUUID = v.UUID
+		c.Watch.VolumeName = v.Name
+	}); err != nil {
+		return fmt.Errorf("save selected card: %w", err)
+	}
+	logx.Info("card selected", "name", v.Name, "uuid", v.UUID)
+	a.ConfigChanged()
+	if a.Config.IsConfigured() && a.MountedTarget() != nil {
+		a.SyncNow()
+	}
+	return nil
+}
+
+// EjectCard ejects the selected card. It fails if the card isn't mounted;
+// on success the unmount event updates the status.
+func (a *App) EjectCard() error {
+	vol := a.MountedTarget()
+	if vol == nil {
+		return errors.New("selected card is not mounted")
+	}
+	logx.Info("ejecting card", "name", vol.Name, "path", vol.MountPoint)
+	return volume.Eject(vol.MountPoint)
+}
+
+// SyncNow stops waiting for an automatic resume and starts a sync of the
+// selected card. It does nothing if a sync is already running.
 func (a *App) SyncNow() {
+	a.resume().Stop()
+	a.startSync()
+}
+
+// Retry is SyncNow, offered after a failed sync.
+func (a *App) Retry() {
+	a.SyncNow()
+}
+
+// startSync starts a sync unless one is already running. The resumer calls
+// it directly so that it doesn't stop itself.
+func (a *App) startSync() {
 	a.syncMu.Lock()
 	defer a.syncMu.Unlock()
 
@@ -181,84 +285,153 @@ func (a *App) SyncNow() {
 		logx.Debug("sync skipped: volume not mounted")
 		return
 	}
+	if a.syncCancel != nil {
+		logx.Debug("sync skipped: already running")
+		return
+	}
 
-	a.cancelSyncLocked()
 	ctx, cancel := context.WithCancel(context.Background())
 	a.syncCancel = cancel
+	a.cardRemoved.Store(false)
 
 	logx.Info("sync requested", "volume", vol.Name, "path", vol.MountPoint)
 
 	go func() {
 		syncStart := time.Now()
-		a.setStatus(Status{Kind: StatusScanning, Message: "Сканирование..."})
+		a.setStatus(newStatus(CodeScanning, nil))
+
+		runID, startErr := a.State.StartRun(vol.UUID, vol.Name, syncStart)
+		if startErr != nil {
+			logx.Error("state: failed to record sync run start", "err", startErr)
+		}
 
 		result, err := a.Uploader.Sync(ctx, *vol, a.dryRun, func(p uploader.Progress) {
 			switch p.Phase {
 			case "scanning":
-				a.setStatus(Status{Kind: StatusScanning, Message: "Сканирование..."})
+				a.setStatus(newStatus(CodeScanning, nil))
 			case "syncing":
-				a.setStatus(Status{
-					Kind:    StatusSyncing,
-					Message: "Синхронизация",
-					Current: p.Current,
-					Total:   p.Total,
-					ETA:     p.ETA,
-				})
+				st := newStatus(CodeSyncing, nil)
+				st.Progress = &Progress{
+					Current:     p.Current,
+					Total:       p.Total,
+					BytesDone:   p.BytesDone,
+					BytesTotal:  p.BytesTotal,
+					BytesPerSec: p.BytesPerSec,
+					ETASeconds:  int(p.ETA.Round(time.Second).Seconds()),
+					File:        p.File,
+				}
+				a.setStatus(st)
 			}
 		})
 
-		if err != nil {
-			if ctx.Err() != nil {
-				logx.Info("sync cancelled", "duration", time.Since(syncStart).Round(time.Second))
-				a.updateIdleStatus()
-				return
-			}
+		cardRemoved := a.cardRemoved.Load()
+		st := ResultStatus(result, err, cardRemoved, serverHostFromConfig(a.Config.Get()))
+
+		switch {
+		case err == nil:
+			logx.Info("sync finished",
+				"uploaded", result.Uploaded,
+				"skipped", result.Skipped,
+				"errors", result.Errors,
+				"duration", time.Since(syncStart).Round(time.Second).String(),
+			)
+		case errors.Is(err, context.Canceled):
+			logx.Info("sync cancelled",
+				"card_removed", cardRemoved,
+				"uploaded", result.Uploaded,
+				"duration", time.Since(syncStart).Round(time.Second),
+			)
+		default:
 			logx.Error("sync failed", "err", err, "duration", time.Since(syncStart).Round(time.Second))
-			a.setStatus(Status{Kind: StatusError, Message: err.Error()})
-			return
 		}
 
-		msg := fmt.Sprintf("Готово — %d загружено", result.Uploaded)
-		if a.dryRun {
-			msg = fmt.Sprintf("Dry-run — %d новых файлов", result.Skipped)
+		if startErr == nil {
+			finishedAt := time.Now()
+			if finishErr := a.State.FinishRun(state.SyncRun{
+				ID:           runID,
+				FinishedAt:   &finishedAt,
+				ResultCode:   string(st.Code),
+				ResultParams: st.Params,
+				Uploaded:     result.Uploaded,
+				Skipped:      result.Skipped,
+				Errors:       result.Errors,
+				Bytes:        result.Bytes,
+				ErrorSummary: result.ErrorSummary,
+			}); finishErr != nil {
+				logx.Error("state: failed to record sync run result", "err", finishErr)
+			}
 		}
-		logx.Info("sync finished",
-			"uploaded", result.Uploaded,
-			"skipped", result.Skipped,
-			"errors", result.Errors,
-			"duration", time.Since(syncStart).Round(time.Second).String(),
-		)
-		a.setStatus(Status{Kind: StatusDone, Message: msg, Uploaded: result.Uploaded})
-		if !a.dryRun && result.Uploaded > 0 {
-			notify.SyncComplete(result.Uploaded)
+
+		a.setStatus(st)
+		a.syncMu.Lock()
+		a.syncCancel = nil
+		a.syncMu.Unlock()
+		cancel()
+		a.maybeResume(st.Code)
+
+		if revertsAutomatically(st.Code) {
+			time.AfterFunc(5*time.Second, func() { a.updateIdleStatus() })
 		}
-		time.AfterFunc(5*time.Second, func() { a.updateIdleStatus() })
 	}()
 }
 
-func (a *App) CancelSync() {
+// revertsAutomatically reports whether a terminal sync status should fall
+// back to the idle status on its own after a short delay. Codes that need
+// user attention (errors, auth problems) stay on screen instead.
+func revertsAutomatically(code Code) bool {
+	switch code {
+	case CodeNothingNew, CodeDone, CodeCancelled, CodeCardRemoved:
+		return true
+	default:
+		return false
+	}
+}
+
+// serverHostFromConfig returns the host part of the configured Immich URL,
+// falling back to the raw URL when it cannot be parsed.
+func serverHostFromConfig(cfg config.Config) string {
+	u, err := url.Parse(cfg.Immich.URL)
+	if err != nil || u.Host == "" {
+		return cfg.Immich.URL
+	}
+	return u.Host
+}
+
+// StopSync stops waiting for an automatic resume and cancels a running
+// sync, which then finishes with CodeCancelled.
+func (a *App) StopSync() {
+	a.resume().Stop()
+	a.cancelSync()
+}
+
+func (a *App) cancelSync() {
 	a.syncMu.Lock()
 	defer a.syncMu.Unlock()
-	a.cancelSyncLocked()
-}
-
-func (a *App) cancelSyncLocked() {
 	if a.syncCancel != nil {
 		a.syncCancel()
-		a.syncCancel = nil
 	}
 }
 
+// syncRunning reports whether a sync goroutine is running.
+func (a *App) syncRunning() bool {
+	a.syncMu.Lock()
+	defer a.syncMu.Unlock()
+	return a.syncCancel != nil
+}
+
+// updateIdleStatus recomputes why sync isn't running right now and publishes
+// it, unless the selected card is mounted: in that case a sync is about to
+// run (or just did), so the current status is left alone.
 func (a *App) updateIdleStatus() {
-	if !a.Config.IsConfigured() {
-		a.setStatus(Status{Kind: StatusNotConfigured, Message: "Ожидание — настройте SD-карту"})
-		return
+	cfg := a.Config.Get()
+	mounted, err := volume.ListRemovable()
+	if err != nil {
+		logx.Warn("failed to list removable volumes", "err", err)
+		mounted = nil
 	}
-	if a.MountedTarget() != nil {
-		a.setStatus(Status{Kind: StatusWaiting, Message: "Ожидание"})
-		return
+	if st, ok := IdleStatus(cfg, mounted); ok {
+		a.setStatus(st)
 	}
-	a.setStatus(Status{Kind: StatusWaiting, Message: "Ожидание"})
 }
 
 func (a *App) setStatus(s Status) {
@@ -274,41 +447,4 @@ func (a *App) Status() Status {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.status
-}
-
-func (a *App) StatusText() string {
-	s := a.Status()
-	switch s.Kind {
-	case StatusSyncing:
-		return formatProgressText("Синхронизация", s)
-	case StatusScanning:
-		if s.Total > 0 && s.Message == "Подготовка" {
-			return formatProgressText("Подготовка", s)
-		}
-		if s.Total > 0 {
-			return formatProgressText("Сканирование", s)
-		}
-		return "Сканирование..."
-	case StatusDone:
-		return s.Message
-	case StatusError:
-		return "Ошибка: " + s.Message
-	default:
-		return s.Message
-	}
-}
-
-func formatProgressText(label string, s Status) string {
-	if s.Total <= 0 {
-		return label + "..."
-	}
-	remaining := s.Total - s.Current
-	if remaining < 0 {
-		remaining = 0
-	}
-	text := fmt.Sprintf("%s %d/%d (осталось %d)", label, s.Current, s.Total, remaining)
-	if eta := FormatETA(s.ETA); eta != "" {
-		text += " " + eta
-	}
-	return text
 }

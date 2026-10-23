@@ -32,3 +32,17 @@ go.work.sum
 
 # OS
 .DS_Store
+
+# Brainstorm companion
+.superpowers/
+
+# Wails frontend: dist is built by `npm run build` and embedded by
+# frontend/embed.go; keep the directory in git via .gitkeep so the embed
+# has something to embed before the first build.
+frontend/dist/*
+!frontend/dist/.gitkeep
+frontend/node_modules/
+frontend/bindings/
+
+# Release builds (scripts/build-app.sh <version> dist)
+/dist/

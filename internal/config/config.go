@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +20,7 @@ type Config struct {
 	Scan   ScanConfig   `yaml:"scan"`
 	Upload UploadConfig `yaml:"upload"`
 	State  StateConfig  `yaml:"state"`
+	UI     UIConfig     `yaml:"ui"`
 }
 
 type ImmichConfig struct {
@@ -49,6 +49,13 @@ type StateConfig struct {
 	DBPath string `yaml:"db_path"`
 }
 
+// UIConfig holds settings for the GUI.
+type UIConfig struct {
+	// Language is a BCP-47-ish tag from i18n.Supported (e.g. "ru", "pt-BR").
+	// Empty means "follow the system language".
+	Language string `yaml:"language"`
+}
+
 type Store struct {
 	mu   sync.RWMutex
 	path string
@@ -71,6 +78,9 @@ func Default() Config {
 		},
 		State: StateConfig{
 			DBPath: "~/.config/sd-sync-immich/state.db",
+		},
+		UI: UIConfig{
+			Language: "",
 		},
 	}
 }
@@ -156,14 +166,6 @@ func (c Config) EffectiveCheckpointInterval() int {
 	return n
 }
 
-// WorkerLabel formats a worker setting for display in the menu.
-func (c Config) WorkerLabel(raw int, effectiveFn func(Config) int) string {
-	if raw == 0 {
-		return fmt.Sprintf("авто (%d)", effectiveFn(c))
-	}
-	return fmt.Sprintf("%d", raw)
-}
-
 func (s *Store) Get() Config {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -205,6 +207,12 @@ func (s *Store) IsConfigured() bool {
 	return strings.TrimSpace(cfg.Immich.URL) != "" &&
 		strings.TrimSpace(cfg.Immich.APIKey) != "" &&
 		strings.TrimSpace(cfg.Watch.VolumeUUID) != ""
+}
+
+// ServerConfigured reports whether the Immich URL and API key are both set,
+// regardless of whether a card has been selected yet.
+func (c Config) ServerConfigured() bool {
+	return strings.TrimSpace(c.Immich.URL) != "" && strings.TrimSpace(c.Immich.APIKey) != ""
 }
 
 func (s *Store) ResolvedDBPath() (string, error) {

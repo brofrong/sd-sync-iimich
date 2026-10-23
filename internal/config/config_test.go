@@ -118,6 +118,21 @@ func TestAutomaticExtensionsCoverCommonCameraMedia(t *testing.T) {
 	}
 }
 
+func TestUILanguageRoundTrips(t *testing.T) {
+	cfg := Default()
+	data := []byte("ui:\n  language: ja\n")
+
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.UI.Language != "ja" {
+		t.Fatalf("cfg.UI.Language = %q, want %q", cfg.UI.Language, "ja")
+	}
+	if got := Default().UI.Language; got != "" {
+		t.Fatalf("Default().UI.Language = %q, want empty", got)
+	}
+}
+
 func TestEffectiveConcurrencyDefaultsToFourIndependentOfCPUCount(t *testing.T) {
 	if got := Default().EffectiveConcurrency(); got != 4 {
 		t.Fatalf("EffectiveConcurrency() = %d, want 4", got)

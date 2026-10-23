@@ -117,6 +117,94 @@ func TestIsRetryable(t *testing.T) {
 	}
 }
 
+func TestDetail(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"dns error", &net.DNSError{Err: "no such host", Name: "immich.example"}, "no such host"},
+		{"op error", &net.OpError{Op: "dial", Err: errors.New("connection refused")}, "connection refused"},
+		{"status error", &StatusError{Code: 502, Message: "bad gateway"}, "bad gateway"},
+		{"generic error", errors.New("boom"), "boom"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Detail(tt.err); got != tt.want {
+				t.Errorf("Detail(%v) = %q, want %q", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckReturnsServerVersion(t *testing.T) {
+	var gotAPIKey string
+	c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/server/version":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"major":2,"minor":3,"patch":1}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/assets/bulk-upload-check":
+			gotAPIKey = r.Header.Get("x-api-key")
+			b, _ := io.ReadAll(r.Body)
+			if string(b) != `{"assets":[]}` {
+				t.Errorf("bulk-upload-check body = %s, want {\"assets\":[]}", b)
+			}
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, `{"results":[]}`)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	info, err := c.Check(context.Background())
+	if err != nil {
+		t.Fatalf("Check() error = %v", err)
+	}
+	if info.Version != "v2.3.1" {
+		t.Fatalf("Version = %q, want v2.3.1", info.Version)
+	}
+	if gotAPIKey != "key" {
+		t.Fatalf("bulk-upload-check x-api-key = %q, want %q", gotAPIKey, "key")
+	}
+}
+
+func TestCheckRejectsBadKey(t *testing.T) {
+	c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/server/version":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"major":2,"minor":3,"patch":1}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/assets/bulk-upload-check":
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprint(w, `{"message":"Invalid API key"}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	_, err := c.Check(context.Background())
+	var se *StatusError
+	if !errors.As(err, &se) || se.Code != http.StatusUnauthorized {
+		t.Fatalf("Check() error = %v, want *StatusError with 401", err)
+	}
+}
+
+func TestPingUsesContext(t *testing.T) {
+	c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := c.Ping(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Ping() error = %v, want context.Canceled", err)
+	}
+}
+
 func TestUploadReturnsDuplicateWhenServerAnswersBeforeReadingBody(t *testing.T) {
 	c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
 		// Immich short-circuits known checksums without consuming the upload.
@@ -142,5 +230,39 @@ func TestUploadReturnsDuplicateWhenServerAnswersBeforeReadingBody(t *testing.T) 
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("Upload() hung after an early duplicate response")
+	}
+}
+
+// endless writes spaces until the client goes away.
+func endless(w http.ResponseWriter) {
+	chunk := make([]byte, 32<<10)
+	for i := range chunk {
+		chunk[i] = ' '
+	}
+	for {
+		if _, err := w.Write(chunk); err != nil {
+			return
+		}
+	}
+}
+
+func TestCheckBoundsResponseBodies(t *testing.T) {
+	for _, path := range []string{"/api/server/version", "/api/assets/bulk-upload-check"} {
+		t.Run(path, func(t *testing.T) {
+			c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == path {
+					w.WriteHeader(http.StatusBadGateway)
+					endless(w)
+					return
+				}
+				fmt.Fprint(w, `{"major":2,"minor":3,"patch":1}`)
+			})
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, err := c.Check(ctx)
+			if err == nil || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+				t.Fatalf("Check() error = %v; want a prompt error after reading a bounded body", err)
+			}
+		})
 	}
 }

@@ -1,0 +1,293 @@
+/* Design tokens and global rules for the window: a dark, opaque window with
+   frosted-glass cards on top (see docs/superpowers/specs/assets/
+   2026-10-22-gui-mockup-glass-cards.html, variant B). Glow is reserved for
+   active elements: the selected section, the primary button and the
+   progress bar. */
+
+:root {
+  color-scheme: dark;
+
+  /* Window surfaces */
+  --bg: #0f0e14;
+  --bg-sidebar: #121118;
+  --bg-main: #15141c;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.12);
+
+  /* Text */
+  --text: #f2f2f7;
+  --text-2: rgba(255, 255, 255, 0.7);
+  --text-3: rgba(255, 255, 255, 0.52);
+
+  /* Accent: violet to blue, with a cyan end for the progress bar */
+  --accent-1: #7b5cff;
+  --accent-2: #0a84ff;
+  --accent-3: #64d2ff;
+  --accent-soft: #b39dff;
+  --accent: linear-gradient(90deg, var(--accent-1), var(--accent-2));
+
+  /* State colours (macOS system palette, dark variants) */
+  --red: #ff453a;
+  --green: #30d158;
+  --amber: #ffb340;
+
+  /* Glass: tinted, blurred, with noise (see .noise below) */
+  --glass: linear-gradient(150deg, rgba(120, 90, 255, 0.26), rgba(30, 25, 60, 0.5));
+  --glass-border: rgba(180, 160, 255, 0.24);
+  --glass-blur: blur(40px) saturate(170%);
+  --glass-shadow: 0 12px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+
+  /* Glow on active elements */
+  --glow: 0 0 14px rgba(123, 92, 255, 0.55);
+  --glow-strong: 0 0 22px rgba(123, 92, 255, 0.75);
+  --glow-pill: 0 0 16px rgba(140, 110, 255, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  --glow-progress: 0 0 10px rgba(100, 210, 255, 0.6);
+
+  /* Motion */
+  --spring: cubic-bezier(0.2, 0.9, 0.25, 1.2);
+  --ease-out: cubic-bezier(0.2, 0.9, 0.25, 1);
+
+  /* Shape */
+  --radius-s: 7px;
+  --radius-m: 9px;
+  --radius-l: 14px;
+
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Fractal noise texture for the glass grain */
+  --noise: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+#app {
+  height: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* The grain layer of a glass surface. The element needs position: relative
+   (or any containing block) and inherits its border radius. */
+.noise::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0.13;
+  mix-blend-mode: overlay;
+  background-image: var(--noise);
+}
+
+/* Keyboard focus ring, shared by every interactive element. */
+:focus-visible {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 2px;
+}
+
+/* Wails: the top of the window drags it (the title bar is hidden inset);
+   anything interactive inside a drag region opts out. */
+.drag {
+  --wails-draggable: drag;
+}
+button,
+a,
+input,
+select,
+textarea {
+  --wails-draggable: no-drag;
+}
+
+/* ---- Shared section building blocks ---- */
+
+/* A section's column of cards. */
+.section {
+  display: grid;
+  gap: 14px;
+}
+
+/* Small uppercase label above a group (as on the Status tiles). */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Text fields and selects: dark recessed glass. */
+.input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-s);
+  background: rgba(10, 8, 20, 0.45);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  -webkit-user-select: text;
+  user-select: text;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.25s,
+    background-color 0.2s;
+}
+.input::placeholder {
+  color: var(--text-3);
+}
+.input:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.input:focus {
+  outline: none;
+  border-color: rgba(179, 157, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(123, 92, 255, 0.25), inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.input[aria-invalid="true"] {
+  border-color: rgba(255, 100, 100, 0.7);
+}
+.input[aria-invalid="true"]:focus {
+  box-shadow: 0 0 0 3px rgba(255, 69, 58, 0.22), inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+select.input {
+  padding-right: 30px;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.6)' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  cursor: pointer;
+}
+select.input option {
+  background: #1d1b26;
+  color: var(--text);
+}
+
+/* Secondary explanation under a field or setting. */
+.hint {
+  margin: 5px 0 0;
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+/* An error message (role="alert" where it appears after an action). */
+.error-text {
+  margin: 6px 0 0;
+  color: #ff8a80;
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-user-select: text;
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+
+/* Raw technical detail (an error message from Go or the server). */
+.detail-text {
+  margin: 3px 0 0;
+  color: var(--text-3);
+  font-family: var(--mono);
+  font-size: 11px;
+  -webkit-user-select: text;
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+
+/* A loading placeholder: a few shimmering lines. */
+.skeleton-lines {
+  display: grid;
+  gap: 10px;
+}
+.skeleton-lines i {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
+  background-size: 200% 100%;
+  animation: skeleton-wave 1.4s ease-in-out infinite;
+}
+.skeleton-lines i:last-child {
+  width: 60%;
+}
+@keyframes skeleton-wave {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* An empty list: an accent line icon and a sentence. */
+.empty-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.empty-state svg {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: var(--accent-soft);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The window is hidden or minimised: freeze every CSS animation. */
+body.paused *,
+body.paused *::before,
+body.paused *::after {
+  animation-play-state: paused !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

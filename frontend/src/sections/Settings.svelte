@@ -1,0 +1,492 @@
+<script lang="ts">
+  // The Settings section: language, parallel uploads, automatic camera
+  // paths and autostart (each saved as soon as it changes; Go answers with
+  // a "state" event, which also switches the UI language; autostart is
+  // disabled when the app does not run from its bundle), then updates: the
+  // running version, a manual check, and the available update's notes
+  // with an Install button that asks first (the app restarts after it).
+  import { onDestroy } from "svelte";
+  import { fade, fly, slide } from "svelte/transition";
+  import { SettingsView, type UpdateView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
+  import Button from "../components/Button.svelte";
+  import GlassCard from "../components/GlassCard.svelte";
+  import Switch from "../components/Switch.svelte";
+  import { appState, backend } from "../lib/backend";
+  import { formatNumber, languageNames, supported, t } from "../lib/i18n";
+  import { icons } from "../lib/icons";
+  import { reducedMotion } from "../lib/stores";
+
+  // As Go's config.DefaultConcurrency and maxConcurrency.
+  const DEFAULT_CONCURRENCY = 4;
+  const MAX_CONCURRENCY = 16;
+
+  const ms = (n: number) => ($reducedMotion ? 0 : n);
+
+  function message(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
+  }
+
+  // ---- General ------------------------------------------------------------------
+  let language = $state("");
+  let concurrency = $state(DEFAULT_CONCURRENCY);
+  let autoPaths = $state(true);
+  let autostart = $state(false);
+
+  function syncFromState(s: SettingsView): void {
+    language = s.language;
+    concurrency = s.concurrency >= 1 && s.concurrency <= MAX_CONCURRENCY ? s.concurrency : DEFAULT_CONCURRENCY;
+    autoPaths = s.autoPaths;
+    autostart = s.autostart;
+  }
+  $effect(() => syncFromState($appState.settings));
+
+  let saveError = $state("");
+  let saved = $state(false);
+  let savedTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function showSaved(): void {
+    saved = true;
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(() => (saved = false), 2000);
+  }
+
+  async function save(): Promise<void> {
+    saveError = "";
+    saved = false;
+    try {
+      await backend.SaveSettings(new SettingsView({ language, concurrency, autoPaths }));
+    } catch (err) {
+      saveError = t("settings.save_failed", { detail: message(err) });
+      syncFromState($appState.settings);
+      return;
+    }
+    showSaved();
+  }
+
+  async function saveAutostart(enabled: boolean): Promise<void> {
+    autostart = enabled;
+    saveError = "";
+    saved = false;
+    try {
+      await backend.SetAutostart(enabled);
+    } catch (err) {
+      // Go answers a translocated app with this code instead of a message.
+      saveError =
+        message(err) === "autostart_translocated"
+          ? t("settings.autostart_translocated")
+          : t("settings.save_failed", { detail: message(err) });
+      autostart = $appState.settings.autostart;
+      return;
+    }
+    showSaved();
+  }
+
+  const fill = $derived(((concurrency - 1) / (MAX_CONCURRENCY - 1)) * 100);
+
+  // ---- Updates ---------------------------------------------------------------------
+  type Check = "idle" | "checking" | "current" | "failed";
+  let check = $state<Check>("idle");
+  let checkError = $state("");
+  let found = $state<UpdateView | null>(null);
+  const update = $derived($appState.update ?? found);
+
+  async function checkUpdates(): Promise<void> {
+    check = "checking";
+    try {
+      found = await backend.CheckForUpdates();
+      check = found ? "idle" : "current";
+    } catch (err) {
+      checkError = t("settings.check_failed", { detail: message(err) });
+      check = "failed";
+    }
+  }
+
+  let confirming = $state(false);
+  let installing = $state(false);
+  let installError = $state("");
+
+  async function install(): Promise<void> {
+    installError = "";
+    installing = true;
+    try {
+      // On success the app quits and launchd starts the new version.
+      await backend.InstallUpdate();
+    } catch (err) {
+      installError = t("settings.install_failed", { detail: message(err) });
+      installing = false;
+      confirming = false;
+    }
+  }
+
+  onDestroy(() => clearTimeout(savedTimer));
+</script>
+
+<div class="section">
+  <GlassCard padding="16px 18px 6px">
+    <h2 class="eyebrow">{t("settings.general")}</h2>
+
+    <div class="row">
+      <div class="text"><label for="set-language">{t("settings.language")}</label></div>
+      <select
+        id="set-language"
+        class="input control"
+        value={language}
+        onchange={(e) => {
+          language = e.currentTarget.value;
+          save();
+        }}
+      >
+        <option value="">{t("settings.language_system")}</option>
+        {#each supported as tag (tag)}
+          <option value={tag} lang={tag}>{languageNames[tag]}</option>
+        {/each}
+      </select>
+    </div>
+
+    <div class="row">
+      <div class="text">
+        <label for="set-concurrency">{t("settings.concurrency")}</label>
+        <p class="hint" id="set-concurrency-hint">
+          {t("settings.concurrency_hint", { default: formatNumber(DEFAULT_CONCURRENCY) })}
+        </p>
+      </div>
+      <div class="range control">
+        <input
+          id="set-concurrency"
+          type="range"
+          min="1"
+          max={MAX_CONCURRENCY}
+          step="1"
+          style:--fill="{fill}%"
+          aria-describedby="set-concurrency-hint"
+          value={concurrency}
+          oninput={(e) => (concurrency = Number(e.currentTarget.value))}
+          onchange={save}
+        />
+        <output for="set-concurrency">{formatNumber(concurrency)}</output>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="text">
+        <label for="set-auto-paths">{t("settings.auto_paths")}</label>
+        <p class="hint" id="set-auto-paths-hint">{t("settings.auto_paths_hint")}</p>
+      </div>
+      <Switch
+        id="set-auto-paths"
+        checked={autoPaths}
+        describedby="set-auto-paths-hint"
+        onchange={(v) => {
+          autoPaths = v;
+          save();
+        }}
+      />
+    </div>
+
+    <div class="row">
+      <div class="text">
+        <label for="set-autostart">{t("settings.autostart")}</label>
+        <p class="hint" id="set-autostart-hint">
+          {#if $appState.settings.autostartTranslocated}
+            {t("settings.autostart_translocated")}
+          {:else if $appState.settings.autostartAvailable}
+            {t("settings.autostart_hint")}
+          {:else}
+            {t("settings.autostart_unavailable")}
+          {/if}
+        </p>
+      </div>
+      <Switch
+        id="set-autostart"
+        checked={autostart}
+        disabled={!$appState.settings.autostartAvailable}
+        describedby="set-autostart-hint"
+        onchange={saveAutostart}
+      />
+    </div>
+
+    <div class="feedback" aria-live="polite">
+      {#if saveError}
+        <p class="error-text" role="alert">{saveError}</p>
+      {:else if saved}
+        <p class="ok-text" transition:fade={{ duration: ms(200) }}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.check} /></svg>{t("settings.saved")}
+        </p>
+      {/if}
+    </div>
+  </GlassCard>
+
+  <GlassCard tone={update ? "accent" : "idle"} padding="16px 18px 18px">
+    <h2 class="eyebrow">{t("settings.updates")}</h2>
+
+    <div class="version-row">
+      <div class="text">
+        <div class="app-version">{t("settings.version", { version: $appState.version || "—" })}</div>
+        <div class="check-result" aria-live="polite">
+          {#if check === "current"}
+            <p class="ok-text" in:fly={{ y: 4, duration: ms(250) }}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.check} /></svg>{t("settings.up_to_date")}
+            </p>
+          {:else if check === "failed"}
+            <p class="error-text" in:fly={{ y: 4, duration: ms(250) }}>{checkError}</p>
+          {/if}
+        </div>
+      </div>
+      <Button busy={check === "checking"} disabled={installing} onclick={checkUpdates}>{t("settings.check_updates")}</Button>
+    </div>
+
+    {#if update}
+      <div class="update" transition:slide={{ duration: ms(350) }}>
+        <div class="update-head">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.download} /></svg>
+          <h3>{t("settings.update_available", { version: update.version })}</h3>
+        </div>
+        {#if update.notes.trim()}
+          <!-- Plain text: Svelte escapes it; pre-wrap keeps the line breaks. -->
+          <div class="notes">{update.notes.trim()}</div>
+        {/if}
+
+        {#if installing}
+          <p class="installing" role="status"><span class="spinner" aria-hidden="true"></span>{t("settings.installing")}</p>
+        {:else if confirming}
+          <div class="confirm" in:fly={{ y: 4, duration: ms(250) }}>
+            <p>{t("settings.install_confirm", { version: update.version })}</p>
+            <div class="buttons">
+              <Button variant="primary" onclick={install}>{t("settings.install_now")}</Button>
+              <Button onclick={() => (confirming = false)}>{t("settings.cancel")}</Button>
+            </div>
+          </div>
+        {:else}
+          <div class="buttons">
+            <Button variant="primary" onclick={() => (confirming = true)}>{t("settings.install")}</Button>
+          </div>
+        {/if}
+        {#if installError}
+          <p class="error-text" role="alert">{installError}</p>
+        {/if}
+      </div>
+    {/if}
+  </GlassCard>
+</div>
+
+<style>
+  h2.eyebrow {
+    margin-bottom: 4px;
+  }
+
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 20px;
+    padding: 12px 0;
+  }
+  .row + .row {
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .text {
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+  label {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .hint {
+    margin-top: 3px;
+  }
+  .control {
+    flex: 0 0 auto;
+  }
+  select.control {
+    width: 210px;
+  }
+
+  /* ---- Range ---- */
+  .range {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 210px;
+  }
+  input[type="range"] {
+    flex: 1;
+    height: 18px;
+    margin: 0;
+    background: transparent;
+    appearance: none;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 5px;
+    border-radius: 3px;
+    background:
+      linear-gradient(90deg, var(--accent-1), var(--accent-2)) 0 0 / var(--fill) 100% no-repeat,
+      rgba(255, 255, 255, 0.14);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    width: 16px;
+    height: 16px;
+    margin-top: -5.5px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    appearance: none;
+    transition:
+      transform 0.25s var(--spring),
+      box-shadow 0.25s;
+  }
+  input[type="range"]:active::-webkit-slider-thumb {
+    transform: scale(1.15);
+    box-shadow: 0 0 12px rgba(123, 92, 255, 0.7), 0 1px 4px rgba(0, 0, 0, 0.4);
+  }
+  input[type="range"]::-moz-range-track {
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.14);
+  }
+  input[type="range"]::-moz-range-progress {
+    height: 5px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border: 0;
+    border-radius: 50%;
+    background: #fff;
+  }
+  output {
+    min-width: 22px;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  .feedback {
+    min-height: 6px;
+  }
+  .feedback p {
+    margin: 0 0 12px;
+  }
+  .ok-text {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 0;
+    color: var(--green);
+    font-size: 12.5px;
+  }
+  .ok-text svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* ---- Updates ---- */
+  .version-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 20px;
+    padding-top: 8px;
+  }
+  .app-version {
+    font-size: 13px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .check-result p {
+    margin: 3px 0 0;
+  }
+
+  .update {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .update-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--accent-soft);
+  }
+  .update-head svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  h3 {
+    margin: 0;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 650;
+  }
+  .notes {
+    max-height: 180px;
+    margin-top: 10px;
+    padding: 10px 12px;
+    overflow: auto;
+    border-radius: var(--radius-m);
+    background: rgba(8, 6, 16, 0.35);
+    color: var(--text-2);
+    font-size: 12.5px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .confirm p {
+    margin: 14px 0 0;
+    color: var(--text);
+    font-size: 12.5px;
+  }
+  .confirm .buttons {
+    margin-top: 10px;
+  }
+  .installing {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 14px 0 0;
+    color: var(--text-2);
+    font-size: 12.5px;
+  }
+  .spinner {
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.22);
+    border-top-color: var(--accent-soft);
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+</style>

@@ -2,33 +2,56 @@
 
 macOS-приложение в menu bar: ждёт подключения выбранной SD-карты и загружает новые фото/видео в [Immich](https://immich.app).
 
-**Требования:** macOS (Apple Silicon или Intel), Immich v3.
+**Требования:** macOS 13+ (Apple Silicon или Intel), Immich v3.
 
 ## Возможности
 
-- Иконка в menu bar с текущим статусом и спиннером при синхронизации
-- Настройки в подменю: Immich URL, API key, выбор SD-карты
+- Иконка в menu bar с текущим статусом и меню: открыть окно, синхронизировать
+  сейчас/остановить, обновление, выход
+- Окно приложения с разделами **Статус**, **История**, **Карты**, **Сервер**,
+  **Журнал** и **Настройки** (в Dock появляется, только пока окно открыто)
+- Интерфейс на 8 языках (см. [Языки](#языки))
 - По умолчанию ничего не синхронизирует — только после выбора карты
-- Автозапуск через LaunchAgent
+- Автозапуск при входе в систему (LaunchAgent), включается и выключается в **Настройках**
 - Автоматически находит фото и видео в стандартных каталогах камер
 - Поддерживает распространённые фото, RAW и видеоформаты Immich
 - Совместимость с **Immich v3** ([migration guide](https://immich.app/blog/v3-migration))
 - Дедупликация: watermark по дате файла + заголовок `x-immich-checksum` (как в [immich-go](https://github.com/simulot/immich-go))
-- Параллельная загрузка по HTTP/1.1, по умолчанию 4 соединения (настраивается в config)
-- Повтор загрузки при сбоях сети; если Immich недоступен, синхронизация останавливается с сохранением прогресса
+- Параллельная загрузка по HTTP/1.1, по умолчанию 4 соединения (настраивается в **Настройках**)
+- Повтор загрузки при сбоях сети; если Immich недоступен, синхронизация останавливается с сохранением прогресса и продолжается, когда сервер снова доступен
 - XMP-сайдкары (`IMG.JPG.xmp`, `IMG.xmp`) загружаются вместе с файлом
 - Уведомление macOS после успешной синхронизации
 - Автоматическая и ручная проверка обновлений через GitHub Releases
 
 ## Установка
 
-### Из GitHub Releases (рекомендуется)
+Нужна macOS 13 или новее (Apple Silicon или Intel). Приложение ставится как
+`SD Sync Immich.app` в `~/Applications`.
 
-1. Откройте [Releases](https://github.com/brofrong/sd-sync-iimich/releases/latest) и скачайте архив/бинарник:
-   - **`sd-sync-immich`** — universal binary (Apple Silicon + Intel)
-   - **`sd-sync-immich-darwin-arm64`** — только Apple Silicon
-   - **`sd-sync-immich-darwin-amd64`** — только Intel
-2. Сделайте файл исполняемым и установите автозапуск:
+### Из GitHub Releases: архив приложения (рекомендуется)
+
+1. Откройте [Releases](https://github.com/brofrong/sd-sync-iimich/releases/latest)
+   и скачайте **`SD-Sync-Immich.zip`**.
+2. Распакуйте его и перенесите **SD Sync Immich.app** в `~/Applications`
+   (папка «Программы» в домашней папке; создайте её, если её нет).
+3. Приложение подписано ad hoc, без Apple Developer ID, поэтому при первом
+   запуске macOS его заблокирует. Откройте его через **ПКМ → «Открыть»** и
+   подтвердите, либо снимите карантин в Терминале:
+
+   ```bash
+   xattr -dr com.apple.quarantine ~/Applications/"SD Sync Immich.app"
+   open ~/Applications/"SD Sync Immich.app"
+   ```
+
+4. Чтобы приложение запускалось при входе в систему, включите
+   **Настройки → Автозапуск**.
+
+### Из GitHub Releases: бинарник
+
+Ассеты релиза:
+- **`sd-sync-immich`** — universal binary (Apple Silicon + Intel)
+- **`sd-sync-immich-darwin-arm64`** — только Apple Silicon
+- **`sd-sync-immich-darwin-amd64`** — только Intel
 
 ```bash
 chmod +x sd-sync-immich
@@ -36,44 +59,65 @@ chmod +x sd-sync-immich
 ```
 
 Команда `install`:
-- копирует бинарник в `~/Applications/sd-sync-immich`
-- создаёт LaunchAgent `com.sd-sync-immich` (автозапуск при входе в систему)
+- собирает из бинарника `~/Applications/SD Sync Immich.app` и подписывает его ad hoc
+- создаёт LaunchAgent `com.sd-sync-immich` (автозапуск при входе в систему) и сразу запускает приложение
+- удаляет бинарник `~/Applications/sd-sync-immich`, если он остался от v0.3.0
 
-Проверить checksum (опционально):
+Проверить checksum (опционально, в папке со скачанными файлами):
 
 ```bash
-shasum -a 256 -c checksums.txt
+shasum -a 256 -c checksums.txt --ignore-missing
 ```
+
+### Обновление с v0.3.0
+
+Ничего делать не нужно: v0.3.0 скачает обновление как обычно, а новая версия
+при первом запуске сама соберёт `~/Applications/SD Sync Immich.app`, перенастроит
+LaunchAgent на него, удалит старый бинарник `~/Applications/sd-sync-immich` и
+перезапустится уже из приложения. Настройки, выбранная карта и история
+синхронизаций сохраняются.
 
 ### Сборка из исходников
 
-Нужны [Go](https://go.dev/dl/) 1.26+ и Xcode Command Line Tools (`xcode-select --install`).
+Нужны [Go](https://go.dev/dl/) 1.26+, [Node.js](https://nodejs.org) 22+ и
+Xcode Command Line Tools (`xcode-select --install`). Wails CLI запускается
+через `go run`, отдельно ставить его не нужно.
 
 ```bash
 git clone https://github.com/brofrong/sd-sync-iimich.git
 cd sd-sync-iimich
+scripts/build-app.sh dev dist
+open dist   # SD Sync Immich.app и SD-Sync-Immich.zip
+# или сразу установить с автозапуском:
+dist/sd-sync-immich install
+```
+
+Только фронтенд и бинарник для разработки:
+
+```bash
+scripts/build-frontend.sh
 CGO_ENABLED=1 go build -o sd-sync-immich ./cmd/sd-sync-immich
-./sd-sync-immich install
 ```
 
 ### Удаление
 
+Удаляет приложение, LaunchAgent и бинарник v0.3.0 (настройки и история
+остаются в `~/.config/sd-sync-immich`):
+
 ```bash
-~/Applications/sd-sync-immich uninstall
-# или, если бинарник в текущей папке:
-./sd-sync-immich uninstall
+~/Applications/"SD Sync Immich.app"/Contents/MacOS/sd-sync-immich uninstall
 ```
 
 ## Первый запуск
 
-1. Запустите `./sd-sync-immich run` или дождитесь автозапуска после `install`
-2. В menu bar → **Настройки**:
-   - Укажите **Immich URL** (например `https://immich.example.com`)
-   - Укажите **API Key** (Immich → Settings → API Keys)
-3. Вставьте SD-карту → **Настройки → SD-карта** → выберите её
+1. Откройте приложение (или дождитесь автозапуска после `install`); окно
+   открывается из меню в menu bar → **Открыть SD Sync Immich**
+2. Раздел **Сервер**: укажите **Immich URL** (например `https://immich.example.com`)
+   и **API Key** (Immich → Settings → API Keys), нажмите **Проверить подключение** и **Сохранить**
+3. Вставьте SD-карту → раздел **Карты** → **Выбрать**
 4. При подключении карты синхронизация запустится автоматически
 
-Опция **Настройки → Автопоиск медиа с камер** включена по умолчанию. Она
+Опция **Настройки → Искать папки камер автоматически** включена по умолчанию. Она
 добавляет к пользовательским путям известные структуры носителей:
 
 - `DCIM/` — Canon, Nikon, Fujifilm, Olympus, GoPro, DJI и другие DCF-камеры
@@ -88,24 +132,39 @@ RAW (`ARW`, `CR2/CR3`, `NEF`, `RAF`, `RW2`, `ORF`, `DNG` и другие) и в�
 `scan.paths` и `scan.extensions` из конфигурации.
 
 Конфиг: `~/.config/sd-sync-immich/config.yaml` (пример: [`config.example.yaml`](config.example.yaml))  
-Логи: `~/Library/Logs/sd-sync-immich/app.log` (открыть из меню **Открыть логи**)
+Логи: `~/Library/Logs/sd-sync-immich/app.log` (раздел **Журнал** в окне)
+
+## Языки
+
+Интерфейс переведён на английский, русский, немецкий, испанский, французский,
+португальский (Бразилия), китайский (упрощённый) и японский. По умолчанию
+используется язык системы (первый поддерживаемый из списка языков macOS,
+иначе английский); выбрать другой можно в **Настройки → Язык**, интерфейс
+переключается сразу.
 
 ## Команды
+
+Бинарник — `~/Applications/SD Sync Immich.app/Contents/MacOS/sd-sync-immich`
+(или скачанный `sd-sync-immich`).
 
 | Команда | Описание |
 |---------|----------|
 | `run` | Запуск с иконкой в menu bar |
-| `install` | Установить автозапуск |
-| `uninstall` | Удалить автозапуск |
+| `install` | Установить `SD Sync Immich.app` в `~/Applications` с автозапуском |
+| `uninstall` | Удалить приложение и автозапуск |
 | `scan-test [mount]` | Проверить сканирование (по умолчанию `/Volumes/Brofrong`) |
 
 ## Обновления
 
 Релизная версия проверяет обновления при запуске и затем каждые 12 часов.
-Ручная проверка доступна через **Проверить обновления…** в menu bar. При
-обнаружении новой версии приложение показывает release notes и запрашивает
-подтверждение. Перед атомарной заменой бинарника проверяется SHA-256 из
-`checksums.txt`, после чего LaunchAgent перезапускает приложение.
+Ручная проверка — **Настройки → Проверить обновления**. При обнаружении
+новой версии приложение показывает release notes и запрашивает
+подтверждение. Перед атомарной заменой исполняемого файла в приложении
+проверяется SHA-256 из `checksums.txt`, затем приложение заново
+подписывается и перезапускается.
+
+**Выход** из меню завершает приложение до следующего входа в систему (или
+до ручного запуска).
 
 Локальная сборка с версией `dev` не обновляется автоматически.
 

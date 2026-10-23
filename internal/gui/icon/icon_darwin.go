@@ -31,7 +31,7 @@ var (
 func initBase() {
 	src, err := png.Decode(bytes.NewReader(immichPNG))
 	if err != nil {
-		panic("tray icon: decode immich.png: " + err.Error())
+		panic("gui icon: decode immich.png: " + err.Error())
 	}
 	base = toTemplate(src)
 	idlePNG = encodePNG(base)
@@ -170,7 +170,7 @@ func fillCircle(img *image.RGBA, cx, cy, r int, col color.Color) {
 func encodePNG(img image.Image) []byte {
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
-		panic("tray icon: encode png: " + err.Error())
+		panic("gui icon: encode png: " + err.Error())
 	}
 	return buf.Bytes()
 }
