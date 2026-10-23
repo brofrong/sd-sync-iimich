@@ -14,6 +14,12 @@ type syncSession struct {
 	volumeUUID string
 	order      []scanner.File
 	completed  map[string]struct{}
+	// keepCursor, set for a retry of selected files (SyncOptions.Only),
+	// stops recordSuccess from saving the watermark: the session's order
+	// then holds only the retried files, so its watermark says nothing
+	// about the files between the saved cursor and them — moving the
+	// cursor, in either direction, could skip files never uploaded.
+	keepCursor bool
 	mu         sync.Mutex
 }
 
@@ -30,7 +36,11 @@ func (s *syncSession) recordSuccess(f scanner.File) error {
 	s.mu.Lock()
 	s.completed[f.RelativePath] = struct{}{}
 	cur := s.watermarkLocked()
+	keep := s.keepCursor
 	s.mu.Unlock()
+	if keep {
+		return nil
+	}
 	return s.state.SetVolumeSync(s.volumeUUID, cur.Mtime, cur.RelativePath)
 }
 

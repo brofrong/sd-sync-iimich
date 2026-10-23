@@ -84,8 +84,10 @@ type SyncOptions struct {
 	// Only, when non-empty, restricts the sync to scanned files whose
 	// RelativePath is listed here — e.g. to retry only the files that
 	// failed last time. The cursor watermark is not used to filter
-	// candidates in this mode, but recording progress (the sync session,
-	// state.DB.SetVolumeSync) never moves the cursor backward. Result.Skipped
+	// candidates in this mode, and the sync never moves the cursor at all
+	// (not backward, and not forward past files between the cursor and a
+	// retried one that were never uploaded — the failure list is capped);
+	// retried files are still hashed into the files table. Result.Skipped
 	// counts the scanned files not listed here; listed paths that no longer
 	// exist on the card are ignored (logged at Info).
 	Only []string
@@ -170,6 +172,7 @@ func (s *Service) Sync(ctx context.Context, vol volume.Info, opts SyncOptions, o
 
 	logx.Info("sync: upload started", "candidates", len(candidates))
 	session := newSyncSession(s.State, vol.UUID, candidates)
+	session.keepCursor = len(opts.Only) > 0
 	checkpoint := newSyncCheckpoint(s.State, session, cfg.EffectiveCheckpointInterval())
 	return s.uploadAll(ctx, vol.UUID, client, workers, auto, len(files), skipped, candidates, prog, session, checkpoint)
 }

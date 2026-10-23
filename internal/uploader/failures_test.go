@@ -205,3 +205,88 @@ func TestSyncOnlyUploadsListedFiles(t *testing.T) {
 		t.Fatalf("res.Skipped = %d, want 2", res.Skipped)
 	}
 }
+
+// TestSyncOnlyNeverMovesCursor checks that a retry sync (SyncOptions.Only)
+// leaves the volume cursor exactly where it was even when the retried file
+// is newer than the cursor: moving it forward would skip files between the
+// cursor and the retried one that were never uploaded (the failure list a
+// retry comes from is capped). The retried file is still recorded in the
+// files table as usual (its hash), and counted as uploaded.
+func TestSyncOnlyNeverMovesCursor(t *testing.T) {
+	withoutRetryDelays(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"a","status":"created"}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("HOME", t.TempDir())
+	cfgStore, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if err := cfgStore.Update(func(c *config.Config) {
+		c.Immich = config.ImmichConfig{URL: srv.URL, APIKey: "key"}
+		c.Watch = config.WatchConfig{VolumeUUID: "VOL-UUID", VolumeName: "CARD"}
+	}); err != nil {
+		t.Fatalf("cfgStore.Update: %v", err)
+	}
+	st, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	mount := t.TempDir()
+	dcim := filepath.Join(mount, "DCIM")
+	if err := os.MkdirAll(dcim, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i, name := range []string{"A.JPG", "B.JPG", "C.JPG"} {
+		path := filepath.Join(dcim, name)
+		if err := os.WriteFile(path, []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		mtime := time.Unix(int64(1000+i), 0)
+		if err := os.Chtimes(path, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Only A is behind the cursor; B was never uploaded; C failed and is
+	// retried.
+	if err := st.SetVolumeSync("VOL-UUID", time.Unix(1000, 0), "DCIM/A.JPG"); err != nil {
+		t.Fatalf("SetVolumeSync: %v", err)
+	}
+	before, err := st.GetVolumeSync("VOL-UUID")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	vol := volume.Info{UUID: "VOL-UUID", Name: "CARD", MountPoint: mount}
+	svc := &Service{Config: cfgStore, State: st}
+	res, err := svc.Sync(context.Background(), vol, SyncOptions{Only: []string{"DCIM/C.JPG"}}, nil)
+	if err != nil {
+		t.Fatalf("Sync() error = %v, want nil", err)
+	}
+	if res.Uploaded != 1 {
+		t.Fatalf("res.Uploaded = %d, want 1", res.Uploaded)
+	}
+
+	after, err := st.GetVolumeSync("VOL-UUID")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.Mtime.Equal(before.Mtime) || after.RelativePath != before.RelativePath {
+		t.Fatalf("cursor after retry = %+v, want unchanged %+v (B.JPG was never uploaded)", after, before)
+	}
+
+	rec, err := st.Get("VOL-UUID", "DCIM/C.JPG")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec == nil || rec.SHA1 == "" {
+		t.Fatalf("files record for the retried file = %+v, want it recorded with its hash", rec)
+	}
+}
