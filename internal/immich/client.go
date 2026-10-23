@@ -375,7 +375,10 @@ func (c *Client) Check(ctx context.Context) (ServerInfo, error) {
 	}
 	info := ServerInfo{Version: fmt.Sprintf("v%d.%d.%d", v.Major, v.Minor, v.Patch)}
 
-	req, err = http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/assets/bulk-upload-check", strings.NewReader(`{"assets":[]}`))
+	// One made-up asset: Immich (v3.3.4) fails an empty list with 500. The
+	// check only looks the checksum up, so it changes nothing.
+	req, err = http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/assets/bulk-upload-check",
+		strings.NewReader(`{"assets":[{"id":"sd-sync-immich-check","checksum":"0000000000000000000000000000000000000000"}]}`))
 	if err != nil {
 		return ServerInfo{}, err
 	}

@@ -2,6 +2,7 @@ package immich
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -146,12 +147,27 @@ func TestCheckReturnsServerVersion(t *testing.T) {
 			fmt.Fprint(w, `{"major":2,"minor":3,"patch":1}`)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/assets/bulk-upload-check":
 			gotAPIKey = r.Header.Get("x-api-key")
-			b, _ := io.ReadAll(r.Body)
-			if string(b) != `{"assets":[]}` {
-				t.Errorf("bulk-upload-check body = %s, want {\"assets\":[]}", b)
+			var body struct {
+				Assets []struct {
+					ID       string `json:"id"`
+					Checksum string `json:"checksum"`
+				} `json:"assets"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("bulk-upload-check body: %v", err)
+			}
+			// Immich v3.3.4 fails an empty list with 500 "Failed to check
+			// bulk upload".
+			if len(body.Assets) == 0 {
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprint(w, `{"message":"Failed to check bulk upload"}`)
+				return
+			}
+			if len(body.Assets) != 1 || body.Assets[0].ID == "" || len(body.Assets[0].Checksum) != 40 {
+				t.Errorf("bulk-upload-check assets = %+v, want one probe with a SHA-1 hex checksum", body.Assets)
 			}
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, `{"results":[]}`)
+			fmt.Fprintf(w, `{"results":[{"id":%q,"action":"accept"}]}`, body.Assets[0].ID)
 		default:
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
