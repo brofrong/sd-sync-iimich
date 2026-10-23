@@ -25,12 +25,27 @@ type fakeImmich struct {
 	mu       sync.Mutex
 	uploaded []string
 	reject   map[string]bool
+	// hold, when non-nil, keeps every upload waiting until it is closed
+	// (or the request is cancelled); arrived gets a value per upload.
+	hold    chan struct{}
+	arrived chan struct{}
 }
 
 // useFakeImmich points a's config at a new fakeImmich.
 func useFakeImmich(t *testing.T, a *App, reject ...string) *fakeImmich {
 	t.Helper()
-	f := &fakeImmich{reject: map[string]bool{}}
+	return newFakeImmich(t, a, nil, reject...)
+}
+
+// useHeldImmich is useFakeImmich whose uploads hang until the test ends.
+func useHeldImmich(t *testing.T, a *App) *fakeImmich {
+	t.Helper()
+	return newFakeImmich(t, a, make(chan struct{}))
+}
+
+func newFakeImmich(t *testing.T, a *App, hold chan struct{}, reject ...string) *fakeImmich {
+	t.Helper()
+	f := &fakeImmich{reject: map[string]bool{}, hold: hold, arrived: make(chan struct{}, 100)}
 	for _, name := range reject {
 		f.reject[name] = true
 	}
@@ -44,6 +59,17 @@ func useFakeImmich(t *testing.T, a *App, reject ...string) *fakeImmich {
 			return
 		}
 		name := r.FormValue("filename")
+		select {
+		case f.arrived <- struct{}{}:
+		default:
+		}
+		if f.hold != nil {
+			select {
+			case <-f.hold:
+			case <-r.Context().Done():
+				return
+			}
+		}
 		if f.reject[name] {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
@@ -58,6 +84,9 @@ func useFakeImmich(t *testing.T, a *App, reject ...string) *fakeImmich {
 		_, _ = io.WriteString(w, `{"id":"id-`+name+`","status":"created"}`)
 	}))
 	t.Cleanup(srv.Close)
+	if hold != nil {
+		t.Cleanup(func() { close(hold) }) // runs before srv.Close
+	}
 	if err := a.Config.Update(func(c *config.Config) { c.Immich.URL = srv.URL }); err != nil {
 		t.Fatalf("Config.Update: %v", err)
 	}
@@ -446,10 +475,103 @@ func TestOwnEjectUnmountKeepsStatus(t *testing.T) {
 		t.Errorf("Status().Code = %q, want ejected", got)
 	}
 
-	// A later unmount of the same mount point is not ours any more.
+	a.mu.RLock()
+	marker := a.ejecting
+	a.mu.RUnlock()
+	if marker != "" {
+		t.Errorf("own-eject marker = %q after its unmount, want cleared", marker)
+	}
+
+	// A later unmount of the same mount point is not ours any more: it is
+	// handled as usual (idle status).
 	a.handleVolumeEvent(volume.Event{Type: volume.EventUnmounted, Info: vol})
-	if a.cardRemoved.Load() {
-		t.Error("cardRemoved set by an unrelated unmount")
+	if got := a.Status().Code; got != CodeWaitingForCard {
+		t.Errorf("Status().Code = %q after a later unmount, want waiting_for_card", got)
+	}
+}
+
+// TestOtherMountReplacesEjected: another card plugged in after the eject
+// shows other_card_mounted instead of ejected.
+func TestOtherMountReplacesEjected(t *testing.T) {
+	a := testApp(t)
+	useFakeImmich(t, a)
+	putPhotos(t, a, "A.JPG")
+	vol := *a.MountedTarget()
+	ej := fakeEject(a, nil)
+	ej.during = func(string) { a.handleVolumeEvent(volume.Event{Type: volume.EventUnmounted, Info: vol}) }
+	statuses := recordStatuses(a)
+
+	a.SyncNow()
+	statuses.waitCode(t, CodeEjected)
+	waitSyncFinished(t, a)
+
+	other := volume.Info{UUID: "OTHER-UUID", Name: "USB", MountPoint: t.TempDir()}
+	a.handleVolumeEvent(volume.Event{Type: volume.EventMounted, Info: other})
+
+	st := a.Status()
+	if st.Code != CodeOtherCardMounted || st.Params["mounted_uuid"] != "OTHER-UUID" {
+		t.Fatalf("Status() = %q %v after another card was mounted, want other_card_mounted of OTHER-UUID", st.Code, st.Params)
+	}
+}
+
+// TestStopBeforeEjectSkipsEject: StopSync between the done status and the
+// eject means no eject.
+func TestStopBeforeEjectSkipsEject(t *testing.T) {
+	a := testApp(t)
+	useFakeImmich(t, a)
+	putPhotos(t, a, "A.JPG")
+	ej := fakeEject(a, nil)
+	finished := make(chan struct{})
+	a.OnStatus(func(s Status) {
+		if s.Code == CodeDone {
+			a.StopSync()
+			close(finished)
+		}
+	})
+
+	a.SyncNow()
+	select {
+	case <-finished:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for done")
+	}
+	waitSyncFinished(t, a)
+
+	if got := ej.all(); len(got) != 0 {
+		t.Fatalf("eject calls = %v after StopSync, want none", got)
+	}
+	if got := a.Status().Code; got != CodeDone {
+		t.Errorf("Status().Code = %q, want done", got)
+	}
+}
+
+// TestCardGoneBeforeEjectSkipsEject: the card is no longer the mounted
+// target when the post-sync phase starts: no eject.
+func TestCardGoneBeforeEjectSkipsEject(t *testing.T) {
+	a := testApp(t)
+	useFakeImmich(t, a)
+	putPhotos(t, a, "A.JPG")
+	ej := fakeEject(a, nil)
+	finished := make(chan struct{})
+	a.OnStatus(func(s Status) {
+		if s.Code == CodeDone {
+			a.mu.Lock()
+			a.mountedTarget = nil
+			a.mu.Unlock()
+			close(finished)
+		}
+	})
+
+	a.SyncNow()
+	select {
+	case <-finished:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for done")
+	}
+	waitSyncFinished(t, a)
+
+	if got := ej.all(); len(got) != 0 {
+		t.Fatalf("eject calls = %v with the card gone, want none", got)
 	}
 }
 
@@ -472,6 +594,9 @@ func TestFollowCandidate(t *testing.T) {
 		}, true},
 		{"two same-name cards", nil, []volume.Info{
 			newCard, {UUID: "NEW2", Name: "brofrong", MountPoint: "/Volumes/brofrong 1"},
+		}, false},
+		{"two same-name cards, only one a camera card", nil, []volume.Info{
+			newCard, {UUID: "NEW2", Name: "Brofrong", MountPoint: "/Volumes/NOTCAM"},
 		}, false},
 		{"selected card is mounted", nil, []volume.Info{
 			{UUID: "old-uuid", Name: "Brofrong", MountPoint: "/Volumes/Brofrong"}, newCard,
@@ -608,6 +733,58 @@ func TestNoFollowWhenNotCameraCard(t *testing.T) {
 	}
 }
 
+func TestNoFollowRememberedCard(t *testing.T) {
+	a := testApp(t)
+	newCard := formattedCard(t, a)
+	rememberCard(t, a, "NEW-UUID") // synced before: not a fresh format
+	notices := recordNotices(a)
+
+	a.handleVolumeEvent(volume.Event{Type: volume.EventMounted, Info: newCard})
+
+	if got := a.Config.Get().Watch.VolumeUUID; got != "VOL-UUID" {
+		t.Errorf("selected = %q, want VOL-UUID kept", got)
+	}
+	if got := rememberedUUIDs(t, a); !slices.Contains(got, "VOL-UUID") {
+		t.Errorf("remembered = %v, want VOL-UUID kept", got)
+	}
+	if got := notices.all(); len(got) != 0 {
+		t.Errorf("notices = %+v, want none", got)
+	}
+	if got := a.Status().Code; got != CodeOtherCardMounted {
+		t.Errorf("Status().Code = %q, want other_card_mounted", got)
+	}
+}
+
+// TestPullFollowedCardAfterMissedEjectUnmount: the unmount of an earlier
+// own eject never arrived, and the formatted card is mounted at the same
+// mount point. Pulling it out mid-sync is a real removal.
+func TestPullFollowedCardAfterMissedEjectUnmount(t *testing.T) {
+	a := testApp(t)
+	srv := useHeldImmich(t, a)
+	newCard := formattedCard(t, a)
+	if err := os.MkdirAll(filepath.Join(newCard.MountPoint, "DCIM"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newCard.MountPoint, "DCIM", "A.JPG"), []byte("A"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.mu.Lock()
+	a.ejecting = newCard.MountPoint // the missed unmount of the old card
+	a.mu.Unlock()
+	statuses := recordStatuses(a)
+
+	a.handleVolumeEvent(volume.Event{Type: volume.EventMounted, Info: newCard})
+	select {
+	case <-srv.arrived:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the followed card's upload")
+	}
+	a.handleVolumeEvent(volume.Event{Type: volume.EventUnmounted, Info: newCard})
+
+	statuses.waitCode(t, CodeCardRemoved)
+	waitSyncFinished(t, a)
+}
+
 func TestFailuresRecordedWithRun(t *testing.T) {
 	a := testApp(t)
 	useFakeImmich(t, a, "B.JPG")
@@ -729,21 +906,36 @@ func TestRetryFailuresUnavailable(t *testing.T) {
 			return id
 		}},
 		{"unknown run", func(t *testing.T, a *App) int64 { return 12345 }},
+		{"server not configured", func(t *testing.T, a *App) int64 {
+			if err := a.Config.Update(func(c *config.Config) { c.Immich.APIKey = "" }); err != nil {
+				t.Fatal(err)
+			}
+			return recordedRun(t, a, "VOL-UUID", "DCIM/B.JPG")
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			a := testApp(t)
 			runID := tt.setup(t, a)
+			before, err := a.State.RecentRuns(100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			a.resumer.Start() // a pending auto-resume must survive
+
 			if err := a.RetryFailures(runID); !errors.Is(err, ErrRetryUnavailable) {
 				t.Fatalf("RetryFailures = %v, want ErrRetryUnavailable", err)
 			}
-			if a.syncCancel == nil {
-				runs, _ := a.State.RecentRuns(10)
-				for _, r := range runs {
-					if r.FinishedAt == nil && r.ID != runID {
-						t.Errorf("a sync was started: %+v", r)
-					}
-				}
+			if !a.resumer.Waiting() {
+				t.Error("RetryFailures stopped the pending auto-resume, want it kept")
+			}
+			time.Sleep(50 * time.Millisecond) // a started sync would have recorded its run by now
+			after, err := a.State.RecentRuns(100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(after) != len(before) {
+				t.Errorf("runs = %d after RetryFailures, want %d (no sync started)", len(after), len(before))
 			}
 		})
 	}

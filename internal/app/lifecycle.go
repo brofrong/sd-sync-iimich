@@ -85,12 +85,14 @@ func (a *App) RetryFailures(runID int64) error {
 	for i, f := range failures {
 		only[i] = f.RelativePath
 	}
-	logx.Info("retrying failed files", "run", runID, "files", len(only))
-	// Neither a.mu nor syncMu is held: Stop waits for an in-progress resume.
-	a.resume().Stop()
 	if !a.startSync(only) {
 		return ErrRetryUnavailable
 	}
+	logx.Info("retrying failed files", "run", runID, "files", len(only))
+	// Only now that the retry runs is a pending auto-resume obsolete (if it
+	// fires meanwhile, its start is a no-op). Neither a.mu nor syncMu is
+	// held: Stop waits for an in-progress resume.
+	a.resume().Stop()
 	return nil
 }
 
@@ -160,6 +162,7 @@ func (a *App) takeOwnEjectLocked(mountPoint string) bool {
 // formatted (its volume UUID changed): the server is configured, a card is
 // selected but not mounted, and exactly one mounted volume has the
 // selected card's name (case-insensitively) — and it is a camera card.
+// (maybeFollowCard also skips a candidate the app has synced before.)
 // Several same-name volumes, camera cards or not, mean no candidate: the
 // app must not guess which one is the selected card.
 func followCandidate(cfg config.Config, mounted []volume.Info, isCameraCard func(string) bool) (volume.Info, bool) {
@@ -225,6 +228,16 @@ func (a *App) switchToFormattedCard(extra *volume.Info) (volume.Info, bool) {
 	if !ok {
 		return volume.Info{}, false
 	}
+	// A card the app has synced before is not a freshly formatted one.
+	known, err := a.isRememberedCard(candidate.UUID)
+	if err != nil {
+		logx.Warn("failed to list remembered cards", "err", err)
+		return volume.Info{}, false
+	}
+	if known {
+		logx.Info("not following a card synced before", "name", candidate.Name, "uuid", candidate.UUID)
+		return volume.Info{}, false
+	}
 
 	oldUUID := cfg.Watch.VolumeUUID
 	logx.Info("selected card was formatted, following it",
@@ -243,11 +256,24 @@ func (a *App) switchToFormattedCard(extra *volume.Info) (volume.Info, bool) {
 		return volume.Info{}, false
 	}
 	a.mu.Lock()
-	v := candidate
-	a.mountedTarget = &v
+	a.setMountedTargetLocked(&candidate)
 	a.mu.Unlock()
 	logx.Info("card selected", "name", candidate.Name, "uuid", candidate.UUID)
 	return candidate, true
+}
+
+// isRememberedCard reports whether the app has sync state for uuid.
+func (a *App) isRememberedCard(uuid string) (bool, error) {
+	cards, err := a.State.RememberedCards()
+	if err != nil {
+		return false, err
+	}
+	for _, c := range cards {
+		if strings.EqualFold(c.UUID, uuid) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func containsVolume(vols []volume.Info, uuid string) bool {

@@ -204,19 +204,27 @@ func (a *App) handleVolumeEvent(ev volume.Event) {
 	switch ev.Type {
 	case volume.EventMounted:
 		logx.Info("volume mounted", "name", ev.Info.Name, "uuid", ev.Info.UUID, "path", ev.Info.MountPoint)
+		a.mu.Lock()
+		if a.ejecting == ev.Info.MountPoint {
+			// Whatever the app ejected from here is gone: a new volume
+			// took its mount point (its unmount event was missed).
+			a.ejecting = ""
+		}
+		a.mu.Unlock()
 		if strings.EqualFold(ev.Info.UUID, watchUUID) {
 			a.mu.Lock()
-			v := ev.Info
-			a.mountedTarget = &v
-			a.ejecting = ""
+			a.setMountedTargetLocked(&ev.Info)
 			a.mu.Unlock()
 			a.updateIdleStatus()
 			if a.Config.IsConfigured() {
 				logx.Info("target volume connected, starting sync", "name", ev.Info.Name)
 				go a.SyncNow()
 			}
-		} else if a.MountedTarget() == nil {
-			a.maybeFollowCard(&ev.Info)
+		} else if a.MountedTarget() == nil && !a.maybeFollowCard(&ev.Info) {
+			// Another card: it replaces whatever status was shown (e.g.
+			// ejected). With the selected card mounted, its sync or result
+			// stays on screen instead.
+			a.updateIdleStatusWith(&ev.Info)
 		}
 	case volume.EventUnmounted:
 		logx.Info("volume unmounted", "name", ev.Info.Name, "path", ev.Info.MountPoint)
@@ -224,7 +232,7 @@ func (a *App) handleVolumeEvent(ev volume.Event) {
 		own := a.takeOwnEjectLocked(ev.Info.MountPoint)
 		removed := a.mountedTarget != nil && a.mountedTarget.MountPoint == ev.Info.MountPoint
 		if removed {
-			a.mountedTarget = nil
+			a.setMountedTargetLocked(nil)
 		}
 		a.mu.Unlock()
 		if own {
@@ -259,7 +267,7 @@ func (a *App) refreshMountedTarget() {
 		}
 	}
 	a.mu.Lock()
-	a.mountedTarget = info
+	a.setMountedTargetLocked(info)
 	a.mu.Unlock()
 }
 
@@ -267,6 +275,19 @@ func (a *App) ConfigChanged() {
 	a.refreshMountedTarget()
 	a.updateIdleStatus()
 	logx.Debug("config changed", "configured", a.Config.IsConfigured())
+}
+
+// setMountedTargetLocked sets mountedTarget to a copy of v (nil: none) and
+// forgets any own-eject marker: it belonged to the previous target. Call
+// with a.mu held.
+func (a *App) setMountedTargetLocked(v *volume.Info) {
+	a.ejecting = ""
+	if v == nil {
+		a.mountedTarget = nil
+		return
+	}
+	c := *v
+	a.mountedTarget = &c
 }
 
 func (a *App) MountedTarget() *volume.Info {
@@ -331,7 +352,7 @@ func (a *App) ForgetCard(uuid string) error {
 		})
 		if err == nil {
 			a.mu.Lock()
-			a.mountedTarget = nil
+			a.setMountedTargetLocked(nil)
 			a.mu.Unlock()
 		}
 		a.syncMu.Unlock()
@@ -532,11 +553,20 @@ func (a *App) syncRunning() bool {
 // it, unless the selected card is mounted: in that case a sync is about to
 // run (or just did), so the current status is left alone.
 func (a *App) updateIdleStatus() {
+	a.updateIdleStatusWith(nil)
+}
+
+// updateIdleStatusWith is updateIdleStatus counting extra (a volume that
+// was just mounted and may not be listed yet) as mounted.
+func (a *App) updateIdleStatusWith(extra *volume.Info) {
 	cfg := a.Config.Get()
 	mounted, err := a.removableVolumes()
 	if err != nil {
 		logx.Warn("failed to list removable volumes", "err", err)
 		mounted = nil
+	}
+	if extra != nil && !containsVolume(mounted, extra.UUID) {
+		mounted = append(mounted, *extra)
 	}
 	if st, ok := IdleStatus(cfg, mounted); ok {
 		a.setStatus(st)
