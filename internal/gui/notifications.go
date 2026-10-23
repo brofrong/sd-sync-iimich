@@ -26,10 +26,10 @@ const notifyID = "sd-sync-immich."
 // codeKinds maps each status code that is notified to its kind. Others
 // (scanning, syncing, verifying, formatting, nothing_new, waiting_for_card,
 // no_card_selected, which flashes while a formatted card is followed, ...)
-// are only shown in the window and tray.
+// are only shown in the window and tray. done and ejected are not notified
+// either: a successful sync is told once by app.NoticeSyncDone, whatever
+// followed it.
 var codeKinds = map[app.Code]string{
-	app.CodeDone:                     kindDone,
-	app.CodeEjected:                  kindDone,
 	app.CodeDoneWithErrors:           kindErrors,
 	app.CodeOtherCardMounted:         kindOtherCard,
 	app.CodeServerUnreachable:        kindServer,
@@ -62,13 +62,8 @@ var resetCodes = map[app.Code]bool{
 }
 
 // notificationKind returns the kind of notification for a status code, and
-// false when the code is not notified. A plain "done" is notified only
-// when nothing follows it: with auto-eject or auto-format on, the ejected
-// card or the format phase tells the outcome instead.
-func notificationKind(code app.Code, cfg config.Config) (kind string, ok bool) {
-	if code == app.CodeDone && (cfg.Card.AutoEject || cfg.Card.AutoFormat) {
-		return "", false
-	}
+// false when the code is not notified.
+func notificationKind(code app.Code) (kind string, ok bool) {
 	kind, ok = codeKinds[code]
 	return kind, ok
 }
@@ -77,6 +72,8 @@ func notificationKind(code app.Code, cfg config.Config) (kind string, ok bool) {
 // that is not notified.
 func noticeKind(k app.NoticeKind) string {
 	switch k {
+	case app.NoticeSyncDone:
+		return kindDone
 	case app.NoticeCardFollowed, app.NoticeEjectFailed:
 		return kindCard
 	}
@@ -105,37 +102,56 @@ func kindEnabled(kind string, n config.NotifyConfig) bool {
 
 // notifyGate lets each status code be notified once until it is reset (see
 // resetCodes), so automatic retries that keep failing, or a countdown that
-// only changes its seconds, notify once. It lives in memory only: a restart
-// resets it too.
+// only changes its seconds, notify once. Server problems share one gate:
+// one Server notification, whichever problem follows which. It lives in
+// memory only: a restart resets it too.
 type notifyGate struct {
 	mu   sync.Mutex
-	sent map[app.Code]bool
+	sent map[string]bool
 }
 
-// reset allows every code again.
+// gateKey is what code is gated by: its kind for server problems, else the
+// code itself.
+func gateKey(code app.Code, kind string) string {
+	if kind == kindServer {
+		return kindServer
+	}
+	return string(code)
+}
+
+// reset allows everything again.
 func (g *notifyGate) reset() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	clear(g.sent)
 }
 
-// allow reports whether code may be notified now, and if so marks it.
-func (g *notifyGate) allow(code app.Code) bool {
+// forget allows key again.
+func (g *notifyGate) forget(key string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.sent, key)
+}
+
+// allow reports whether key may be notified now, and if so marks it.
+func (g *notifyGate) allow(key string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.sent == nil {
-		g.sent = map[app.Code]bool{}
+		g.sent = map[string]bool{}
 	}
-	if g.sent[code] {
+	if g.sent[key] {
 		return false
 	}
-	g.sent[code] = true
+	g.sent[key] = true
 	return true
 }
 
-// sender shows notifications (notify.Center; tests record them instead).
+// sender shows and removes notifications (notify.Center; tests record them
+// instead).
 type sender interface {
 	Send(notify.Message)
+	Remove(id string)
 }
 
 // notifier decides which statuses and notices become notifications, and
@@ -143,6 +159,11 @@ type sender interface {
 type notifier struct {
 	out  sender
 	gate notifyGate
+
+	// countdownShown is set while the format_pending notification is shown
+	// and the countdown is on: it is removed when the countdown ends.
+	mu             sync.Mutex
+	countdownShown bool
 }
 
 func newNotifier(out sender) *notifier {
@@ -152,11 +173,18 @@ func newNotifier(out sender) *notifier {
 // status notifies st if its code is notified, enabled in cfg, and not
 // notified yet for this card (see notifyGate). c translates the texts.
 func (n *notifier) status(st app.Status, cfg config.Config, c *i18n.Catalog) {
-	if resetCodes[st.Code] {
-		n.gate.reset()
+	if st.Code != app.CodeFormatPending {
+		n.endCountdown()
 	}
-	kind, ok := notificationKind(st.Code, cfg)
-	if !ok || !kindEnabled(kind, cfg.Notifications) || !n.gate.allow(st.Code) {
+	switch {
+	case resetCodes[st.Code]:
+		n.gate.reset()
+	case st.Code == app.CodeDoneWithErrors:
+		// The server answered: a server problem after it is news.
+		n.gate.forget(kindServer)
+	}
+	kind, ok := notificationKind(st.Code)
+	if !ok || !kindEnabled(kind, cfg.Notifications) || !n.gate.allow(gateKey(st.Code, kind)) {
 		return
 	}
 	code := string(st.Code)
@@ -174,21 +202,51 @@ func (n *notifier) status(st app.Status, cfg config.Config, c *i18n.Catalog) {
 	}
 	logx.Info("notify: showing notification", "code", code, "kind", kind)
 	n.out.Send(m)
+	if st.Code == app.CodeFormatPending {
+		n.mu.Lock()
+		n.countdownShown = true
+		n.mu.Unlock()
+	}
+}
+
+// endCountdown removes the format_pending notification once the countdown
+// is over (formatting, cancelled, card pulled out): its "Cancel" no longer
+// does anything.
+func (n *notifier) endCountdown() {
+	n.mu.Lock()
+	shown := n.countdownShown
+	n.countdownShown = false
+	n.mu.Unlock()
+	if shown {
+		n.out.Remove(notifyID + string(app.CodeFormatPending))
+	}
 }
 
 // notice notifies no if its kind is enabled in cfg. Notices are one-off
-// events, so they are not gated.
+// events, so they are not gated; sync_done, a success, resets the gate.
 func (n *notifier) notice(no app.Notice, cfg config.Config, c *i18n.Catalog) {
+	if no.Kind == app.NoticeSyncDone {
+		n.gate.reset()
+	}
 	kind := noticeKind(no.Kind)
 	if kind == "" || !kindEnabled(kind, cfg.Notifications) {
 		return
 	}
 	k := string(no.Kind)
+	// The texts of a notice are its own, except sync_done's: "done", or
+	// "ejected" when the card can be pulled out.
+	texts := k
+	if no.Kind == app.NoticeSyncDone {
+		texts = "done"
+		if no.Params["ejected"] == "true" {
+			texts = "ejected"
+		}
+	}
 	logx.Info("notify: showing notification", "notice", k, "kind", kind)
 	n.out.Send(notify.Message{
-		ID:    notifyID + k,
-		Title: c.T("notify."+k+".title", no.Params),
-		Body:  c.T("notify."+k+".body", no.Params),
+		ID:    notifyID + texts,
+		Title: c.T("notify."+texts+".title", no.Params),
+		Body:  c.T("notify."+texts+".body", no.Params),
 		Data:  map[string]string{"notice": k},
 	})
 }
@@ -210,26 +268,52 @@ func responseSection(action string, data map[string]string) (string, bool) {
 	return "", false
 }
 
-// onNotificationResponse acts on the user's response to a notification.
-func (s *Service) onNotificationResponse(action string, data map[string]string) {
+// responder is what a response to a notification can do.
+type responder interface {
+	showSection(section string)
+	selectCard(uuid string) error
+	retry()
+	cancelFormat()
+}
+
+// handleNotificationResponse acts on the user's response to a notification
+// (its action and Data) through r.
+func handleNotificationResponse(r responder, action string, data map[string]string) {
 	if section, ok := responseSection(action, data); ok {
-		s.shell.showWindow()
-		s.shell.emit(eventNavigate, section)
+		r.showSection(section)
 		return
 	}
 	switch app.Action(action) {
 	case app.ActionSelectCard:
-		if err := s.SelectCard(data["uuid"]); err != nil {
+		if err := r.selectCard(data["uuid"]); err != nil {
+			// The card is likely gone by now: let the user pick one.
 			logx.Warn("notify: failed to select the card", "uuid", data["uuid"], "err", err)
+			r.showSection("cards")
 		}
 	case app.ActionRetry:
-		s.app.Retry()
+		r.retry()
 	case app.ActionCancelFormat:
-		s.app.CancelFormat()
+		r.cancelFormat()
 	default:
 		logx.Debug("notify: ignoring notification response", "action", action)
 	}
 }
+
+// onNotificationResponse acts on the user's response to a notification.
+func (s *Service) onNotificationResponse(action string, data map[string]string) {
+	handleNotificationResponse(serviceResponder{s}, action, data)
+}
+
+// serviceResponder is the responder of a Service.
+type serviceResponder struct{ s *Service }
+
+func (r serviceResponder) showSection(section string) {
+	r.s.shell.showWindow()
+	r.s.shell.emit(eventNavigate, section)
+}
+func (r serviceResponder) selectCard(uuid string) error { return r.s.SelectCard(uuid) }
+func (r serviceResponder) retry()                       { r.s.app.Retry() }
+func (r serviceResponder) cancelFormat()                { r.s.app.CancelFormat() }
 
 // onNotice receives every notice from the App.
 func (s *Service) onNotice(no app.Notice) {

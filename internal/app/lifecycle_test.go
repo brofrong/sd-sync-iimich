@@ -186,6 +186,18 @@ func (l *noticeLog) all() []Notice {
 	return slices.Clone(l.notices)
 }
 
+// others returns the notices other than sync_done, which every successful
+// sync raises.
+func (l *noticeLog) others() []Notice {
+	var got []Notice
+	for _, n := range l.all() {
+		if n.Kind != NoticeSyncDone {
+			got = append(got, n)
+		}
+	}
+	return got
+}
+
 // ejectRecorder is a fake eject seam.
 type ejectRecorder struct {
 	mu    sync.Mutex
@@ -420,9 +432,9 @@ func TestAutoEjectFailureKeepsStatus(t *testing.T) {
 	if got := ej.all(); len(got) != 1 {
 		t.Fatalf("eject calls = %v, want exactly one (no retries)", got)
 	}
-	got := notices.all()
+	got := notices.others()
 	if len(got) != 1 || got[0].Kind != NoticeEjectFailed {
-		t.Fatalf("notices = %+v, want one eject_failed", got)
+		t.Fatalf("notices = %+v, want one eject_failed (and sync_done)", notices.all())
 	}
 	if got[0].Params["name"] != "CARD" || got[0].Params["detail"] == "" {
 		t.Errorf("eject_failed params = %v, want name=CARD and a detail", got[0].Params)
@@ -944,4 +956,65 @@ func TestRetryFailuresUnavailable(t *testing.T) {
 func TestOnNoticeNotRegistered(t *testing.T) {
 	a := testApp(t)
 	a.notify(Notice{Kind: NoticeEjectFailed}) // must not panic
+}
+
+// syncDoneNotices returns the sync_done notices among got.
+func syncDoneNotices(got []Notice) []Notice {
+	var done []Notice
+	for _, n := range got {
+		if n.Kind == NoticeSyncDone {
+			done = append(done, n)
+		}
+	}
+	return done
+}
+
+func TestSyncDoneNotice(t *testing.T) {
+	tests := []struct {
+		name      string
+		autoEject bool
+		ejectErr  error
+		reject    []string
+		photos    []string
+		final     Code
+		want      int    // sync_done notices
+		ejected   string // their "ejected" param
+		uploaded  string
+	}{
+		{name: "ejected", autoEject: true, photos: []string{"A.JPG", "B.JPG"}, final: CodeEjected, want: 1, ejected: "true", uploaded: "2"},
+		{name: "eject off", photos: []string{"A.JPG"}, final: CodeDone, want: 1, ejected: "false", uploaded: "1"},
+		{name: "eject failed", autoEject: true, ejectErr: errors.New("resource busy"), photos: []string{"A.JPG"}, final: CodeDone, want: 1, ejected: "false", uploaded: "1"},
+		{name: "nothing new", autoEject: true, final: CodeNothingNew},
+		{name: "errors", autoEject: true, reject: []string{"B.JPG"}, photos: []string{"A.JPG", "B.JPG"}, final: CodeDoneWithErrors},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := testApp(t)
+			if err := a.Config.Update(func(c *config.Config) { c.Card.AutoEject = tt.autoEject }); err != nil {
+				t.Fatal(err)
+			}
+			if len(tt.photos) > 0 {
+				useFakeImmich(t, a, tt.reject...)
+				putPhotos(t, a, tt.photos...)
+			}
+			fakeEject(a, tt.ejectErr)
+			notices := recordNotices(a)
+			statuses := recordStatuses(a)
+
+			a.SyncNow()
+			statuses.waitCode(t, tt.final)
+			waitSyncFinished(t, a)
+
+			got := syncDoneNotices(notices.all())
+			if len(got) != tt.want {
+				t.Fatalf("sync_done notices = %+v (all %+v), want %d", got, notices.all(), tt.want)
+			}
+			if tt.want == 0 {
+				return
+			}
+			if p := got[0].Params; p["ejected"] != tt.ejected || p["uploaded"] != tt.uploaded {
+				t.Errorf("sync_done params = %v, want ejected=%s uploaded=%s", p, tt.ejected, tt.uploaded)
+			}
+		})
+	}
 }

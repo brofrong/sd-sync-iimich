@@ -291,8 +291,11 @@ func TestFormatAfterDone(t *testing.T) {
 	if got := a.Status().Code; got != CodeEjected {
 		t.Errorf("Status().Code = %q, want ejected", got)
 	}
-	if got := notices.all(); len(got) != 0 {
-		t.Errorf("notices = %+v, want none", got)
+	if got := notices.others(); len(got) != 0 {
+		t.Errorf("notices = %+v, want none but sync_done", got)
+	}
+	if got := syncDoneNotices(notices.all()); len(got) != 1 || got[0].Params["ejected"] != "true" {
+		t.Errorf("sync_done notices = %+v, want one, ejected", got)
 	}
 }
 
@@ -518,8 +521,8 @@ func TestFormatEmptyCard(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("statuses = %v, want %v", got, want)
 	}
-	if got := notices.all(); len(got) != 0 {
-		t.Errorf("notices = %+v, want none", got)
+	if got := notices.others(); len(got) != 0 {
+		t.Errorf("notices = %+v, want none but sync_done", got)
 	}
 }
 
@@ -668,8 +671,12 @@ func TestStopDuringCountdown(t *testing.T) {
 	if got := a.Status().Code; got != CodeDone {
 		t.Errorf("Status().Code = %q, want the sync's result (done)", got)
 	}
-	if statuses.has(CodeFormatFailed) || len(notices.all()) != 0 {
+	if statuses.has(CodeFormatFailed) || len(notices.others()) != 0 {
 		t.Errorf("statuses = %v, notices = %+v; want a silent stop", statuses.codes(), notices.all())
+	}
+	// The sync itself succeeded: that is still told, once.
+	if got := syncDoneNotices(notices.all()); len(got) != 1 || got[0].Params["ejected"] != "false" {
+		t.Errorf("sync_done notices = %+v, want one, not ejected", got)
 	}
 }
 

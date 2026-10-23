@@ -27,6 +27,11 @@ const (
 	// NoticeEjectFailed: the automatic eject after a sync failed (e.g. the
 	// card is open in Finder). Params: name, detail.
 	NoticeEjectFailed NoticeKind = "eject_failed"
+	// NoticeSyncDone: a sync finished with CodeDone and its post-sync phase
+	// (format, eject) is over. Raised once per such sync, whatever that
+	// phase did. Params: uploaded, ejected ("true" when the phase ejected
+	// the card, else "false").
+	NoticeSyncDone NoticeKind = "sync_done"
 )
 
 // Notice is an event that is not a status: it happens once and does not
@@ -103,8 +108,25 @@ func (a *App) RetryFailures(runID int64) error {
 // card next — auto-format (see autoFormat), then auto-eject — and returns
 // the final status. The decisions use the sync's result (st.Code is the
 // result code) or whether the card was just formatted, never whatever
-// status is current.
+// status is current. After a CodeDone sync it then raises NoticeSyncDone.
 func (a *App) afterSync(ctx context.Context, vol volume.Info, res uploader.Result, st Status) Status {
+	done := st.Code == CodeDone
+	st = a.formatAndEject(ctx, vol, res, st)
+	if done {
+		// Once per successful sync, whatever the phase did: the GUI tells
+		// the user from this notice, not from the statuses, which may
+		// differ (format outcomes, a failed eject).
+		a.notify(Notice{Kind: NoticeSyncDone, Params: map[string]string{
+			"uploaded": strconv.Itoa(res.Uploaded),
+			"ejected":  strconv.FormatBool(st.Code == CodeEjected),
+		}})
+	}
+	return st
+}
+
+// formatAndEject runs the format and eject steps of afterSync and returns
+// the final status.
+func (a *App) formatAndEject(ctx context.Context, vol volume.Info, res uploader.Result, st Status) Status {
 	ejectable := st.Code == CodeDone
 	if a.wantsFormat(vol, res, st) && a.stillMounted(ctx, vol) {
 		out := a.autoFormat(ctx, vol, st)

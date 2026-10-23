@@ -21,6 +21,7 @@ type fakeBackend struct {
 	mu         sync.Mutex
 	categories []string
 	sent       []Message
+	removed    []string
 	respond    func(string, map[string]string)
 }
 
@@ -45,6 +46,12 @@ func (b *fakeBackend) send(m Message, _ string) error {
 }
 
 func (b *fakeBackend) onResponse(fn func(string, map[string]string)) { b.respond = fn }
+
+func (b *fakeBackend) remove(id string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.removed = append(b.removed, id)
+}
 
 // fallbackRecorder replaces showFallback for the test, so osascript never
 // runs, and returns the titles it was asked to show.
@@ -154,5 +161,25 @@ func TestCenterForwardsResponses(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("response not forwarded")
+	}
+}
+
+func TestCenterRemove(t *testing.T) {
+	fallbackRecorder(t)
+	b := &fakeBackend{granted: true}
+	c := newCenter(b, nil)
+	started(t, c)
+	c.process(item{remove: "sd-sync-immich.format_pending"})
+	if len(b.removed) != 1 || b.removed[0] != "sd-sync-immich.format_pending" {
+		t.Fatalf("removed = %v, want the countdown's notification", b.removed)
+	}
+
+	// osascript notifications can't be removed: nothing to do.
+	b = &fakeBackend{granted: false}
+	c = newCenter(b, nil)
+	started(t, c)
+	c.process(item{remove: "x"})
+	if len(b.removed) != 0 {
+		t.Fatalf("removed = %v with osascript notifications, want nothing", b.removed)
 	}
 }

@@ -40,6 +40,15 @@ type backend interface {
 	send(m Message, categoryID string) error
 	// onResponse registers fn for the user's responses.
 	onResponse(fn func(actionID string, data map[string]string))
+	// remove removes the delivered notification with id, if any.
+	remove(id string)
+}
+
+// item is one job for the Center's goroutine: show msg, or, when remove is
+// set, remove the notification with that ID.
+type item struct {
+	msg    Message
+	remove string
 }
 
 // Center shows notifications: natively, with buttons, once the app is
@@ -51,7 +60,7 @@ type Center struct {
 	backend    backend // nil: osascript only
 	onResponse func(actionID string, data map[string]string)
 
-	queue chan Message
+	queue chan item
 
 	decideOnce sync.Once
 	decided    chan struct{}
@@ -81,7 +90,7 @@ func newCenter(b backend, onResponse func(string, map[string]string)) *Center {
 	c := &Center{
 		backend:    b,
 		onResponse: onResponse,
-		queue:      make(chan Message, queueSize),
+		queue:      make(chan item, queueSize),
 		decided:    make(chan struct{}),
 		categories: map[string]string{},
 	}
@@ -107,10 +116,21 @@ func (c *Center) Service() application.Service {
 // Send queues m to be shown. It never blocks; when the queue is full, m is
 // dropped.
 func (c *Center) Send(m Message) {
+	c.enqueue(item{msg: m})
+}
+
+// Remove removes the notification with id from Notification Center (after
+// the notifications sent before it are shown). osascript notifications
+// can't be removed: for them it does nothing.
+func (c *Center) Remove(id string) {
+	c.enqueue(item{remove: id})
+}
+
+func (c *Center) enqueue(it item) {
 	select {
-	case c.queue <- m:
+	case c.queue <- it:
 	default:
-		logx.Warn("notify: too many notifications waiting, dropping one", "id", m.ID)
+		logx.Warn("notify: too many notifications waiting, dropping one", "id", it.msg.ID, "remove", it.remove)
 	}
 }
 
@@ -159,8 +179,18 @@ func (c *Center) run() {
 	case <-time.After(decideTimeout):
 		c.decide(false, "no answer about native notifications in time")
 	}
-	for m := range c.queue {
-		c.deliver(m)
+	for it := range c.queue {
+		c.process(it)
+	}
+}
+
+func (c *Center) process(it item) {
+	if it.remove == "" {
+		c.deliver(it.msg)
+		return
+	}
+	if c.usesNative() {
+		c.backend.remove(it.remove)
 	}
 }
 
@@ -274,6 +304,12 @@ func (b *wailsBackend) send(m Message, categoryID string) error {
 		return b.svc.SendNotification(opts)
 	}
 	return b.svc.SendNotificationWithActions(opts)
+}
+
+func (b *wailsBackend) remove(id string) {
+	if err := b.svc.RemoveDeliveredNotification(id); err != nil {
+		logx.Warn("notify: failed to remove a notification", "id", id, "err", err)
+	}
 }
 
 func (b *wailsBackend) onResponse(fn func(actionID string, data map[string]string)) {
