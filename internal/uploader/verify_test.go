@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -246,7 +247,38 @@ func TestVerifyCardIgnoresCameraJunk(t *testing.T) {
 	writeCardFile(t, mount, "PRIVATE/M4ROOT/CLIP/C0001M01.XML", []byte("<xml/>"))
 	writeCardFile(t, mount, "DCIM/100SONY/._DSC00001.JPG", []byte("apple double junk"))
 	writeCardFile(t, mount, "AVF_INFO/AVIN0001.BNP", []byte("sony junk"))
+	// A real, confirmable photo alongside the junk: Safe() now requires
+	// Media > 0, so a card with only junk and nothing to confirm can never
+	// be reported safe (see TestVerifyCardEmptyCardNotSafe below).
+	writeCardFile(t, mount, "DCIM/100SONY/DSC00002.JPG", []byte("real photo"))
 
+	duplicate := map[string]bool{sha1Hex([]byte("real photo")): true}
+	srv, requests := newVerifyServer(t, duplicate, nil)
+	configureImmich(t, cfgStore, srv.URL, "VOL-UUID")
+
+	res, err := svc.VerifyCard(context.Background(), volume.Info{UUID: "VOL-UUID", MountPoint: mount}, nil)
+	if err != nil {
+		t.Fatalf("VerifyCard() error = %v", err)
+	}
+	if res.Media != 1 {
+		t.Fatalf("res.Media = %d, want 1 (only the real photo)", res.Media)
+	}
+	if res.MissingCount != 0 || len(res.Unsupported) != 0 {
+		t.Fatalf("res = %+v, want no missing and no unsupported files", res)
+	}
+	if !res.Safe() {
+		t.Fatalf("res.Safe() = false, want true")
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("server received %d requests, want exactly 1 (only the real photo, never the camera junk)", got)
+	}
+}
+
+// TestVerifyCardEmptyCardNotSafe checks that a card with nothing to confirm
+// (empty, or holding only camera junk the gate ignores) is never reported
+// safe to format: Safe() requires Media > 0.
+func TestVerifyCardEmptyCardNotSafe(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
 	srv, requests := newVerifyServer(t, nil, nil)
 	configureImmich(t, cfgStore, srv.URL, "VOL-UUID")
 
@@ -255,16 +287,289 @@ func TestVerifyCardIgnoresCameraJunk(t *testing.T) {
 		t.Fatalf("VerifyCard() error = %v", err)
 	}
 	if res.Media != 0 {
-		t.Fatalf("res.Media = %d, want 0", res.Media)
+		t.Fatalf("res.Media = %d, want 0 (empty card)", res.Media)
 	}
-	if res.MissingCount != 0 || len(res.Unsupported) != 0 {
-		t.Fatalf("res = %+v, want no missing and no unsupported files", res)
-	}
-	if !res.Safe() {
-		t.Fatalf("res.Safe() = false, want true")
+	if res.Safe() {
+		t.Fatalf("res.Safe() = true, want false (an empty/never-synced card must never be reported safe to format)")
 	}
 	if requests.Load() != 0 {
-		t.Fatalf("server received %d requests, want 0 (camera junk must never be sent to Immich)", requests.Load())
+		t.Fatalf("server received %d requests, want 0 (nothing to check)", requests.Load())
+	}
+}
+
+// TestVerifyCardUnknownFileBlocks checks that a file this gate has no
+// classification for at all (a document, not camera media or a known
+// service format) blocks the card from being reported safe.
+func TestVerifyCardUnknownFileBlocks(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+
+	writeCardFile(t, mount, "DCIM/notes.pdf", []byte("pdf"))
+	writeCardFile(t, mount, "DCIM/A.JPG", []byte("confirmed"))
+
+	duplicate := map[string]bool{sha1Hex([]byte("confirmed")): true}
+	srv, _ := newVerifyServer(t, duplicate, nil)
+	configureImmich(t, cfgStore, srv.URL, "VOL-UUID")
+
+	res, err := svc.VerifyCard(context.Background(), volume.Info{UUID: "VOL-UUID", MountPoint: mount}, nil)
+	if err != nil {
+		t.Fatalf("VerifyCard() error = %v", err)
+	}
+	if res.Unsupported["pdf"] != 1 {
+		t.Fatalf("res.Unsupported[pdf] = %d, want 1 (res = %+v)", res.Unsupported["pdf"], res)
+	}
+	if res.Safe() {
+		t.Fatalf("res.Safe() = true, want false")
+	}
+}
+
+// TestVerifyCardNoExtensionBlocks checks that an extension-less file is
+// counted under the "(none)" key rather than silently ignored.
+func TestVerifyCardNoExtensionBlocks(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+
+	writeCardFile(t, mount, "DCIM/README", []byte("no extension"))
+	writeCardFile(t, mount, "DCIM/A.JPG", []byte("confirmed"))
+
+	duplicate := map[string]bool{sha1Hex([]byte("confirmed")): true}
+	srv, _ := newVerifyServer(t, duplicate, nil)
+	configureImmich(t, cfgStore, srv.URL, "VOL-UUID")
+
+	res, err := svc.VerifyCard(context.Background(), volume.Info{UUID: "VOL-UUID", MountPoint: mount}, nil)
+	if err != nil {
+		t.Fatalf("VerifyCard() error = %v", err)
+	}
+	if res.Unsupported["(none)"] != 1 {
+		t.Fatalf(`res.Unsupported["(none)"] = %d, want 1 (res = %+v)`, res.Unsupported["(none)"], res)
+	}
+	if res.Safe() {
+		t.Fatalf("res.Safe() = true, want false")
+	}
+}
+
+// TestVerifyCardIgnoresSonyThumbnailsAndProxies checks that Sony's
+// thumbnail and proxy directories are disregarded entirely (never sent to
+// Immich, never counted as unsupported) while the CLIP original they
+// shadow is confirmed normally.
+func TestVerifyCardIgnoresSonyThumbnailsAndProxies(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+
+	writeCardFile(t, mount, "PRIVATE/M4ROOT/CLIP/C0001.MP4", []byte("original clip"))
+	writeCardFile(t, mount, "PRIVATE/M4ROOT/THMBNL/C0001T01.JPG", []byte("thumbnail"))
+	writeCardFile(t, mount, "PRIVATE/M4ROOT/SUB/C0001S03.MP4", []byte("proxy"))
+
+	duplicate := map[string]bool{sha1Hex([]byte("original clip")): true}
+	srv, requests := newVerifyServer(t, duplicate, nil)
+	configureImmich(t, cfgStore, srv.URL, "VOL-UUID")
+
+	res, err := svc.VerifyCard(context.Background(), volume.Info{UUID: "VOL-UUID", MountPoint: mount}, nil)
+	if err != nil {
+		t.Fatalf("VerifyCard() error = %v", err)
+	}
+	if res.Media != 1 {
+		t.Fatalf("res.Media = %d, want 1 (only the CLIP original, not its thumbnail/proxy)", res.Media)
+	}
+	if !res.Safe() {
+		t.Fatalf("res.Safe() = false, want true (res = %+v)", res)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("server received %d requests, want 1 (thumbnails/proxies must never be sent)", got)
+	}
+}
+
+// TestVerifyCardExcludedMediaBlocks checks that a media file the user's own
+// Scan.ExcludePatterns would exclude from upload is treated as Unsupported,
+// not silently ignored: the scanner never uploads it, so a format must not
+// treat it as already safe.
+func TestVerifyCardExcludedMediaBlocks(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+	if err := cfgStore.Update(func(c *config.Config) {
+		c.Scan.ExcludePatterns = []string{"*.mov"}
+	}); err != nil {
+		t.Fatalf("cfgStore.Update: %v", err)
+	}
+
+	writeCardFile(t, mount, "DCIM/c0005.mov", []byte("excluded by user"))
+	writeCardFile(t, mount, "DCIM/A.JPG", []byte("confirmed"))
+
+	duplicate := map[string]bool{sha1Hex([]byte("confirmed")): true}
+	srv, _ := newVerifyServer(t, duplicate, nil)
+	configureImmich(t, cfgStore, srv.URL, "VOL-UUID")
+
+	res, err := svc.VerifyCard(context.Background(), volume.Info{UUID: "VOL-UUID", MountPoint: mount}, nil)
+	if err != nil {
+		t.Fatalf("VerifyCard() error = %v", err)
+	}
+	if res.Unsupported["mov"] != 1 {
+		t.Fatalf("res.Unsupported[mov] = %d, want 1 (res = %+v)", res.Unsupported["mov"], res)
+	}
+	if res.Safe() {
+		t.Fatalf("res.Safe() = true, want false (an excluded media file must block formatting)")
+	}
+}
+
+// TestVerifyCardUnreadableDirFails checks that an unreadable directory
+// fails the whole verification closed, rather than silently treating the
+// files inside it as nonexistent.
+func TestVerifyCardUnreadableDirFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root ignores directory permissions")
+	}
+	svc, cfgStore, mount := newVerifyService(t)
+
+	writeCardFile(t, mount, "DCIM/100SONY/DSC00001.JPG", []byte("locked away"))
+	sub := filepath.Join(mount, "DCIM", "100SONY")
+	if err := os.Chmod(sub, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(sub, 0o755) })
+
+	srv, _ := newVerifyServer(t, nil, nil)
+	configureImmich(t, cfgStore, srv.URL, "VOL-UUID")
+
+	_, err := svc.VerifyCard(context.Background(), volume.Info{UUID: "VOL-UUID", MountPoint: mount}, nil)
+	if err == nil {
+		t.Fatal("VerifyCard() error = nil, want an error for an unreadable directory")
+	}
+}
+
+// TestVerifyCardMissingMountFails checks that a mount point that doesn't
+// exist fails verification with an error instead of reporting an
+// (incorrectly) empty, "safe-looking" result.
+func TestVerifyCardMissingMountFails(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+	srv, _ := newVerifyServer(t, nil, nil)
+	configureImmich(t, cfgStore, srv.URL, "VOL-UUID")
+
+	missing := filepath.Join(mount, "does-not-exist")
+	_, err := svc.VerifyCard(context.Background(), volume.Info{UUID: "VOL-UUID", MountPoint: missing}, nil)
+	if err == nil {
+		t.Fatal("VerifyCard() error = nil, want an error for a missing mount point")
+	}
+}
+
+// TestVerifyCardIdMissingFromResponse checks that an id the server's
+// response simply omits (as opposed to answering with "accept") still
+// counts as not confirmed.
+func TestVerifyCardIdMissingFromResponse(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+
+	writeCardFile(t, mount, "DCIM/A.JPG", []byte("confirmed"))
+	writeCardFile(t, mount, "DCIM/B.JPG", []byte("dropped"))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body bulkCheckRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode bulk-upload-check body: %v", err)
+		}
+		type result struct {
+			ID     string `json:"id"`
+			Action string `json:"action"`
+			Reason string `json:"reason,omitempty"`
+		}
+		var results []result
+		for _, a := range body.Assets {
+			if a.ID == "DCIM/B.JPG" {
+				continue // the server's response simply omits this id
+			}
+			results = append(results, result{ID: a.ID, Action: "reject", Reason: "duplicate"})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"results": results})
+	}))
+	t.Cleanup(srv.Close)
+	configureImmich(t, cfgStore, srv.URL, "VOL-UUID")
+
+	res, err := svc.VerifyCard(context.Background(), volume.Info{UUID: "VOL-UUID", MountPoint: mount}, nil)
+	if err != nil {
+		t.Fatalf("VerifyCard() error = %v", err)
+	}
+	if res.MissingCount != 1 {
+		t.Fatalf("res.MissingCount = %d, want 1 (an id missing from the response must count as missing)", res.MissingCount)
+	}
+	if len(res.Missing) != 1 || res.Missing[0] != "DCIM/B.JPG" {
+		t.Fatalf("res.Missing = %v, want [DCIM/B.JPG]", res.Missing)
+	}
+}
+
+// TestVerifyCardDuplicateIDWorstWins checks that when the server answers
+// more than once for the same id, a single confirming entry cannot paper
+// over another, non-confirming one for the same id — the worst answer wins.
+func TestVerifyCardDuplicateIDWorstWins(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+
+	writeCardFile(t, mount, "DCIM/A.JPG", []byte("confirmed-and-not"))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body bulkCheckRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode bulk-upload-check body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// Two results for the same id, non-confirming FIRST and confirming
+		// LAST: a naive "last entry wins" merge would (wrongly) call this
+		// confirmed, so this ordering is what actually distinguishes
+		// "worst wins" from "last wins".
+		_ = json.NewEncoder(w).Encode(map[string]any{"results": []map[string]any{
+			{"id": "DCIM/A.JPG", "action": "accept"},
+			{"id": "DCIM/A.JPG", "action": "reject", "reason": "duplicate", "isTrashed": false},
+		}})
+	}))
+	t.Cleanup(srv.Close)
+	configureImmich(t, cfgStore, srv.URL, "VOL-UUID")
+
+	res, err := svc.VerifyCard(context.Background(), volume.Info{UUID: "VOL-UUID", MountPoint: mount}, nil)
+	if err != nil {
+		t.Fatalf("VerifyCard() error = %v", err)
+	}
+	if res.MissingCount != 1 {
+		t.Fatalf("res.MissingCount = %d, want 1 (a non-confirming duplicate answer must win)", res.MissingCount)
+	}
+}
+
+// TestVerifyCardHashFailureIsMissing checks that a file that becomes
+// unreadable after being listed (so hashing fails) still counts toward
+// Media, but as not confirmed rather than being silently dropped.
+func TestVerifyCardHashFailureIsMissing(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root ignores file permissions")
+	}
+	svc, cfgStore, mount := newVerifyService(t)
+
+	writeCardFile(t, mount, "DCIM/A.JPG", []byte("will become unreadable"))
+	path := filepath.Join(mount, "DCIM", "A.JPG")
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+
+	srv, _ := newVerifyServer(t, nil, nil)
+	configureImmich(t, cfgStore, srv.URL, "VOL-UUID")
+
+	res, err := svc.VerifyCard(context.Background(), volume.Info{UUID: "VOL-UUID", MountPoint: mount}, nil)
+	if err != nil {
+		t.Fatalf("VerifyCard() error = %v", err)
+	}
+	if res.Media != 1 {
+		t.Fatalf("res.Media = %d, want 1 (counted even though its hash failed)", res.Media)
+	}
+	if res.MissingCount != 1 {
+		t.Fatalf("res.MissingCount = %d, want 1 (an unreadable file must count as missing, not silently skipped)", res.MissingCount)
+	}
+}
+
+// TestVerifyCardCancelled checks that a cancelled context stops
+// verification and surfaces ctx.Err(), rather than returning a result.
+func TestVerifyCardCancelled(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+	writeCardFile(t, mount, "DCIM/A.JPG", []byte("whatever"))
+	configureImmich(t, cfgStore, "http://127.0.0.1:0", "VOL-UUID")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := svc.VerifyCard(ctx, volume.Info{UUID: "VOL-UUID", MountPoint: mount}, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("VerifyCard() error = %v, want context.Canceled", err)
 	}
 }
 

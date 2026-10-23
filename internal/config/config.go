@@ -327,7 +327,7 @@ func (c Config) ScanPaths() []string {
 
 	unique := make([]string, 0, len(paths))
 	for _, path := range paths {
-		path = filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+		path = normalizeScanPath(path)
 		if path == "" {
 			continue
 		}
@@ -358,6 +358,38 @@ func sameOrNestedPath(parent, child string) bool {
 	parent = strings.ToLower(strings.TrimSuffix(parent, "/"))
 	child = strings.ToLower(strings.TrimSuffix(child, "/"))
 	return parent == "." || child == parent || strings.HasPrefix(child, parent+"/")
+}
+
+// normalizeScanPath cleans p into the canonical, slash-separated,
+// mount-point-relative form both ScanPaths (for configured paths) and
+// InScanPaths (for a file's relative path) compare with sameOrNestedPath:
+// it trims whitespace, applies filepath.Clean, converts to forward
+// slashes, treats a bare "/" the same as "." (the whole mount point), and
+// drops a stray leading slash — a path relative to a card's mount point is
+// never actually absolute, so "/DCIM" means the same thing as "DCIM".
+func normalizeScanPath(p string) string {
+	p = filepath.ToSlash(filepath.Clean(strings.TrimSpace(p)))
+	if p == "/" {
+		return "."
+	}
+	return strings.TrimPrefix(p, "/")
+}
+
+// InScanPaths reports whether rel — a slash-separated path relative to a
+// card's mount point, as produced by filepath.Rel + filepath.ToSlash while
+// walking it — equals one of ScanPaths() or is nested under one. It uses
+// exactly the normalization and case-insensitive, nested-path comparison
+// ScanPaths itself uses to merge configured paths, so a caller outside this
+// package (card verification, before a format) classifies a file exactly as
+// ScanVolume would, without re-implementing the path-nesting rules.
+func (c Config) InScanPaths(rel string) bool {
+	rel = normalizeScanPath(rel)
+	for _, sp := range c.ScanPaths() {
+		if sameOrNestedPath(sp, rel) {
+			return true
+		}
+	}
+	return false
 }
 
 func appendCopy[T any](dst []T, values ...T) []T {

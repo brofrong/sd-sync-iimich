@@ -196,6 +196,43 @@ func TestKnownMediaExtensions(t *testing.T) {
 	}
 }
 
+func TestInScanPaths(t *testing.T) {
+	cfg := Default()
+	cfg.Scan.AutoPaths = false
+	cfg.Scan.Paths = []string{"DCIM"}
+
+	tests := []struct {
+		name string
+		rel  string
+		want bool
+	}{
+		{"nested", "DCIM/100SONY/DSC00001.JPG", true},
+		{"case-insensitive", "dcim/100sony/dsc00001.jpg", true},
+		{"leading slash tolerated", "/DCIM/100SONY/DSC00001.JPG", true},
+		{"sibling prefix is not nested", "DCIMX/DSC00001.JPG", false},
+		{"unrelated path", "PRIVATE/M4ROOT/CLIP/C0001.MP4", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cfg.InScanPaths(tt.rel); got != tt.want {
+				t.Errorf("InScanPaths(%q) = %v, want %v", tt.rel, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInScanPathsRootScanPathMatchesEverything(t *testing.T) {
+	for _, root := range []string{".", "/"} {
+		cfg := Default()
+		cfg.Scan.AutoPaths = false
+		cfg.Scan.Paths = []string{root}
+
+		if !cfg.InScanPaths("ANYTHING/HERE.JPG") {
+			t.Errorf("InScanPaths() with root scan path %q = false, want true", root)
+		}
+	}
+}
+
 func TestAutoConcurrencyIsTheDefault(t *testing.T) {
 	cfg := Default()
 	if !cfg.AutoConcurrency() {
