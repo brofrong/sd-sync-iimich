@@ -322,7 +322,9 @@ func (a *App) eraseCard(vol volume.Info, keep formatOutcome) formatOutcome {
 		a.erasing = ""
 		a.setMountedTargetLocked(nil)
 		a.mu.Unlock()
-		return a.formatFailed(keep, fmt.Errorf("the card was formatted, but selecting it failed: %w", err))
+		// The detail follows "Couldn't format the card:": the last step of
+		// the format, selecting the erased card, is what failed.
+		return a.formatFailed(keep, fmt.Errorf("erased, but the new card could not be selected: %w", err))
 	}
 	a.mu.Lock()
 	a.erasing = ""

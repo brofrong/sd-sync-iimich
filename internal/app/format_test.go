@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -1207,5 +1208,48 @@ func TestFormatSuppressionKeptOnOwnEject(t *testing.T) {
 	a.handleVolumeEvent(volume.Event{Type: volume.EventUnmounted, Info: card})
 	if !a.formatSuppressed(card.UUID) {
 		t.Error("formatSuppressed = false after the app's own eject, want true")
+	}
+}
+
+// TestFormatSelectFailedDetail: the card was erased but saving the new
+// card as the selected one failed. The format_failed detail follows
+// "Couldn't format the card:", so it must not claim the card was
+// formatted.
+func TestFormatSelectFailedDetail(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root ignores file permissions")
+	}
+	a, _, e, _ := formatApp(t)
+	if err := a.Config.Update(func(c *config.Config) { c.Card.AutoEject = false }); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath, err := config.ConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// testConfigStore points HOME at a temp dir: this is never the real config.
+	if !strings.HasPrefix(cfgPath, os.Getenv("HOME")) || !strings.Contains(cfgPath, os.TempDir()) {
+		t.Fatalf("config path %q is not under a temporary HOME", cfgPath)
+	}
+	e.during = func() {
+		// Saving the config after the erase fails.
+		if err := os.Chmod(cfgPath, 0o400); err != nil {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(func() { _ = os.Chmod(cfgPath, 0o600) })
+	statuses := recordFullStatuses(a)
+
+	a.SyncNow()
+	waitFor(t, "format_failed", func() bool { return statuses.has(CodeFormatFailed) })
+	waitSyncFinished(t, a)
+
+	st, _ := statuses.last(CodeFormatFailed)
+	detail := st.Params["detail"]
+	if strings.Contains(detail, "was formatted") {
+		t.Errorf("format_failed detail = %q: reads \"Couldn't format the card: the card was formatted…\"", detail)
+	}
+	if !strings.Contains(detail, "could not be selected") || !strings.Contains(detail, "permission denied") {
+		t.Errorf("format_failed detail = %q, want that the new card could not be selected, with the error", detail)
 	}
 }
