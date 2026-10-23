@@ -601,3 +601,239 @@ func TestVerifyCardBatches(t *testing.T) {
 		t.Fatalf("server received %d requests, want 3 (450 files batched by 200)", got)
 	}
 }
+
+// verifyOnly runs VerifyCard against a fake server that confirms exactly
+// the given contents and returns the result plus the request counter.
+func verifyOnly(t *testing.T, svc *Service, cfgStore *config.Store, mount string, confirmed ...string) (VerifyResult, *atomic.Int64) {
+	t.Helper()
+	duplicate := map[string]bool{}
+	for _, c := range confirmed {
+		duplicate[sha1Hex([]byte(c))] = true
+	}
+	srv, requests := newVerifyServer(t, duplicate, nil)
+	configureImmich(t, cfgStore, srv.URL, "VOL-UUID")
+	res, err := svc.VerifyCard(context.Background(), volume.Info{UUID: "VOL-UUID", MountPoint: mount}, nil)
+	if err != nil {
+		t.Fatalf("VerifyCard() error = %v", err)
+	}
+	return res, requests
+}
+
+// TestVerifyCardNestedSystemDirNameIsNotIgnored checks that a directory
+// merely named like a macOS system folder (".Trashes") below the card root
+// is not bookkeeping: media inside it counts and must be confirmed.
+func TestVerifyCardNestedSystemDirNameIsNotIgnored(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+	writeCardFile(t, mount, "DCIM/100MSDCF/.Trashes/X.ARW", []byte("nested raw"))
+	writeCardFile(t, mount, "DCIM/100MSDCF/.Spotlight-V100/Y.JPG", []byte("nested jpg"))
+	writeCardFile(t, mount, "DCIM/100MSDCF/A.JPG", []byte("confirmed"))
+
+	res, _ := verifyOnly(t, svc, cfgStore, mount, "confirmed")
+	if res.Media != 3 {
+		t.Fatalf("res.Media = %d, want 3 (files under nested system-looking dirs count) (res = %+v)", res.Media, res)
+	}
+	if res.MissingCount != 2 {
+		t.Fatalf("res.MissingCount = %d, want 2 (res = %+v)", res.MissingCount, res)
+	}
+	if res.Safe() {
+		t.Fatalf("res.Safe() = true, want false")
+	}
+}
+
+// TestVerifyCardNestedSystemDirOutsideScanIsUnsupported checks that a
+// nested ".Trashes" outside the scan paths is reported Unsupported rather
+// than silently ignored.
+func TestVerifyCardNestedSystemDirOutsideScanIsUnsupported(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+	writeCardFile(t, mount, "OTHER/.Trashes/X.ARW", []byte("outside"))
+	writeCardFile(t, mount, "DCIM/A.JPG", []byte("confirmed"))
+
+	res, _ := verifyOnly(t, svc, cfgStore, mount, "confirmed")
+	if res.Unsupported["arw"] != 1 {
+		t.Fatalf("res.Unsupported[arw] = %d, want 1 (res = %+v)", res.Unsupported["arw"], res)
+	}
+	if res.Safe() {
+		t.Fatalf("res.Safe() = true, want false")
+	}
+}
+
+// TestVerifyCardIgnoresRootSystemEntries checks that macOS/Windows
+// bookkeeping at the card root (and .DS_Store / AppleDouble files at any
+// depth) never reaches the check.
+func TestVerifyCardIgnoresRootSystemEntries(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+	writeCardFile(t, mount, ".Trashes/501/X.ARW", []byte("trashed raw"))
+	writeCardFile(t, mount, ".Spotlight-V100/Store-V2/store.db", []byte("spotlight"))
+	writeCardFile(t, mount, ".fseventsd/fseventsd-uuid", []byte("fsevents"))
+	writeCardFile(t, mount, ".TemporaryItems/folders.501/tmp", []byte("tmp"))
+	writeCardFile(t, mount, "System Volume Information/IndexerVolumeGuid", []byte("win"))
+	writeCardFile(t, mount, ".DS_Store", []byte("ds root"))
+	writeCardFile(t, mount, "DCIM/100SONY/.DS_Store", []byte("ds nested"))
+	writeCardFile(t, mount, "DCIM/100SONY/._DSC00001.JPG", []byte("apple double"))
+	writeCardFile(t, mount, "DCIM/100SONY/DSC00001.JPG", []byte("confirmed"))
+
+	res, requests := verifyOnly(t, svc, cfgStore, mount, "confirmed")
+	if res.Media != 1 || res.MissingCount != 0 || len(res.Unsupported) != 0 {
+		t.Fatalf("res = %+v, want exactly 1 confirmed media file and nothing else", res)
+	}
+	if !res.Safe() {
+		t.Fatalf("res.Safe() = false, want true")
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("server received %d requests, want 1", got)
+	}
+}
+
+// TestVerifyCardIgnoresXDROOTDerivatives checks the XDCAM thumbnail/proxy
+// dirs at the card root are ignored like Sony's M4ROOT ones.
+func TestVerifyCardIgnoresXDROOTDerivatives(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+	writeCardFile(t, mount, "XDROOT/Clip/C0001.MXF", []byte("original"))
+	writeCardFile(t, mount, "XDROOT/Sub/C0001S01.MXF", []byte("proxy"))
+	writeCardFile(t, mount, "XDROOT/Thmbnl/C0001T01.JPG", []byte("thumb"))
+	if err := cfgStore.Update(func(c *config.Config) {
+		c.Scan.Extensions = append(c.Scan.Extensions, "mxf")
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, _ := verifyOnly(t, svc, cfgStore, mount, "original")
+	if res.Media != 1 || !res.Safe() {
+		t.Fatalf("res = %+v, want only the original counted and safe", res)
+	}
+}
+
+// TestVerifyCardDerivativeDirLookalikeIsNotIgnored checks that the
+// thumbnail/proxy dir match is by whole path segment: "SUBX" is not "SUB".
+func TestVerifyCardDerivativeDirLookalikeIsNotIgnored(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+	writeCardFile(t, mount, "PRIVATE/M4ROOT/SUBX/A.MP4", []byte("lookalike"))
+	writeCardFile(t, mount, "DCIM/A.JPG", []byte("confirmed"))
+
+	res, _ := verifyOnly(t, svc, cfgStore, mount, "confirmed")
+	if res.Unsupported["mp4"] != 1 {
+		t.Fatalf("res.Unsupported[mp4] = %d, want 1 (res = %+v)", res.Unsupported["mp4"], res)
+	}
+	if res.Safe() {
+		t.Fatalf("res.Safe() = true, want false")
+	}
+}
+
+// TestVerifyCardSlashPrefixedScanPath checks a configured scan path
+// written as "/DCIM" is treated as the card's DCIM folder.
+func TestVerifyCardSlashPrefixedScanPath(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+	if err := cfgStore.Update(func(c *config.Config) {
+		c.Scan.Paths = []string{"/DCIM"}
+		c.Scan.AutoPaths = false
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeCardFile(t, mount, "DCIM/100SONY/A.JPG", []byte("confirmed"))
+
+	res, _ := verifyOnly(t, svc, cfgStore, mount, "confirmed")
+	if res.Media != 1 || !res.Safe() {
+		t.Fatalf("res = %+v, want the DCIM photo counted and safe", res)
+	}
+}
+
+// TestVerifyCardIgnoresCameraDatabases checks camera database/service
+// files (Sony SONYCARD.IND, AVCHD thumbnail index, Nikon .DSC, Canon .MRK)
+// and root-level Finder volume files don't block a format.
+func TestVerifyCardIgnoresCameraDatabases(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+	writeCardFile(t, mount, "PRIVATE/SONY/SONYCARD.IND", []byte("ind"))
+	writeCardFile(t, mount, "PRIVATE/AVCHD/AVCHDTN/THUMB.TDT", []byte("tdt"))
+	writeCardFile(t, mount, "PRIVATE/AVCHD/AVCHDTN/THUMB.TID", []byte("tid"))
+	writeCardFile(t, mount, "NIKON001.DSC", []byte("dsc"))
+	writeCardFile(t, mount, "MISC/AUTPRINT.MRK", []byte("mrk"))
+	writeCardFile(t, mount, ".VolumeIcon.icns", []byte("icon"))
+	writeCardFile(t, mount, ".apdisk", []byte("apdisk"))
+	writeCardFile(t, mount, "DCIM/A.JPG", []byte("confirmed"))
+
+	res, requests := verifyOnly(t, svc, cfgStore, mount, "confirmed")
+	if res.Media != 1 || res.MissingCount != 0 || len(res.Unsupported) != 0 {
+		t.Fatalf("res = %+v, want exactly 1 confirmed media file and nothing else", res)
+	}
+	if !res.Safe() {
+		t.Fatalf("res.Safe() = false, want true")
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("server received %d requests, want 1", got)
+	}
+}
+
+// TestVerifyCardNestedVolumeFilesBlock checks .VolumeIcon.icns/.apdisk are
+// only Finder bookkeeping at the card root; elsewhere they are unknown files.
+func TestVerifyCardNestedVolumeFilesBlock(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+	writeCardFile(t, mount, "DCIM/.apdisk", []byte("apdisk"))
+	writeCardFile(t, mount, "DCIM/A.JPG", []byte("confirmed"))
+
+	res, _ := verifyOnly(t, svc, cfgStore, mount, "confirmed")
+	if res.Unsupported["apdisk"] != 1 {
+		t.Fatalf("res.Unsupported[apdisk] = %d, want 1 (res = %+v)", res.Unsupported["apdisk"], res)
+	}
+}
+
+// cancelAfterCtx is a context whose Err() reports nil for the first n calls
+// and context.Canceled afterwards: it lets a test cancel VerifyCard after
+// its up-front check, in the middle of the card walk.
+type cancelAfterCtx struct {
+	context.Context
+	calls atomic.Int64
+	n     int64
+}
+
+func (c *cancelAfterCtx) Err() error {
+	if c.calls.Add(1) > c.n {
+		return context.Canceled
+	}
+	return nil
+}
+
+// TestVerifyCardCancelledMidWalk checks a cancellation that arrives while
+// the card is being walked stops verification with the context error and
+// never reaches Immich.
+func TestVerifyCardCancelledMidWalk(t *testing.T) {
+	svc, cfgStore, mount := newVerifyService(t)
+	for i := range 5 {
+		writeCardFile(t, mount, fmt.Sprintf("DCIM/DSC%05d.JPG", i), []byte(fmt.Sprintf("f%d", i)))
+	}
+	srv, requests := newVerifyServer(t, nil, nil)
+	configureImmich(t, cfgStore, srv.URL, "VOL-UUID")
+
+	ctx := &cancelAfterCtx{Context: context.Background(), n: 2}
+	_, err := svc.VerifyCard(ctx, volume.Info{UUID: "VOL-UUID", MountPoint: mount}, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("VerifyCard() error = %v, want context.Canceled", err)
+	}
+	if got := ctx.calls.Load(); got < 3 {
+		t.Fatalf("ctx.Err() called %d times, want the walk itself to observe the cancellation", got)
+	}
+	if requests.Load() != 0 {
+		t.Fatalf("server received %d requests, want 0", requests.Load())
+	}
+}
+
+// TestVerifyCardUnreadableRootTrashesSkipped checks the root ".Trashes"
+// (macOS often creates it unreadable) is skipped without being read, so it
+// neither fails verification nor hides anything the gate must check.
+func TestVerifyCardUnreadableRootTrashesSkipped(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root ignores directory permissions")
+	}
+	svc, cfgStore, mount := newVerifyService(t)
+	writeCardFile(t, mount, ".Trashes/501/X.ARW", []byte("trashed"))
+	writeCardFile(t, mount, "DCIM/A.JPG", []byte("confirmed"))
+	trashes := filepath.Join(mount, ".Trashes")
+	if err := os.Chmod(trashes, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(trashes, 0o755) })
+
+	res, _ := verifyOnly(t, svc, cfgStore, mount, "confirmed")
+	if !res.Safe() {
+		t.Fatalf("res.Safe() = false, want true (res = %+v)", res)
+	}
+}

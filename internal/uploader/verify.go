@@ -3,6 +3,7 @@ package uploader
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,21 +24,32 @@ const verifyBatchSize = 200
 // UI; MissingCount still reflects every one of them.
 const maxMissingListed = 20
 
-// ignoredSystemNames are macOS (or, for "System Volume Information",
-// Windows) filesystem bookkeeping entries that can appear on any card
-// mounted on macOS. They hold no user media and must never influence a
-// format decision — independent of the user's Scan.ExcludePatterns, which
-// the gate otherwise does not consult (see the Unsupported field and
-// matchesUserExclude below). AppleDouble sidecar files ("._foo") are
-// matched by prefix in isIgnoredSystemPath, not listed here by name.
-var ignoredSystemNames = []string{
-	".DS_Store",
+// ignoredRootSystemDirs are macOS (or, for "System Volume Information",
+// Windows) filesystem bookkeeping directories that an OS creates at the
+// root of any card it mounts. They hold no user media and must never
+// influence a format decision — independent of the user's
+// Scan.ExcludePatterns, which the gate otherwise does not consult (see the
+// Unsupported field). They are matched only as the first path segment (the
+// card root): a folder of the same name deeper down, e.g.
+// "DCIM/100MSDCF/.Trashes", is not OS bookkeeping and is walked normally.
+var ignoredRootSystemDirs = []string{
 	".Spotlight-V100",
 	".fseventsd",
 	".Trashes",
 	".TemporaryItems",
 	"System Volume Information",
 }
+
+// ignoredRootSystemFiles are Finder volume files that only mean something
+// at the card root (a custom volume icon, the AirPort Disk marker).
+var ignoredRootSystemFiles = []string{
+	".VolumeIcon.icns",
+	".apdisk",
+}
+
+// ".DS_Store" files (Finder writes one into every folder it opens) and
+// AppleDouble sidecar files ("._foo") are ignored at any depth; see
+// isIgnoredSystemFile.
 
 // ignoredMediaDirs are known camera thumbnail/proxy directories: separate,
 // disposable renditions Immich never needs and the uploader never scans.
@@ -58,13 +70,17 @@ var ignoredMediaDirs = []string{
 // "C0001M01.XML"), bnp/inp/int/bin/dat/cpi/mpl/bdm (AVCHD/XDCAM index and
 // database files), thm (separate still thumbnails), lrv/lrf (GoPro low-res
 // proxies and their preview index), ctg (Canon catalog), idx/smi (subtitle
-// or index sidecars some cameras write), and xmp (Immich sidecars — the
+// or index sidecars some cameras write), ind (Sony card database,
+// "PRIVATE/SONY/SONYCARD.IND"), tdt/tid (AVCHD thumbnail database,
+// "AVCHDTN/THUMB.TDT"/".TID"), dsc (Nikon card database), mrk (Canon
+// "MISC/*.MRK" print/transfer orders), and xmp (Immich sidecars — the
 // scanner uploads an XMP together with its media file, never separately,
 // so it is never itself "missing" from Immich).
 var ignoredServiceExtensions = map[string]struct{}{
 	"xml": {}, "bnp": {}, "inp": {}, "int": {}, "bin": {}, "dat": {},
 	"cpi": {}, "mpl": {}, "bdm": {}, "thm": {}, "lrv": {}, "lrf": {},
-	"ctg": {}, "idx": {}, "smi": {}, "xmp": {},
+	"ctg": {}, "idx": {}, "smi": {}, "xmp": {}, "ind": {}, "tdt": {},
+	"tid": {}, "dsc": {}, "mrk": {},
 }
 
 // VerifyResult is the outcome of checking a whole card's media files
@@ -159,9 +175,6 @@ func (s *Service) VerifyCard(ctx context.Context, vol volume.Info, onProgress fu
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if d.IsDir() {
-			return nil
-		}
 
 		rel, relErr := filepath.Rel(vol.MountPoint, path)
 		if relErr != nil {
@@ -170,7 +183,14 @@ func (s *Service) VerifyCard(ctx context.Context, vol volume.Info, onProgress fu
 		rel = filepath.ToSlash(rel)
 		name := d.Name()
 
-		if isIgnoredSystemPath(name, rel) || underIgnoredMediaDir(rel) {
+		if d.IsDir() {
+			if isIgnoredRootSystemDir(rel) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+
+		if isIgnoredSystemFile(name, rel) || underIgnoredMediaDir(rel) {
 			return nil
 		}
 
@@ -312,20 +332,33 @@ func addMissing(result *VerifyResult, rel string) {
 	}
 }
 
-// isIgnoredSystemPath reports whether name (an AppleDouble sidecar such as
-// "._DSC00001.JPG") or any segment of rel (an ancestor directory, e.g.
-// ".Trashes") marks the entry as macOS/filesystem bookkeeping that the
-// format gate must disregard entirely: never counted as media, missing, or
-// unsupported, and never sent to Immich.
-func isIgnoredSystemPath(name, rel string) bool {
-	if strings.HasPrefix(name, "._") {
+// isIgnoredRootSystemDir reports whether rel (a directory relative to the
+// card root) is one of ignoredRootSystemDirs sitting directly at the root.
+// The walk skips such a directory entirely: never counted as media,
+// missing, or unsupported, and never sent to Immich. Compared
+// case-insensitively: macOS SD cards are case-insensitive FAT/exFAT.
+func isIgnoredRootSystemDir(rel string) bool {
+	if strings.Contains(rel, "/") {
+		return false
+	}
+	return equalFoldAny(rel, ignoredRootSystemDirs)
+}
+
+// isIgnoredSystemFile reports whether the file name at rel is macOS
+// bookkeeping the format gate must disregard: an AppleDouble sidecar
+// ("._DSC00001.JPG") or a ".DS_Store" at any depth, or one of
+// ignoredRootSystemFiles directly at the card root.
+func isIgnoredSystemFile(name, rel string) bool {
+	if strings.HasPrefix(name, "._") || strings.EqualFold(name, ".DS_Store") {
 		return true
 	}
-	for _, seg := range strings.Split(rel, "/") {
-		for _, ignored := range ignoredSystemNames {
-			if strings.EqualFold(seg, ignored) {
-				return true
-			}
+	return !strings.Contains(rel, "/") && equalFoldAny(name, ignoredRootSystemFiles)
+}
+
+func equalFoldAny(s string, list []string) bool {
+	for _, item := range list {
+		if strings.EqualFold(s, item) {
+			return true
 		}
 	}
 	return false
