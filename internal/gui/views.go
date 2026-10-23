@@ -44,7 +44,8 @@ type CardView struct {
 }
 
 // SettingsView holds the editable settings. Language is the preference
-// ("" follows the system language).
+// ("" follows the system language). Concurrency is the number of parallel
+// uploads, 0 when each sync picks it automatically.
 //
 // Autostart (the LaunchAgent is installed) is changed with
 // Service.SetAutostart, not SaveSettings, which ignores it and

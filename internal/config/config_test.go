@@ -144,3 +144,14 @@ func TestEffectiveConcurrencyDefaultsToFourIndependentOfCPUCount(t *testing.T) {
 		t.Fatalf("EffectiveConcurrency() with explicit value = %d, want 7", got)
 	}
 }
+
+func TestAutoConcurrencyIsTheDefault(t *testing.T) {
+	cfg := Default()
+	if !cfg.AutoConcurrency() {
+		t.Fatal("AutoConcurrency() = false by default, want true")
+	}
+	cfg.Upload.Concurrency = 6
+	if cfg.AutoConcurrency() {
+		t.Fatal("AutoConcurrency() = true with an explicit 6, want false")
+	}
+}

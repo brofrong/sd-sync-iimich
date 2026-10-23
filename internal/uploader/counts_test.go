@@ -71,7 +71,7 @@ func TestUploadAllCountsDuplicatesApart(t *testing.T) {
 
 	svc := &Service{State: st}
 	session := newSyncSession(st, "vol", files)
-	res, err := svc.uploadAll(context.Background(), "vol", immich.NewClient(srv.URL, "key"), 1, len(files)+5, 5, files,
+	res, err := svc.uploadAll(context.Background(), "vol", immich.NewClient(srv.URL, "key"), 1, false, len(files)+5, 5, files,
 		newSyncProgress(len(files), 400, onProgress), session, newSyncCheckpoint(st, session, 150))
 	if err != nil {
 		t.Fatalf("uploadAll() error = %v, want nil", err)

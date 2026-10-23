@@ -135,6 +135,8 @@
   "settings.language_system": "Comme le système",
   "settings.concurrency": "Envois en parallèle",
   "settings.concurrency_hint": "Nombre de fichiers envoyés en même temps. Davantage peut aller plus vite sur un réseau rapide ; {default} convient à la plupart des cartes.",
+  "settings.concurrency_auto": "Auto",
+  "settings.concurrency_auto_hint": "L’app détermine elle-même combien de fichiers envoyer à la fois sur votre réseau.",
   "settings.auto_paths": "Trouver automatiquement les dossiers des appareils photo",
   "settings.auto_paths_hint": "Chercher aussi dans les dossiers et types de fichiers des appareils courants, pas seulement dans DCIM.",
   "settings.autostart": "Ouvrir à l'ouverture de session",

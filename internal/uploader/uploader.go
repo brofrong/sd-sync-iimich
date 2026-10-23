@@ -37,6 +37,27 @@ type ProgressFunc func(Progress)
 type Service struct {
 	Config *config.Store
 	State  *state.DB
+
+	// tuned is the worker count the last automatic sync settled on (0: none
+	// yet); the next one starts there.
+	tunedMu sync.Mutex
+	tuned   int
+}
+
+// startWorkers is where an automatic sync starts.
+func (s *Service) startWorkers() int {
+	s.tunedMu.Lock()
+	defer s.tunedMu.Unlock()
+	if s.tuned > 0 {
+		return s.tuned
+	}
+	return config.DefaultConcurrency
+}
+
+func (s *Service) rememberWorkers(n int) {
+	s.tunedMu.Lock()
+	defer s.tunedMu.Unlock()
+	s.tuned = n
 }
 
 // Result counts the files of a sync: Uploaded were stored by Immich,
@@ -60,6 +81,10 @@ func (s *Service) Sync(ctx context.Context, vol volume.Info, dryRun bool, onProg
 	}
 
 	workers := cfg.EffectiveConcurrency()
+	auto := cfg.AutoConcurrency()
+	if auto {
+		workers = s.startWorkers()
+	}
 
 	if onProgress != nil {
 		onProgress(Progress{Phase: "scanning"})
@@ -97,6 +122,7 @@ func (s *Service) Sync(ctx context.Context, vol volume.Info, dryRun bool, onProg
 		"candidates", len(candidates),
 		"skipped_local", skipped,
 		"workers", workers,
+		"auto", auto,
 	)
 
 	if len(candidates) == 0 {
@@ -121,14 +147,16 @@ func (s *Service) Sync(ctx context.Context, vol volume.Info, dryRun bool, onProg
 	logx.Info("sync: upload started", "candidates", len(candidates))
 	session := newSyncSession(s.State, vol.UUID, candidates)
 	checkpoint := newSyncCheckpoint(s.State, session, cfg.EffectiveCheckpointInterval())
-	return s.uploadAll(ctx, vol.UUID, client, workers, len(files), skipped, candidates, prog, session, checkpoint)
+	return s.uploadAll(ctx, vol.UUID, client, workers, auto, len(files), skipped, candidates, prog, session, checkpoint)
 }
 
 func (s *Service) uploadAll(
 	ctx context.Context,
 	volumeUUID string,
 	client *immich.Client,
-	workers, totalFiles, alreadySkipped int,
+	workers int,
+	auto bool,
+	totalFiles, alreadySkipped int,
 	candidates []scanner.File,
 	prog *syncProgress,
 	session *syncSession,
@@ -138,24 +166,50 @@ func (s *Service) uploadAll(
 	ctx, abort := context.WithCancelCause(ctx)
 	defer abort(nil)
 
-	jobs := make(chan scanner.File, workers)
+	jobs := make(chan scanner.File)
 	var wg sync.WaitGroup
 	var bytesUploaded atomic.Int64
+	// congestion counts uploads that failed with a network or server error
+	// (and are retried): the automatic mode backs off on them.
+	var congestion atomic.Int64
 	tally := newErrorTally()
 	uploadStart := time.Now()
 
 	defer checkpoint.flush()
 
-	for i := 0; i < workers; i++ {
+	// In automatic mode every possible worker runs and the limiter decides
+	// how many upload at once.
+	slots := workers
+	if auto {
+		slots = config.MaxConcurrency
+	}
+	lim := newLimiter(ctx, workers)
+	var tn *tuner
+	stopTuning := make(chan struct{})
+	tuningDone := make(chan struct{})
+	if auto {
+		tn = newTuner(workers, config.MaxConcurrency)
+		go func() {
+			defer close(tuningDone)
+			autotune(ctx, stopTuning, tn, lim, prog, &congestion)
+		}()
+	} else {
+		close(tuningDone)
+	}
+
+	for range slots {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for f := range jobs {
-				if ctx.Err() != nil {
+			for lim.acquire() {
+				f, ok := <-jobs
+				if !ok || ctx.Err() != nil {
+					lim.release()
 					return
 				}
-				o := s.syncOne(ctx, abort, volumeUUID, client, f, session, checkpoint, &bytesUploaded, tally)
+				o := s.syncOne(ctx, abort, volumeUUID, client, f, session, checkpoint, &bytesUploaded, &congestion, tally)
 				prog.done(f.Size, f.RelativePath, o)
+				lim.release()
 				if cur := prog.doneCount.Load(); cur%50 == 0 {
 					logx.Info("sync: progress",
 						"done", cur,
@@ -179,6 +233,12 @@ feed:
 	}
 	close(jobs)
 	wg.Wait()
+	close(stopTuning)
+	<-tuningDone
+	if auto {
+		s.rememberWorkers(tn.kept())
+		logx.Info("sync: parallel uploads settled", "workers", tn.kept())
+	}
 
 	upl := int(prog.uploaded.Load())
 	dup := int(prog.duplicates.Load())
@@ -225,7 +285,7 @@ func (s *Service) syncOne(
 	f scanner.File,
 	session *syncSession,
 	checkpoint *syncCheckpoint,
-	bytesUploaded *atomic.Int64,
+	bytesUploaded, congestion *atomic.Int64,
 	tally *errorTally,
 ) outcome {
 	sha1hex, err := s.fileSHA1(volumeUUID, f)
@@ -236,7 +296,11 @@ func (s *Service) syncOne(
 	}
 
 	resp, err := uploadWithRetry(ctx, func() (*immich.UploadResponse, error) {
-		return client.Upload(ctx, f.AbsolutePath, sha1hex, f.Mtime, f.SidecarPath)
+		resp, err := client.Upload(ctx, f.AbsolutePath, sha1hex, f.Mtime, f.SidecarPath)
+		if err != nil && immich.IsRetryable(err) {
+			congestion.Add(1)
+		}
+		return resp, err
 	})
 	if err != nil {
 		logx.Error("sync: upload failed", "file", f.RelativePath, "err", err)

@@ -29,8 +29,6 @@ import (
 )
 
 const (
-	// maxConcurrency is the upper bound for parallel uploads in Settings.
-	maxConcurrency = 16
 	// maxHistory and maxLogLines bound what the window can request at once.
 	maxHistory  = 500
 	maxLogLines = 5000
@@ -222,7 +220,7 @@ func (s *Service) State() StateView {
 		Card: s.selectedCard(cfg),
 		Settings: s.autostartSettings(SettingsView{
 			Language:    cfg.UI.Language,
-			Concurrency: cfg.EffectiveConcurrency(),
+			Concurrency: settingsConcurrency(cfg),
 			AutoPaths:   cfg.Scan.AutoPaths,
 		}),
 		Version: s.version,
@@ -411,22 +409,34 @@ func (s *Service) SaveServer(url, apiKey string) error {
 	return nil
 }
 
-// SaveSettings saves the language, upload concurrency and automatic path
-// discovery.
+// settingsConcurrency is the parallel uploads setting shown in Settings:
+// 0 for automatic, else the fixed count (within the slider's range).
+func settingsConcurrency(cfg config.Config) int {
+	if cfg.AutoConcurrency() {
+		return 0
+	}
+	return min(cfg.Upload.Concurrency, config.MaxConcurrency)
+}
+
+// validConcurrency reports whether n can be saved: 0 (automatic) or a fixed
+// count up to config.MaxConcurrency.
+func validConcurrency(n int) bool {
+	return n >= 0 && n <= config.MaxConcurrency
+}
+
+// SaveSettings saves the language, upload concurrency (0: automatic) and
+// automatic path discovery.
 func (s *Service) SaveSettings(v SettingsView) error {
 	if v.Language != "" && !slices.Contains(i18n.Supported, v.Language) {
 		return fmt.Errorf("unsupported language %q", v.Language)
 	}
-	if v.Concurrency < 1 || v.Concurrency > maxConcurrency {
-		return fmt.Errorf("concurrency must be between 1 and %d", maxConcurrency)
+	if !validConcurrency(v.Concurrency) {
+		return fmt.Errorf("concurrency must be 0 (auto) or between 1 and %d", config.MaxConcurrency)
 	}
 	prev := s.cfg.Get()
 	if err := s.cfg.Update(func(c *config.Config) {
 		c.UI.Language = v.Language
-		// Keep "auto" unless the user picked a different number.
-		if v.Concurrency != c.EffectiveConcurrency() {
-			c.Upload.Concurrency = v.Concurrency
-		}
+		c.Upload.Concurrency = v.Concurrency
 		c.Scan.AutoPaths = v.AutoPaths
 	}); err != nil {
 		return fmt.Errorf("save settings: %w", err)

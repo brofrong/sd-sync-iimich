@@ -28,12 +28,15 @@
 
   // ---- General ------------------------------------------------------------------
   let language = $state("");
+  // Each sync picks the number of parallel uploads itself (Go: 0).
+  let auto = $state(true);
   let concurrency = $state(DEFAULT_CONCURRENCY);
   let autoPaths = $state(true);
   let autostart = $state(false);
 
   function syncFromState(s: SettingsView): void {
     language = s.language;
+    auto = s.concurrency <= 0;
     concurrency = s.concurrency >= 1 && s.concurrency <= MAX_CONCURRENCY ? s.concurrency : DEFAULT_CONCURRENCY;
     autoPaths = s.autoPaths;
     autostart = s.autostart;
@@ -54,7 +57,7 @@
     saveError = "";
     saved = false;
     try {
-      await backend.SaveSettings(new SettingsView({ language, concurrency, autoPaths }));
+      await backend.SaveSettings(new SettingsView({ language, concurrency: auto ? 0 : concurrency, autoPaths }));
     } catch (err) {
       saveError = t("settings.save_failed", { detail: message(err) });
       syncFromState($appState.settings);
@@ -145,26 +148,45 @@
 
     <div class="row">
       <div class="text">
-        <label for="set-concurrency">{t("settings.concurrency")}</label>
+        <label for="set-concurrency-auto">{t("settings.concurrency")}</label>
         <p class="hint" id="set-concurrency-hint">
-          {t("settings.concurrency_hint", { default: formatNumber(DEFAULT_CONCURRENCY) })}
+          {auto
+            ? t("settings.concurrency_auto_hint")
+            : t("settings.concurrency_hint", { default: formatNumber(DEFAULT_CONCURRENCY) })}
         </p>
       </div>
-      <div class="range control">
-        <input
-          id="set-concurrency"
-          type="range"
-          min="1"
-          max={MAX_CONCURRENCY}
-          step="1"
-          style:--fill="{fill}%"
-          aria-describedby="set-concurrency-hint"
-          value={concurrency}
-          oninput={(e) => (concurrency = Number(e.currentTarget.value))}
-          onchange={save}
+      <div class="auto control">
+        <span aria-hidden="true">{t("settings.concurrency_auto")}</span>
+        <Switch
+          id="set-concurrency-auto"
+          checked={auto}
+          describedby="set-concurrency-hint"
+          onchange={(v) => {
+            auto = v;
+            save();
+          }}
         />
-        <output for="set-concurrency">{formatNumber(concurrency)}</output>
       </div>
+      {#if !auto}
+        <div class="manual" transition:slide={{ duration: ms(250) }}>
+          <div class="range control">
+            <input
+              id="set-concurrency"
+              type="range"
+              min="1"
+              max={MAX_CONCURRENCY}
+              step="1"
+              style:--fill="{fill}%"
+              aria-label={t("settings.concurrency")}
+              aria-describedby="set-concurrency-hint"
+              value={concurrency}
+              oninput={(e) => (concurrency = Number(e.currentTarget.value))}
+              onchange={save}
+            />
+            <output for="set-concurrency">{formatNumber(concurrency)}</output>
+          </div>
+        </div>
+      {/if}
     </div>
 
     <div class="row">
@@ -305,6 +327,19 @@
   }
 
   /* ---- Range ---- */
+  .auto {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-2);
+    font-size: 12.5px;
+  }
+  .manual {
+    display: flex;
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+
   .range {
     display: flex;
     align-items: center;

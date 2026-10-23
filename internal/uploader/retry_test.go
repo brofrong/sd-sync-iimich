@@ -116,7 +116,7 @@ func TestUploadAllStopsWhenServerIsUnreachable(t *testing.T) {
 
 	svc := &Service{State: st}
 	session := newSyncSession(st, "vol", files)
-	res, err := svc.uploadAll(context.Background(), "vol", immich.NewClient(srv.URL, "key"), 1, len(files), 0, files,
+	res, err := svc.uploadAll(context.Background(), "vol", immich.NewClient(srv.URL, "key"), 1, false, len(files), 0, files,
 		newSyncProgress(len(files), 0, nil), session, newSyncCheckpoint(st, session, 150))
 
 	if !errors.Is(err, ErrServerUnavailable) {
@@ -160,7 +160,7 @@ func TestUploadAllStopsOnRejectedAPIKey(t *testing.T) {
 
 	svc := &Service{State: st}
 	session := newSyncSession(st, "vol", files)
-	res, err := svc.uploadAll(context.Background(), "vol", immich.NewClient(srv.URL, "key"), 1, len(files), 0, files,
+	res, err := svc.uploadAll(context.Background(), "vol", immich.NewClient(srv.URL, "key"), 1, false, len(files), 0, files,
 		newSyncProgress(len(files), 0, nil), session, newSyncCheckpoint(st, session, 150))
 
 	if !errors.Is(err, ErrAuthFailed) {
@@ -213,7 +213,7 @@ func TestUploadAllReportsBytesAndErrorKinds(t *testing.T) {
 
 	svc := &Service{State: st}
 	session := newSyncSession(st, "vol", files)
-	res, err := svc.uploadAll(context.Background(), "vol", immich.NewClient(srv.URL, "key"), 1, len(files), 0, files,
+	res, err := svc.uploadAll(context.Background(), "vol", immich.NewClient(srv.URL, "key"), 1, false, len(files), 0, files,
 		newSyncProgress(len(files), 600, nil), session, newSyncCheckpoint(st, session, 150))
 
 	if err != nil {

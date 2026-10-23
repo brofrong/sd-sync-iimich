@@ -239,7 +239,7 @@ export function createMockTransport(): Transport {
   const inBundle = query.get("bundle") !== "none" && !translocated;
   const settings = new SettingsView({
     language: query.get("lang") ?? "",
-    concurrency: 4,
+    concurrency: 0,
     autoPaths: true,
     autostart: inBundle,
     autostartAvailable: inBundle,
@@ -484,7 +484,7 @@ export function createMockTransport(): Transport {
       pushState();
     },
     SaveSettings: async (v) => {
-      if (v.concurrency < 1 || v.concurrency > 16) throw new Error("concurrency must be between 1 and 16");
+      if (v.concurrency < 0 || v.concurrency > 16) throw new Error("concurrency must be 0 (auto) or between 1 and 16");
       // As in Go, the autostart fields are not saved here.
       state.settings = new SettingsView({
         ...v,

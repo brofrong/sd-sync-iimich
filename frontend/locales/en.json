@@ -135,6 +135,8 @@
   "settings.language_system": "As in system",
   "settings.concurrency": "Parallel uploads",
   "settings.concurrency_hint": "How many files upload at once. More can be faster on a quick network; {default} suits most cards.",
+  "settings.concurrency_auto": "Auto",
+  "settings.concurrency_auto_hint": "The app finds out how many files to upload at once on your network.",
   "settings.auto_paths": "Find camera folders automatically",
   "settings.auto_paths_hint": "Also look in the folders and file types that common cameras use, not just DCIM.",
   "settings.autostart": "Open at Login",

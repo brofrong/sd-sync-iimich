@@ -135,6 +135,8 @@
   "settings.language_system": "Como en el sistema",
   "settings.concurrency": "Subidas en paralelo",
   "settings.concurrency_hint": "Cuántos archivos se suben a la vez. Con una red rápida, más puede ir más rápido; {default} va bien con la mayoría de tarjetas.",
+  "settings.concurrency_auto": "Automático",
+  "settings.concurrency_auto_hint": "La app calcula cuántos archivos subir a la vez según tu red.",
   "settings.auto_paths": "Buscar carpetas de cámara automáticamente",
   "settings.auto_paths_hint": "Buscar también en las carpetas y tipos de archivo de las cámaras habituales, no solo en DCIM.",
   "settings.autostart": "Abrir al iniciar sesión",

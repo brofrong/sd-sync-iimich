@@ -135,6 +135,8 @@
   "settings.language_system": "Igual ao sistema",
   "settings.concurrency": "Envios em paralelo",
   "settings.concurrency_hint": "Quantos arquivos são enviados ao mesmo tempo. Em uma rede rápida, mais pode ser mais rápido; {default} serve para a maioria dos cartões.",
+  "settings.concurrency_auto": "Automático",
+  "settings.concurrency_auto_hint": "O app descobre sozinho quantos arquivos enviar ao mesmo tempo na sua rede.",
   "settings.auto_paths": "Encontrar pastas de câmera automaticamente",
   "settings.auto_paths_hint": "Procurar também nas pastas e tipos de arquivo das câmeras mais comuns, não só em DCIM.",
   "settings.autostart": "Abrir ao iniciar sessão",

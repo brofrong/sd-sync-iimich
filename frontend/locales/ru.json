@@ -135,6 +135,8 @@
   "settings.language_system": "Как в системе",
   "settings.concurrency": "Параллельные загрузки",
   "settings.concurrency_hint": "Сколько файлов загружается одновременно. На быстрой сети больше может быть быстрее; большинству карт подходит {default}.",
+  "settings.concurrency_auto": "Авто",
+  "settings.concurrency_auto_hint": "Приложение само подбирает число одновременных загрузок под вашу сеть.",
   "settings.auto_paths": "Искать папки камер автоматически",
   "settings.auto_paths_hint": "Смотреть не только в DCIM, но и в папках и форматах файлов популярных камер.",
   "settings.autostart": "Автозапуск",

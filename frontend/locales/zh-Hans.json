@@ -135,6 +135,8 @@
   "settings.language_system": "跟随系统",
   "settings.concurrency": "并行上传",
   "settings.concurrency_hint": "同时上传的文件数。网络较快时调高可能更快；{default} 适合大多数存储卡。",
+  "settings.concurrency_auto": "自动",
+  "settings.concurrency_auto_hint": "应用会根据你的网络自动决定同时上传多少个文件。",
   "settings.auto_paths": "自动查找相机文件夹",
   "settings.auto_paths_hint": "除 DCIM 外，也查找常见相机使用的文件夹和文件格式。",
   "settings.autostart": "登录时打开",

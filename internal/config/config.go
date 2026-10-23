@@ -41,7 +41,7 @@ type ScanConfig struct {
 }
 
 type UploadConfig struct {
-	Concurrency        int `yaml:"concurrency"`         // 0 = auto (DefaultConcurrency)
+	Concurrency        int `yaml:"concurrency"`         // 0 = auto (see AutoConcurrency)
 	CheckpointInterval int `yaml:"checkpoint_interval"` // flush WAL every N files (100–200, default 150)
 }
 
@@ -143,7 +143,18 @@ func (s *Store) applyDefaults() {
 // beat 10, and more parallel reads slow the card down.
 const DefaultConcurrency = 4
 
-// EffectiveConcurrency returns upload parallelism (DefaultConcurrency unless set).
+// MaxConcurrency is the most parallel uploads, set by hand or picked
+// automatically.
+const MaxConcurrency = 16
+
+// AutoConcurrency reports whether each sync picks the number of parallel
+// uploads itself (concurrency 0, the default); see the uploader.
+func (c Config) AutoConcurrency() bool {
+	return c.Upload.Concurrency <= 0
+}
+
+// EffectiveConcurrency returns upload parallelism (DefaultConcurrency unless
+// set): the fixed count, or where the automatic mode starts.
 func (c Config) EffectiveConcurrency() int {
 	if c.Upload.Concurrency > 0 {
 		return c.Upload.Concurrency

@@ -135,6 +135,8 @@
   "settings.language_system": "システムと同じ",
   "settings.concurrency": "同時アップロード数",
   "settings.concurrency_hint": "同時にアップロードするファイル数です。高速なネットワークでは増やすと速くなることがあります。ほとんどのカードには {default} が適しています。",
+  "settings.concurrency_auto": "自動",
+  "settings.concurrency_auto_hint": "ネットワークに合わせて、同時にアップロードするファイル数をアプリが自動で決めます。",
   "settings.auto_paths": "カメラのフォルダを自動で検出",
   "settings.auto_paths_hint": "DCIM だけでなく、一般的なカメラが使うフォルダやファイル形式も探します。",
   "settings.autostart": "ログイン時に開く",
