@@ -38,11 +38,38 @@ type formatOutcome struct {
 // wantsFormat reports whether the sync that ended with st (and res) may be
 // followed by an auto-format: the option is on, the run uploaded
 // everything without errors (done or nothing_new) and was not a dry run.
-func (a *App) wantsFormat(res uploader.Result, st Status) bool {
+// A card whose format failed is not formatted again until the app
+// restarts (see formatSuppressed).
+func (a *App) wantsFormat(vol volume.Info, res uploader.Result, st Status) bool {
 	if a.dryRun || res.Errors != 0 || !a.Config.Get().Card.AutoFormat {
 		return false
 	}
-	return st.Code == CodeDone || st.Code == CodeNothingNew
+	if st.Code != CodeDone && st.Code != CodeNothingNew {
+		return false
+	}
+	if a.formatSuppressed(vol.UUID) {
+		logx.Info("not formatting: an earlier format of this card failed", "name", vol.Name, "uuid", vol.UUID)
+		return false
+	}
+	return true
+}
+
+// formatSuppressed reports whether a format of the card uuid failed since
+// the app started: there are no format retries.
+func (a *App) formatSuppressed(uuid string) bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.formatFailures[strings.ToLower(uuid)]
+}
+
+// suppressFormat records that a format of the card uuid failed.
+func (a *App) suppressFormat(uuid string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.formatFailures == nil {
+		a.formatFailures = map[string]bool{}
+	}
+	a.formatFailures[strings.ToLower(uuid)] = true
 }
 
 // autoFormat verifies that everything on vol is in Immich, counts down and
@@ -71,11 +98,6 @@ func (a *App) autoFormat(ctx context.Context, vol volume.Info, st Status) format
 	logx.Info("card verified", "name", vol.Name, "media", vr.Media,
 		"missing", vr.MissingCount, "unsupported", len(vr.Unsupported))
 	switch {
-	case vr.Media == 0:
-		// Nothing to free: no format, nothing to report.
-		logx.Info("not formatting: no media on the card", "name", vol.Name)
-		a.restoreStatus(gen, st)
-		return keep
 	case vr.MissingCount > 0:
 		logx.Info("not formatting: files are not in immich", "name", vol.Name,
 			"count", vr.MissingCount, "first", vr.Missing)
@@ -89,6 +111,12 @@ func (a *App) autoFormat(ctx context.Context, vol volume.Info, st Status) format
 		logx.Info("not formatting: the card has files that are not uploaded", "name", vol.Name, "files", files)
 		keep.status = newStatus(CodeFormatSkippedUnsupported, map[string]string{"files": files})
 		a.setStatus(keep.status)
+		return keep
+	case vr.Media == 0:
+		// An empty card: nothing to free, nothing to report. (Files the app
+		// does not upload were reported above: such a card is not empty.)
+		logx.Info("not formatting: no media on the card", "name", vol.Name)
+		a.restoreStatus(gen, st)
 		return keep
 	case !vr.Safe():
 		// Unreachable with the cases above; never erase if Safe disagrees.
@@ -128,8 +156,9 @@ func (a *App) countdown(ctx context.Context, vol volume.Info) (gen uint64, ok bo
 		a.mu.Lock()
 		a.countdownCancel = nil
 		a.mu.Unlock()
-		// A CancelFormat that came before the countdown was unregistered
-		// still counts, even if the last tick had already ended.
+		// CancelFormat cancels under a.mu: one accepted before the
+		// countdown was unregistered above is seen here, even if the last
+		// tick had already ended.
 		if ok && cdCtx.Err() != nil {
 			ok = false
 		}
@@ -171,13 +200,17 @@ func (a *App) countdown(ctx context.Context, vol volume.Info) (gen uint64, ok bo
 
 // CancelFormat cancels the countdown before a format, if one is running;
 // the sync's result status is shown again. Otherwise it does nothing.
+//
+// The countdown is cancelled while a.mu is held, the lock under which the
+// countdown unregisters itself: a cancel accepted here is always seen by
+// the countdown's final check, even at the very end of its last tick.
 func (a *App) CancelFormat() {
 	a.mu.Lock()
-	cancel := a.countdownCancel
-	a.countdownCancel = nil
-	a.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	defer a.mu.Unlock()
+	if a.countdownCancel != nil {
+		logx.Info("format countdown cancel requested")
+		a.countdownCancel()
+		a.countdownCancel = nil
 	}
 }
 
@@ -308,8 +341,29 @@ func (a *App) listedAt(vol volume.Info) bool {
 	return false
 }
 
-// formatFailed publishes CodeFormatFailed for err.
+// formatOutcomeParams returns what the ejected status says about the
+// format phase that produced st: its "format" outcome and that status's
+// own params, or nil when no format outcome is shown (no format attempted,
+// countdown cancelled, empty card).
+func formatOutcomeParams(st Status) map[string]string {
+	var outcome, key string
+	switch st.Code {
+	case CodeFormatted:
+		outcome, key = "formatted", "name"
+	case CodeFormatSkippedMissing:
+		outcome, key = "skipped_missing", "count"
+	case CodeFormatSkippedUnsupported:
+		outcome, key = "skipped_unsupported", "files"
+	default:
+		return nil
+	}
+	return map[string]string{"format": outcome, key: st.Params[key]}
+}
+
+// formatFailed publishes CodeFormatFailed for err and suppresses further
+// formats of the card (keep.vol, the card the phase started with).
 func (a *App) formatFailed(keep formatOutcome, err error) formatOutcome {
+	a.suppressFormat(keep.vol.UUID)
 	keep.status = newStatus(CodeFormatFailed, map[string]string{"detail": err.Error()})
 	keep.failed = true
 	a.setStatus(keep.status)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -105,7 +106,7 @@ func (a *App) RetryFailures(runID int64) error {
 // status is current.
 func (a *App) afterSync(ctx context.Context, vol volume.Info, res uploader.Result, st Status) Status {
 	ejectable := st.Code == CodeDone
-	if a.wantsFormat(res, st) && a.stillMounted(ctx, vol) {
+	if a.wantsFormat(vol, res, st) && a.stillMounted(ctx, vol) {
 		out := a.autoFormat(ctx, vol, st)
 		if out.failed {
 			// The card stays as it is for the user to look at.
@@ -166,7 +167,12 @@ func (a *App) autoEject(vol volume.Info, res uploader.Result, st Status) Status 
 		a.adopted = ""
 	}
 	a.mu.Unlock()
-	ej := newStatus(CodeEjected, map[string]string{"uploaded": strconv.Itoa(res.Uploaded)})
+	params := map[string]string{"uploaded": strconv.Itoa(res.Uploaded)}
+	// st is the status before the eject: the outcome of a format phase is
+	// carried over, so the ejected card still says why it was (not)
+	// formatted.
+	maps.Copy(params, formatOutcomeParams(st))
+	ej := newStatus(CodeEjected, params)
 	a.setStatus(ej)
 	return ej
 }

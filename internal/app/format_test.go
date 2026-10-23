@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -925,5 +926,219 @@ func TestOtherCardSelectedWhileErasing(t *testing.T) {
 	}
 	if got := rememberedUUIDs(t, a); slices.Contains(got, "VOL-UUID") {
 		t.Errorf("remembered = %v, want the erased card forgotten", got)
+	}
+}
+
+// TestFormatSkippedOnlyUnsupported: no media in scope, but files the app
+// does not upload — the reason is shown (the card is not empty).
+func TestFormatSkippedOnlyUnsupported(t *testing.T) {
+	a, _, e, _ := formatApp(t)
+	fakeVerify(a, uploader.VerifyResult{Unsupported: map[string]int{"hif": 12}}, nil)
+	statuses := recordFullStatuses(a)
+
+	a.SyncNow()
+	waitFor(t, "format_skipped_unsupported", func() bool { return statuses.has(CodeFormatSkippedUnsupported) })
+	waitSyncFinished(t, a)
+
+	if got := e.all(); len(got) != 0 {
+		t.Fatalf("erase calls = %v, want none", got)
+	}
+	st, _ := statuses.last(CodeFormatSkippedUnsupported)
+	if st.Params["files"] != "12 × .HIF" {
+		t.Errorf("files = %q, want %q", st.Params["files"], "12 × .HIF")
+	}
+}
+
+func TestEjectedCarriesFormatOutcome(t *testing.T) {
+	tests := []struct {
+		name   string
+		verify uploader.VerifyResult
+		want   map[string]string
+	}{
+		{"formatted", uploader.VerifyResult{Media: 2},
+			map[string]string{"uploaded": "1", "format": "formatted", "name": "CARD"}},
+		{"skipped_missing", uploader.VerifyResult{Media: 2, MissingCount: 3},
+			map[string]string{"uploaded": "1", "format": "skipped_missing", "count": "3"}},
+		{"skipped_unsupported", uploader.VerifyResult{Media: 2, Unsupported: map[string]int{"mxf": 3, "hif": 12}},
+			map[string]string{"uploaded": "1", "format": "skipped_unsupported", "files": "12 × .HIF, 3 × .MXF"}},
+		{"empty card", uploader.VerifyResult{},
+			map[string]string{"uploaded": "1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a, _, _, _ := formatApp(t)
+			fakeVerify(a, tt.verify, nil)
+			useFakeImmich(t, a)
+			putPhotos(t, a, "A.JPG")
+			fakeEject(a, nil)
+			statuses := recordFullStatuses(a)
+
+			a.SyncNow()
+			waitFor(t, "ejected", func() bool { return statuses.has(CodeEjected) })
+			waitSyncFinished(t, a)
+
+			st, _ := statuses.last(CodeEjected)
+			if !maps.Equal(st.Params, tt.want) {
+				t.Errorf("ejected params = %v, want %v", st.Params, tt.want)
+			}
+		})
+	}
+}
+
+// TestEjectedWithoutFormatHasNoOutcome: a cancelled countdown is not a
+// format outcome.
+func TestEjectedAfterCancelHasNoOutcome(t *testing.T) {
+	a, _, _, _ := formatApp(t)
+	useFakeImmich(t, a)
+	putPhotos(t, a, "A.JPG")
+	fakeEject(a, nil)
+	statuses := recordFullStatuses(a)
+	statuses.setOn(func(s Status) {
+		if s.Code == CodeFormatPending && s.Params["seconds"] == "29" {
+			a.CancelFormat()
+		}
+	})
+
+	a.SyncNow()
+	waitFor(t, "ejected", func() bool { return statuses.has(CodeEjected) })
+	waitSyncFinished(t, a)
+
+	st, _ := statuses.last(CodeEjected)
+	if want := map[string]string{"uploaded": "1"}; !maps.Equal(st.Params, want) {
+		t.Errorf("ejected params = %v, want %v", st.Params, want)
+	}
+}
+
+// TestCancelFormatAtLastTick: a cancel during the last second still stops
+// the format.
+func TestCancelFormatAtLastTick(t *testing.T) {
+	a, _, e, _ := formatApp(t)
+	statuses := recordFullStatuses(a)
+	statuses.setOn(func(s Status) {
+		if s.Code == CodeFormatPending && s.Params["seconds"] == "1" {
+			a.CancelFormat()
+		}
+	})
+
+	a.SyncNow()
+	waitFor(t, "the countdown", func() bool { return statuses.has(CodeFormatPending) })
+	waitSyncFinished(t, a)
+
+	if got := e.all(); len(got) != 0 {
+		t.Fatalf("erase calls = %v after CancelFormat, want none", got)
+	}
+	if got := a.Status().Code; got != CodeNothingNew {
+		t.Errorf("Status().Code = %q, want the sync's result (nothing_new)", got)
+	}
+}
+
+// TestFormatCardChangedAfterLastTick isolates the check right before the
+// erase: the card changes after the countdown's last per-tick check.
+func TestFormatCardChangedAfterLastTick(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(t *testing.T, a *App, mount string)
+	}{
+		{"another card at the mount point", func(t *testing.T, a *App, mount string) {
+			a.mu.Lock()
+			a.mountedTarget = &volume.Info{UUID: "OTHER-UUID", Name: "CARD", MountPoint: mount}
+			a.mu.Unlock()
+		}},
+		{"another card selected", func(t *testing.T, a *App, mount string) {
+			if err := a.Config.Update(func(c *config.Config) { c.Watch.VolumeUUID = "OTHER-UUID" }); err != nil {
+				t.Error(err)
+			}
+		}},
+		{"auto-format turned off", func(t *testing.T, a *App, mount string) {
+			if err := a.Config.Update(func(c *config.Config) { c.Card.AutoFormat = false }); err != nil {
+				t.Error(err)
+			}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a, _, e, _ := formatApp(t)
+			if err := a.Config.Update(func(c *config.Config) { c.Card.AutoEject = false }); err != nil {
+				t.Fatal(err)
+			}
+			statuses := recordFullStatuses(a)
+			mount := a.MountedTarget().MountPoint
+			statuses.setOn(func(s Status) {
+				if s.Code == CodeFormatPending && s.Params["seconds"] == "1" {
+					tt.change(t, a, mount)
+				}
+			})
+
+			a.SyncNow()
+			waitFor(t, "the countdown", func() bool { return statuses.has(CodeFormatPending) })
+			waitSyncFinished(t, a)
+
+			if got := e.all(); len(got) != 0 {
+				t.Fatalf("erase calls = %v, want none", got)
+			}
+			if statuses.has(CodeFormatting) || statuses.has(CodeFormatFailed) {
+				t.Errorf("statuses = %v, want a silent skip", statuses.codes())
+			}
+		})
+	}
+}
+
+// TestNoFormatRetryAfterFailure: after a failed format the card is not
+// verified or erased again until the app restarts.
+func TestNoFormatRetryAfterFailure(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		setup func(a *App, v *verifyRecorder, e *eraseRecorder)
+	}{
+		{"erase failed", func(a *App, v *verifyRecorder, e *eraseRecorder) {
+			e.err = errors.New("diskutil eraseVolume: resource busy")
+			card := *a.MountedTarget()
+			a.listRemovable = func() ([]volume.Info, error) { return []volume.Info{card}, nil }
+		}},
+		{"verify failed", func(a *App, v *verifyRecorder, e *eraseRecorder) {
+			v.err = errors.New("verify card: permission denied")
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			a, v, e, _ := formatApp(t)
+			tt.setup(a, v, e)
+			statuses := recordFullStatuses(a)
+
+			a.SyncNow()
+			waitFor(t, "format_failed", func() bool { return statuses.has(CodeFormatFailed) })
+			waitSyncFinished(t, a)
+			verifies, erases := v.count(), len(e.all())
+
+			a.SyncNow()
+			waitFor(t, "the second sync", func() bool {
+				runs, err := a.State.RecentRuns(10)
+				return err == nil && len(runs) == 2 && runs[0].FinishedAt != nil
+			})
+			waitSyncFinished(t, a)
+
+			if v.count() != verifies || len(e.all()) != erases {
+				t.Errorf("verify calls %d→%d, erase calls %d→%d; want no retry", verifies, v.count(), erases, len(e.all()))
+			}
+			if got := a.Status().Code; got != CodeNothingNew {
+				t.Errorf("Status().Code = %q, want nothing_new", got)
+			}
+		})
+	}
+}
+
+func TestNoFormatRetryAfterErasedNotRemounted(t *testing.T) {
+	a, v, e, _ := formatApp(t)
+	e.err = fmt.Errorf("device disk4s1: %w", volume.ErrErasedNotRemounted)
+	statuses := recordFullStatuses(a)
+
+	a.SyncNow()
+	waitFor(t, "format_failed", func() bool { return statuses.has(CodeFormatFailed) })
+	waitSyncFinished(t, a)
+
+	if !a.formatSuppressed("vol-uuid") {
+		t.Error("formatSuppressed(VOL-UUID) = false after the card was erased but not found, want true")
+	}
+	if v.count() != 1 {
+		t.Errorf("verify calls = %d, want 1", v.count())
 	}
 }

@@ -69,6 +69,10 @@ type App struct {
 	// (guarded by mu): the watcher's mount event for it is an echo of the
 	// format, not a card being plugged in.
 	adopted string
+	// formatFailures holds the lower-case UUIDs of cards whose format
+	// failed since the app started (guarded by mu): they are not
+	// formatted again.
+	formatFailures map[string]bool
 
 	// Seams set by New; tests replace them so they never touch the Mac.
 	keepAwake     func() (release func())

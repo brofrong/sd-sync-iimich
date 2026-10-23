@@ -34,8 +34,11 @@ const (
 	CodeCardRemoved       Code = "card_removed"
 	CodeCancelled         Code = "cancelled"
 	CodeFailed            Code = "failed"
-	// CodeEjected follows CodeDone when the app ejected the card itself:
-	// it can be pulled out. It stays until the next mount or user action.
+	// CodeEjected follows CodeDone (or a format phase) when the app ejected
+	// the card itself: it can be pulled out. It stays until the next mount
+	// or user action. Params: uploaded; after a format phase also format
+	// ("formatted", "skipped_missing" or "skipped_unsupported") with that
+	// status's name, count or files.
 	CodeEjected Code = "ejected"
 
 	// The auto-format phase after a sync (see autoFormat).
