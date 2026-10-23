@@ -1,6 +1,7 @@
 <script lang="ts">
   // An on/off switch: a native checkbox with role="switch", drawn as a
   // track with a knob that slides with a spring. The track glows while on.
+  // It is controlled: it always shows `checked`, whatever was clicked.
   interface Props {
     checked: boolean;
     disabled?: boolean;
@@ -22,7 +23,14 @@
     {disabled}
     aria-checked={checked}
     aria-describedby={describedby}
-    onchange={(e) => onchange(e.currentTarget.checked)}
+    onchange={(e) => {
+      const input = e.currentTarget;
+      onchange(input.checked);
+      // Controlled: the box shows the prop, not the click. A parent that
+      // doesn't take the change (e.g. auto-format waits for a confirmation)
+      // leaves the switch as it was, and the next click toggles again.
+      input.checked = checked;
+    }}
   />
   <span class="knob" aria-hidden="true"></span>
 </span>

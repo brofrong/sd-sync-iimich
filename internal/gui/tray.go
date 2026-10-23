@@ -152,8 +152,15 @@ func formatETA(c *i18n.Catalog, seconds int) string {
 	})
 }
 
+// isRunning reports whether code is a phase StopSync ends: the sync itself
+// and the auto-format phase after it (verifying, the countdown, erasing).
 func isRunning(code app.Code) bool {
-	return code == app.CodeScanning || code == app.CodeSyncing
+	switch code {
+	case app.CodeScanning, app.CodeSyncing,
+		app.CodeVerifying, app.CodeFormatPending, app.CodeFormatting:
+		return true
+	}
+	return false
 }
 
 // setAnimating starts or stops the spinner on the tray icon.

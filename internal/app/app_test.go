@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -167,6 +168,15 @@ func testApp(t *testing.T) *App {
 		Uploader:      &uploader.Service{Config: cfgStore, State: st},
 		mountedTarget: &vol,
 	}
+	// Never touch the real Mac: no caffeinate, no diskutil, no real volume
+	// list (tests that need these replace the seams).
+	a.keepAwake = func() func() { return func() {} }
+	a.eject = func(mountPoint string) error {
+		t.Errorf("unexpected eject of %s", mountPoint)
+		return errors.New("eject not expected in this test")
+	}
+	a.isCameraCard = func(string) bool { return false }
+	a.listRemovable = func() ([]volume.Info, error) { return nil, nil }
 	fastResumeIntervals(t)
 	a.resumer = newResumer(
 		func(context.Context) error { return errPingDown },

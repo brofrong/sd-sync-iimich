@@ -41,7 +41,7 @@ func ScanVolume(mountPoint string, cfg config.Config) ([]File, error) {
 				return nil
 			}
 			name := d.Name()
-			if shouldExclude(name, cfg.Scan.ExcludePatterns) {
+			if ShouldExclude(name, cfg.Scan.ExcludePatterns) {
 				return nil
 			}
 			ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(name), "."))
@@ -80,7 +80,12 @@ func ScanVolume(mountPoint string, cfg config.Config) ([]File, error) {
 	return files, nil
 }
 
-func shouldExclude(name string, patterns []string) bool {
+// ShouldExclude reports whether name matches one of the configured exclude
+// patterns ("._*" is a special case for macOS AppleDouble sidecar junk; the
+// rest are plain filepath.Match globs against the base name), so callers
+// outside this package (card verification) can skip the same camera junk
+// the scanner does without re-walking its logic.
+func ShouldExclude(name string, patterns []string) bool {
 	for _, p := range patterns {
 		if p == "._*" && strings.HasPrefix(name, "._") {
 			return true

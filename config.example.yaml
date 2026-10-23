@@ -24,3 +24,15 @@ upload:
 
 state:
   db_path: "~/.config/sd-sync-immich/state.db"
+
+card:
+  auto_eject: true   # извлекать карту после загрузки
+  auto_format: false # форматировать карту, когда всё с неё есть в Immich
+
+notifications:
+  enabled: true      # общий выключатель
+  done: true
+  errors: true
+  other_card: true
+  server: true
+  card: true

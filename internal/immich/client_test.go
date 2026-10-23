@@ -1,6 +1,7 @@
 package immich
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -259,6 +261,47 @@ func endless(w http.ResponseWriter) {
 		if _, err := w.Write(chunk); err != nil {
 			return
 		}
+	}
+}
+
+func TestBulkUploadCheckParsesResults(t *testing.T) {
+	var gotBody []byte
+	c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/assets/bulk-upload-check" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var err error
+		gotBody, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"results":[
+			{"id":"DCIM/A.JPG","action":"reject","reason":"duplicate","assetId":"asset-1","isTrashed":false},
+			{"id":"DCIM/B.JPG","action":"reject","reason":"duplicate","assetId":"asset-2","isTrashed":true}
+		]}`)
+	})
+
+	results, err := c.BulkUploadCheck(context.Background(), []BulkCheckAsset{
+		{ID: "DCIM/A.JPG", Checksum: strings.Repeat("a", 40)},
+		{ID: "DCIM/B.JPG", Checksum: strings.Repeat("b", 40)},
+	})
+	if err != nil {
+		t.Fatalf("BulkUploadCheck() error = %v", err)
+	}
+	if !bytes.Contains(gotBody, []byte("DCIM/A.JPG")) || !bytes.Contains(gotBody, []byte("DCIM/B.JPG")) {
+		t.Fatalf("request body = %s, want both asset ids", gotBody)
+	}
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+	if results[0].ID != "DCIM/A.JPG" || results[0].Action != "reject" || results[0].Reason != "duplicate" || results[0].AssetID != "asset-1" || results[0].IsTrashed {
+		t.Fatalf("results[0] = %+v, want reject/duplicate/asset-1, not trashed", results[0])
+	}
+	if !results[1].IsTrashed {
+		t.Fatalf("results[1] = %+v, want IsTrashed = true", results[1])
 	}
 }
 

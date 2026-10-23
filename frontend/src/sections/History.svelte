@@ -2,15 +2,19 @@
   // The History section: the last 50 sync runs grouped by day, each with
   // its result, card, counts, size and duration. A run without a finish
   // time is the sync in progress (the newest one, while syncing) or one the
-  // app never finished (it quit or crashed mid-sync).
-  import { fly } from "svelte/transition";
-  import type { SyncRun } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/state";
+  // app never finished (it quit or crashed mid-sync). A run with errors
+  // expands into the files that failed ("path — kind — detail"), loaded on
+  // demand, with "Retry failed files"; runs from before the list was kept
+  // say so instead.
+  import { fly, slide } from "svelte/transition";
+  import type { FileFailure, SyncRun } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/state";
+  import Button from "../components/Button.svelte";
   import GlassCard from "../components/GlassCard.svelte";
   import { backend, parseTime, status } from "../lib/backend";
   import { formatBytes, formatDay, formatDuration, formatNumber, formatTime, t } from "../lib/i18n";
   import { icons } from "../lib/icons";
   import { errorKindLines } from "../lib/runs";
-  import { reducedMotion, toneFor, type Tone } from "../lib/stores";
+  import { navigate, reducedMotion, toneFor, type Tone } from "../lib/stores";
 
   const LIMIT = 50;
 
@@ -54,6 +58,8 @@
     stats: { text: string; bad?: boolean }[];
     kinds: string[];
     detail: string;
+    errors: number;
+    failuresRecorded: boolean;
   }
 
   function toRow(run: SyncRun, newest: boolean): Row {
@@ -95,7 +101,55 @@
       stats,
       kinds,
       detail,
+      errors: run.errors,
+      failuresRecorded: run.failuresRecorded,
     };
+  }
+
+  // ---- Failed files ---------------------------------------------------------
+  interface Failures {
+    loading: boolean;
+    files: FileFailure[];
+    error: string;
+    retryError: string;
+  }
+  // The expanded runs (by id) and their failed files.
+  let open = $state<Record<number, Failures>>({});
+
+  function toggle(row: Row): void {
+    if (open[row.id]) {
+      delete open[row.id];
+      return;
+    }
+    open[row.id] = { loading: row.failuresRecorded, files: [], error: "", retryError: "" };
+    if (!row.failuresRecorded) return;
+    backend.RunFailures(row.id).then(
+      (files) => {
+        const f = open[row.id];
+        if (f) Object.assign(f, { loading: false, files: files ?? [] });
+      },
+      (err) => {
+        const f = open[row.id];
+        if (f) Object.assign(f, { loading: false, error: t("ui.load_failed", { detail: message(err) }) });
+      },
+    );
+  }
+
+  async function retry(row: Row): Promise<void> {
+    const f = open[row.id];
+    if (!f) return;
+    f.retryError = "";
+    try {
+      await backend.RetryFailures(row.id);
+    } catch (err) {
+      // Go answers "the card isn't here (or a sync runs)" with this code.
+      f.retryError =
+        message(err) === "retry_unavailable"
+          ? t("history.retry_unavailable", { name: row.card })
+          : t("ui.action_failed", { detail: message(err) });
+      return;
+    }
+    navigate("status");
   }
 
   const groups = $derived.by(() => {
@@ -156,6 +210,57 @@
                   {/if}
                   {#if row.detail}
                     <p class="detail-text">{row.detail}</p>
+                  {/if}
+                  {#if row.errors > 0}
+                    {@const f = open[row.id]}
+                    <button
+                      type="button"
+                      class="disclose"
+                      class:open={Boolean(f)}
+                      aria-expanded={Boolean(f)}
+                      aria-controls="failures-{row.id}"
+                      onclick={() => toggle(row)}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>{t("history.failures")}
+                    </button>
+                    {#if f}
+                      <div class="failures" id="failures-{row.id}" transition:slide={{ duration: ms(250) }}>
+                        {#if !row.failuresRecorded}
+                          <p class="hint">{t("history.failures_unavailable")}</p>
+                        {:else if f.loading}
+                          <div class="skeleton-lines" aria-hidden="true"><i></i><i></i></div>
+                        {:else if f.error}
+                          <p class="error-text" role="alert">{f.error}</p>
+                        {:else}
+                          <ul class="files">
+                            {#each f.files as file, n (n)}
+                              <li>
+                                <span class="path">{file.relativePath}</span>
+                                <span class="sep" aria-hidden="true">—</span>
+                                <span class="kind">{t(`error_kind.${file.kind}`)}</span>
+                                {#if file.detail}
+                                  <span class="sep" aria-hidden="true">—</span>
+                                  <span class="why">{file.detail}</span>
+                                {/if}
+                              </li>
+                            {/each}
+                          </ul>
+                          {#if row.errors > f.files.length && f.files.length}
+                            <p class="hint">
+                              {t("history.failures_truncated", { shown: formatNumber(f.files.length), total: formatNumber(row.errors) })}
+                            </p>
+                          {/if}
+                          {#if f.files.length}
+                            <div class="retry">
+                              <Button onclick={() => retry(row)}>{t("history.retry_failures")}</Button>
+                            </div>
+                          {/if}
+                          {#if f.retryError}
+                            <p class="error-text" role="alert">{f.retryError}</p>
+                          {/if}
+                        {/if}
+                      </div>
+                    {/if}
                   {/if}
                 </div>
               </li>
@@ -252,6 +357,90 @@
   .kinds {
     color: rgba(255, 179, 64, 0.85);
     font-size: 11.5px;
+  }
+
+  /* ---- Failed files ---- */
+  .disclose {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 6px 0 0 -3px;
+    padding: 2px 6px 2px 2px;
+    border: 0;
+    border-radius: var(--radius-s);
+    background: none;
+    color: var(--accent-soft);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .disclose:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .disclose:focus-visible {
+    outline: 2px solid rgba(179, 157, 255, 0.7);
+  }
+  .disclose svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: transform 0.25s var(--spring);
+  }
+  .disclose.open svg {
+    transform: rotate(90deg);
+  }
+  .failures {
+    margin-top: 6px;
+  }
+  .failures .hint {
+    margin: 4px 0 2px;
+  }
+  .files {
+    max-height: 220px;
+    margin: 0;
+    padding: 6px 10px;
+    overflow: auto;
+    border-radius: var(--radius-m);
+    background: rgba(8, 6, 16, 0.35);
+    list-style: none;
+    font-size: 11.5px;
+    line-height: 1.5;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  /* Plain text lines, not the run rows' flex layout. */
+  .files li {
+    display: block;
+    padding: 0;
+    overflow-wrap: anywhere;
+  }
+  .files li + li {
+    margin-top: 4px;
+    border-top: 0;
+  }
+  .files .path {
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .files .sep {
+    margin: 0 5px;
+    color: rgba(255, 255, 255, 0.25);
+  }
+  .files .kind {
+    color: rgba(255, 179, 64, 0.9);
+  }
+  .files .why {
+    color: var(--text-3);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .retry {
+    margin-top: 10px;
   }
 
   .dot {

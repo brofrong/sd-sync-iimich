@@ -3,7 +3,9 @@
   // Title and detail come from status.<code>.title/detail; the buttons from
   // status.actions. While syncing it shows the current file, counts, bytes,
   // speed, time left and how many files were uploaded, were already in
-  // Immich (duplicates) or failed. Before setup it becomes an onboarding step.
+  // Immich (duplicates) or failed; while verifying, how many files were
+  // checked; before a format, a countdown with Cancel. Before setup it
+  // becomes an onboarding step.
   import { untrack } from "svelte";
   import { fade, fly } from "svelte/transition";
   import type { Status } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/app";
@@ -32,7 +34,7 @@
   const ms = (n: number) => ($reducedMotion ? 0 : n);
 
   // Counts in params are formatted for the current language.
-  const countParams = new Set(["uploaded", "errors"]);
+  const countParams = new Set(["uploaded", "errors", "count"]);
   const params = $derived(
     Object.fromEntries(
       Object.entries(status.params ?? {}).map(([k, v]) => [
@@ -44,6 +46,17 @@
 
   const title = $derived(code ? t(`status.${code}.title`, params) : "");
   const detail = $derived(code ? t(`status.${code}.detail`, params) : "");
+  // What became of the card's format before it was ejected (Go: the
+  // "format" param of ejected).
+  const formatLine = $derived(
+    code === "ejected" && params.format ? t(`status.ejected.format.${params.format}`, params) : "",
+  );
+
+  // ---- Format countdown ---------------------------------------------------------
+  // As Go's formatCountdown (30 s).
+  const COUNTDOWN = 30;
+  const seconds = $derived(Math.max(0, Number(status.params?.seconds ?? 0) || 0));
+  const RING = 2 * Math.PI * 21;
 
   const progress = $derived(status.progress);
   const ratio = $derived.by(() => {
@@ -72,6 +85,7 @@
     open_server: "server",
     open_cards: "cards",
     open_logs: "logs",
+    open_history: "history",
   };
 
   async function run(action: string): Promise<void> {
@@ -92,6 +106,8 @@
           return await backend.EjectCard();
         case "open_immich":
           return await backend.OpenImmich();
+        case "cancel_format":
+          return await backend.CancelFormat();
       }
     } catch (err) {
       actionError = t("ui.action_failed", { detail: err instanceof Error ? err.message : String(err) });
@@ -99,7 +115,8 @@
     }
   }
 
-  // Stop is the escape hatch while syncing, not the thing to click.
+  // Stop is the escape hatch while syncing, not the thing to click; Cancel
+  // stops the format countdown, which is what is about to happen.
   const isPrimary = (action: string, i: number) => i === 0 && action !== "stop";
 
   // ---- Onboarding -------------------------------------------------------------
@@ -135,7 +152,7 @@
                     <circle class="ring" cx="12" cy="12" r="10" />
                     <path class="tick" d="M7 12.5l3.2 3.2L17 9" />
                   </svg>
-                {:else if tone === "error" || code === "done_with_errors"}
+                {:else if tone === "error" || code === "done_with_errors" || code.startsWith("format_skipped")}
                   <svg class="line pop" viewBox="0 0 24 24"><path d={icons.warning} /></svg>
                 {:else if code === "cancelled"}
                   <svg class="line" viewBox="0 0 24 24"><path d={icons.pause} /></svg>
@@ -170,14 +187,41 @@
                 <span class="duplicates"><i aria-hidden="true"></i>{t("progress.duplicates", { count: formatNumber(progress.duplicates) })}</span>
                 <span class="errors" class:bad={progress.errors > 0}><i aria-hidden="true"></i>{t("progress.errors", { count: formatNumber(progress.errors) })}</span>
               </div>
+            {:else if code === "verifying" && progress}
+              <p class="detail">{detail}</p>
+              <ProgressBar value={progress.total > 0 ? progress.current / progress.total : null} label={title} />
+              {#if progress.total > 0}
+                <div class="meta">
+                  <span>{t("progress.count", { current: formatNumber(progress.current), total: formatNumber(progress.total) })}</span>
+                </div>
+              {/if}
+            {:else if code === "format_pending"}
+              <div class="countdown">
+                <svg class="ring-timer" viewBox="0 0 48 48" aria-hidden="true">
+                  <circle class="ring-track" cx="24" cy="24" r="21" />
+                  <circle
+                    class="ring-left"
+                    cx="24"
+                    cy="24"
+                    r="21"
+                    stroke-dasharray={RING}
+                    stroke-dashoffset={RING * (1 - Math.min(seconds, COUNTDOWN) / COUNTDOWN)}
+                  />
+                  <text x="24" y="24">{seconds}</text>
+                </svg>
+                <p class="detail">{detail}</p>
+              </div>
             {:else}
               <p class="detail">{detail}</p>
+              {#if formatLine}
+                <p class="detail format-line" class:warn={params.format !== "formatted"}>{formatLine}</p>
+              {/if}
               {#if code === "done_with_errors" && errorKinds.length}
                 <ul class="kinds">
                   {#each errorKinds as kind, k (k)}<li>{kind}</li>{/each}
                 </ul>
               {/if}
-              {#if code === "scanning"}
+              {#if code === "scanning" || code === "verifying" || code === "formatting"}
                 <ProgressBar value={null} label={title} />
               {/if}
             {/if}
@@ -371,6 +415,53 @@
   }
   .detail + :global(.track) {
     margin-top: 14px;
+  }
+
+  .format-line {
+    margin-top: 4px;
+  }
+  .format-line.warn {
+    color: rgba(255, 179, 64, 0.9);
+  }
+
+  .countdown {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 12px;
+  }
+  .countdown .detail {
+    margin: 0;
+  }
+  .ring-timer {
+    width: 52px;
+    height: 52px;
+    flex-shrink: 0;
+    overflow: visible;
+  }
+  .ring-track,
+  .ring-left {
+    fill: none;
+    stroke-width: 3.5;
+  }
+  .ring-track {
+    stroke: rgba(255, 255, 255, 0.12);
+  }
+  .ring-left {
+    stroke: var(--accent-soft);
+    stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: center;
+    transition: stroke-dashoffset 0.9s linear;
+    filter: drop-shadow(0 0 4px rgba(123, 92, 255, 0.7));
+  }
+  .ring-timer text {
+    fill: var(--text);
+    font-size: 17px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    text-anchor: middle;
+    dominant-baseline: central;
   }
 
   .meta {

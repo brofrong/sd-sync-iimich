@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -142,6 +144,92 @@ func TestEffectiveConcurrencyDefaultsToFourIndependentOfCPUCount(t *testing.T) {
 	cfg.Upload.Concurrency = 7
 	if got := cfg.EffectiveConcurrency(); got != 7 {
 		t.Fatalf("EffectiveConcurrency() with explicit value = %d, want 7", got)
+	}
+}
+
+func TestLoadOldConfigGetsCardDefaults(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	path, err := ConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Old config.yaml predates the card/notifications sections.
+	data := []byte("immich:\n  url: http://example.com\n  api_key: key\nwatch:\n  volume_uuid: VOL\n  volume_name: CARD\n")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	cfg := store.Get()
+
+	if !cfg.Card.AutoEject {
+		t.Error("Card.AutoEject = false, want true")
+	}
+	if cfg.Card.AutoFormat {
+		t.Error("Card.AutoFormat = true, want false")
+	}
+	n := cfg.Notifications
+	if !n.Enabled || !n.Done || !n.Errors || !n.OtherCard || !n.Server || !n.Card {
+		t.Errorf("Notifications = %+v, want all true", n)
+	}
+}
+
+func TestKnownMediaExtensions(t *testing.T) {
+	extensions := KnownMediaExtensions()
+
+	for _, want := range []string{"arw", "hif", "mxf"} {
+		if _, ok := extensions[want]; !ok {
+			t.Errorf("KnownMediaExtensions() missing %q", want)
+		}
+	}
+	for _, notWant := range []string{"xml", "xmp"} {
+		if _, ok := extensions[notWant]; ok {
+			t.Errorf("KnownMediaExtensions() contains %q, want absent", notWant)
+		}
+	}
+}
+
+func TestInScanPaths(t *testing.T) {
+	cfg := Default()
+	cfg.Scan.AutoPaths = false
+	cfg.Scan.Paths = []string{"DCIM"}
+
+	tests := []struct {
+		name string
+		rel  string
+		want bool
+	}{
+		{"nested", "DCIM/100SONY/DSC00001.JPG", true},
+		{"case-insensitive", "dcim/100sony/dsc00001.jpg", true},
+		{"leading slash tolerated", "/DCIM/100SONY/DSC00001.JPG", true},
+		{"sibling prefix is not nested", "DCIMX/DSC00001.JPG", false},
+		{"unrelated path", "PRIVATE/M4ROOT/CLIP/C0001.MP4", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cfg.InScanPaths(tt.rel); got != tt.want {
+				t.Errorf("InScanPaths(%q) = %v, want %v", tt.rel, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInScanPathsRootScanPathMatchesEverything(t *testing.T) {
+	for _, root := range []string{".", "/"} {
+		cfg := Default()
+		cfg.Scan.AutoPaths = false
+		cfg.Scan.Paths = []string{root}
+
+		if !cfg.InScanPaths("ANYTHING/HERE.JPG") {
+			t.Errorf("InScanPaths() with root scan path %q = false, want true", root)
+		}
 	}
 }
 

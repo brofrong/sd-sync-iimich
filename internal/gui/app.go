@@ -16,11 +16,13 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 	"github.com/wailsapp/wails/v3/pkg/services/dock"
+	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 
 	"github.com/dmitiigorshkov/sd-sync-immich/frontend"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/app"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/notify"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/state"
 )
 
@@ -109,7 +111,12 @@ func Run(a *app.App, cfg *config.Store, st *state.DB, version string) error {
 	defer cancel()
 
 	sh := &shell{dock: dock.New()}
-	svc := newService(a, cfg, st, version, sh)
+	// The service's responses reach svc, which is created after it.
+	var svc *Service
+	notes := notify.NewCenter(notifications.New(), func(action string, data map[string]string) {
+		svc.onNotificationResponse(action, data)
+	})
+	svc = newService(a, cfg, st, version, sh, notes)
 
 	sh.app = application.New(application.Options{
 		Name:        appName,
@@ -117,6 +124,9 @@ func Run(a *app.App, cfg *config.Store, st *state.DB, version string) error {
 		Services: []application.Service{
 			application.NewService(svc),
 			application.NewService(sh.dock),
+			// Starts native notifications (asking for permission); without
+			// them notifications fall back to osascript.
+			notes.Service(),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

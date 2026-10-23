@@ -81,11 +81,23 @@ func (s *DB) migrate() error {
 			error_summary TEXT NOT NULL DEFAULT '{}'
 		);
 		CREATE INDEX IF NOT EXISTS idx_sync_runs_started_at ON sync_runs(started_at);
+
+		CREATE TABLE IF NOT EXISTS sync_run_failures (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			run_id INTEGER NOT NULL,
+			relative_path TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			detail TEXT NOT NULL DEFAULT ''
+		);
+		CREATE INDEX IF NOT EXISTS idx_sync_run_failures_run_id ON sync_run_failures(run_id);
 	`)
 	if err != nil {
 		return err
 	}
-	return s.addColumnIfMissing("sync_runs", "duplicates", "INTEGER NOT NULL DEFAULT 0")
+	if err := s.addColumnIfMissing("sync_runs", "duplicates", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	return s.addColumnIfMissing("sync_runs", "failures_recorded", "INTEGER NOT NULL DEFAULT 0")
 }
 
 // addColumnIfMissing adds a column to a table created by an older version.

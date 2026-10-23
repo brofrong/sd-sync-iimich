@@ -15,12 +15,14 @@ const (
 )
 
 type Config struct {
-	Immich ImmichConfig `yaml:"immich"`
-	Watch  WatchConfig  `yaml:"watch"`
-	Scan   ScanConfig   `yaml:"scan"`
-	Upload UploadConfig `yaml:"upload"`
-	State  StateConfig  `yaml:"state"`
-	UI     UIConfig     `yaml:"ui"`
+	Immich        ImmichConfig `yaml:"immich"`
+	Watch         WatchConfig  `yaml:"watch"`
+	Scan          ScanConfig   `yaml:"scan"`
+	Upload        UploadConfig `yaml:"upload"`
+	State         StateConfig  `yaml:"state"`
+	UI            UIConfig     `yaml:"ui"`
+	Card          CardConfig   `yaml:"card"`
+	Notifications NotifyConfig `yaml:"notifications"`
 }
 
 type ImmichConfig struct {
@@ -56,6 +58,22 @@ type UIConfig struct {
 	Language string `yaml:"language"`
 }
 
+// CardConfig controls what happens to the SD card after a sync.
+type CardConfig struct {
+	AutoEject  bool `yaml:"auto_eject"`
+	AutoFormat bool `yaml:"auto_format"`
+}
+
+// NotifyConfig controls which desktop notifications are shown.
+type NotifyConfig struct {
+	Enabled   bool `yaml:"enabled"`
+	Done      bool `yaml:"done"`
+	Errors    bool `yaml:"errors"`
+	OtherCard bool `yaml:"other_card"`
+	Server    bool `yaml:"server"`
+	Card      bool `yaml:"card"`
+}
+
 type Store struct {
 	mu   sync.RWMutex
 	path string
@@ -81,6 +99,18 @@ func Default() Config {
 		},
 		UI: UIConfig{
 			Language: "",
+		},
+		Card: CardConfig{
+			AutoEject:  true,
+			AutoFormat: false,
+		},
+		Notifications: NotifyConfig{
+			Enabled:   true,
+			Done:      true,
+			Errors:    true,
+			OtherCard: true,
+			Server:    true,
+			Card:      true,
 		},
 	}
 }
@@ -262,6 +292,17 @@ var knownCameraPaths = []string{
 	"XDROOT/Clip",
 }
 
+// KnownMediaExtensions returns the lowercase, dot-less file extensions
+// recognized as camera media (stills, RAW and video), independent of any
+// user configuration.
+func KnownMediaExtensions() map[string]struct{} {
+	set := make(map[string]struct{}, len(knownCameraExtensions))
+	for _, ext := range knownCameraExtensions {
+		set[ext] = struct{}{}
+	}
+	return set
+}
+
 var knownCameraExtensions = []string{
 	// Common still-image formats.
 	"avif", "bmp", "gif", "heic", "heif", "hif", "insp", "jpeg", "jpg", "jpe",
@@ -286,7 +327,7 @@ func (c Config) ScanPaths() []string {
 
 	unique := make([]string, 0, len(paths))
 	for _, path := range paths {
-		path = filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+		path = normalizeScanPath(path)
 		if path == "" {
 			continue
 		}
@@ -317,6 +358,38 @@ func sameOrNestedPath(parent, child string) bool {
 	parent = strings.ToLower(strings.TrimSuffix(parent, "/"))
 	child = strings.ToLower(strings.TrimSuffix(child, "/"))
 	return parent == "." || child == parent || strings.HasPrefix(child, parent+"/")
+}
+
+// normalizeScanPath cleans p into the canonical, slash-separated,
+// mount-point-relative form both ScanPaths (for configured paths) and
+// InScanPaths (for a file's relative path) compare with sameOrNestedPath:
+// it trims whitespace, applies filepath.Clean, converts to forward
+// slashes, treats a bare "/" the same as "." (the whole mount point), and
+// drops a stray leading slash — a path relative to a card's mount point is
+// never actually absolute, so "/DCIM" means the same thing as "DCIM".
+func normalizeScanPath(p string) string {
+	p = filepath.ToSlash(filepath.Clean(strings.TrimSpace(p)))
+	if p == "/" {
+		return "."
+	}
+	return strings.TrimPrefix(p, "/")
+}
+
+// InScanPaths reports whether rel — a slash-separated path relative to a
+// card's mount point, as produced by filepath.Rel + filepath.ToSlash while
+// walking it — equals one of ScanPaths() or is nested under one. It uses
+// exactly the normalization and case-insensitive, nested-path comparison
+// ScanPaths itself uses to merge configured paths, so a caller outside this
+// package (card verification, before a format) classifies a file exactly as
+// ScanVolume would, without re-implementing the path-nesting rules.
+func (c Config) InScanPaths(rel string) bool {
+	rel = normalizeScanPath(rel)
+	for _, sp := range c.ScanPaths() {
+		if sameOrNestedPath(sp, rel) {
+			return true
+		}
+	}
+	return false
 }
 
 func appendCopy[T any](dst []T, values ...T) []T {

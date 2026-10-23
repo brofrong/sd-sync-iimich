@@ -4,18 +4,25 @@
 // answers every Service method with plausible data.
 //
 // URL parameters (handy for screenshots):
-//   ?state=<code>   pin the status to one code (e.g. done, not_configured);
-//                   waiting_for_card and other_card_mounted also unplug the
-//                   selected card, so Cards shows it as not connected
+//   ?state=<code>   pin the status to one code (e.g. done, not_configured,
+//                   verifying, format_pending, formatted); waiting_for_card
+//                   and other_card_mounted also unplug the selected card, so
+//                   Cards shows it as not connected
+//   ?format=<outcome>  with ?state=ejected: what became of the card's format
+//                   (formatted, skipped_missing, skipped_unsupported)
 //   ?lang=<tag>     UI language (default: the browser's language)
 //   ?section=<id>   open a section
 //   ?update=none    "Check for Updates" finds nothing (default: v0.5.0)
 //   ?history=none   no sync runs yet
+//   ?expand=<id>    expand the failed files of run <id> in History
 //
+// "Retry failed files" works for a run of the selected, mounted card (the
+// scenario syncs again) and answers retry_unavailable otherwise, as Go.
 // In the Server section a URL containing "bad" is unreachable, the API key
 // "bad" is rejected, and a URL containing "readonly" fails to save.
 import {
   CardView,
+  NotificationsView,
   ServerCheckView,
   ServerView,
   SettingsView,
@@ -24,7 +31,7 @@ import {
 } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
 import { Progress, Status } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/app";
 import type { Action, Code } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/app";
-import { SyncRun } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/state";
+import { FileFailure, SyncRun } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/state";
 import type { Backend, EventMap, Transport } from "./backend";
 import { resolveLanguage } from "./i18n";
 
@@ -64,12 +71,16 @@ const actions: Record<string, string[]> = {
   no_card_selected: ["open_cards"],
   other_card_mounted: ["select_card"],
   done: ["eject", "open_immich"],
-  done_with_errors: ["open_logs"],
+  done_with_errors: ["open_history"],
+  ejected: ["open_immich"],
   server_unreachable: ["retry"],
   server_error: ["retry"],
   auth_failed: ["open_server"],
   failed: ["open_logs"],
+  format_failed: ["open_logs"],
   syncing: ["stop"],
+  verifying: ["stop"],
+  format_pending: ["cancel_format"],
 };
 
 const params: Record<string, Record<string, string>> = {
@@ -86,6 +97,20 @@ const params: Record<string, Record<string, string>> = {
   card_removed: { uploaded: "412" },
   cancelled: { uploaded: "412" },
   failed: { detail: "open /Volumes/Brofrong/DCIM: permission denied." },
+  ejected: { uploaded: "2114" },
+  format_pending: { seconds: "27", name: mainCard.name },
+  formatting: { name: mainCard.name },
+  formatted: { name: mainCard.name },
+  format_skipped_missing: { count: "3" },
+  format_skipped_unsupported: { files: "12 × .HIF" },
+  format_failed: { detail: "diskutil: Could not unmount disk (-69888)" },
+};
+
+// As Go's ejectedParams: the format outcome and its param.
+const formatOutcomes: Record<string, Record<string, string>> = {
+  formatted: { format: "formatted", name: mainCard.name },
+  skipped_missing: { format: "skipped_missing", count: "3" },
+  skipped_unsupported: { format: "skipped_unsupported", files: "12 × .HIF" },
 };
 
 function makeStatus(code: string, progress: Progress | null = null, p?: Record<string, string>): Status {
@@ -144,7 +169,14 @@ function sampleHistory(): SyncRun[] {
     card: CardView,
     code: string,
     p: Record<string, string>,
-    counts: { uploaded: number; duplicates?: number; skipped?: number; errors?: number; summary?: Record<string, number> },
+    counts: {
+      uploaded: number;
+      duplicates?: number;
+      skipped?: number;
+      errors?: number;
+      summary?: Record<string, number>;
+      recorded?: boolean;
+    },
   ) => {
     const started = new Date(now - hoursAgo * 3600e3);
     return new SyncRun({
@@ -161,10 +193,18 @@ function sampleHistory(): SyncRun[] {
       duplicates: counts.duplicates ?? 0,
       bytes: counts.uploaded * 14.6e6,
       errorSummary: counts.summary ?? {},
+      // As Go: runs since the failure list exists have it, even when empty.
+      failuresRecorded: counts.recorded ?? minutes !== null,
     });
   };
   return [
-    run(3, 108, mainCard, "done", { uploaded: "2114" }, { uploaded: 2114, duplicates: 37, skipped: 3 }),
+    run(3, 108, mainCard, "done_with_errors", { uploaded: "2101", errors: "3" }, {
+      uploaded: 2101,
+      duplicates: 37,
+      skipped: 3,
+      errors: 3,
+      summary: { network: 2, rejected: 1 },
+    }),
     run(5, 2, mainCard, "nothing_new", {}, { uploaded: 0, skipped: 2117 }),
     run(27, 12, mainCard, "server_unreachable", params.server_unreachable, { uploaded: 412 }),
     run(30, 41, otherCard, "done_with_errors", { uploaded: "806", errors: "6" }, {
@@ -173,11 +213,40 @@ function sampleHistory(): SyncRun[] {
       errors: 6,
       summary: { network: 4, rejected: 2 },
     }),
+    run(40, 33, mainCard, "done_with_errors", { uploaded: "512", errors: "2" }, {
+      uploaded: 512,
+      errors: 2,
+      summary: { read_failed: 2 },
+      recorded: false, // synced before the app kept the list
+    }),
     run(52, 7, mainCard, "cancelled", { uploaded: "96" }, { uploaded: 96 }),
     run(98, null, mainCard, "", {}, { uploaded: 0 }),
     run(170, 18, mainCard, "card_removed", { uploaded: "300" }, { uploaded: 300, skipped: 1 }),
     run(7400, 64, otherCard, "done", { uploaded: "1290" }, { uploaded: 1290 }),
   ];
+}
+
+/** sampleFailures are the failed files of the sample runs, by run id. */
+function sampleFailures(runs: SyncRun[]): Map<number, FileFailure[]> {
+  const out = new Map<number, FileFailure[]>();
+  const f = (relativePath: string, kind: string, detail: string) => new FileFailure({ relativePath, kind, detail });
+  for (const r of runs) {
+    if (!r.failuresRecorded || r.errors === 0) continue;
+    if (r.volumeUUID === mainCard.uuid) {
+      out.set(r.id, [
+        f("DCIM/100MSDCF/DSC07311.ARW", "network", "Post \"https://immich.brofrong.ru/api/assets\": read tcp: connection reset by peer"),
+        f("DCIM/100MSDCF/DSC07342.ARW", "network", "Post \"https://immich.brofrong.ru/api/assets\": context deadline exceeded"),
+        f("PRIVATE/M4ROOT/CLIP/C0042.MP4", "rejected", "server returned 400: Unsupported file type"),
+      ]);
+    } else {
+      out.set(r.id, [
+        ...[4012, 4013, 4030, 4031].map((n) => f(`DCIM/100CANON/IMG_${n}.CR3`, "network", "dial tcp: lookup immich.brofrong.ru: no such host")),
+        f("DCIM/100CANON/IMG_4100.CR3", "rejected", "server returned 400: Unsupported file type"),
+        f("DCIM/100CANON/MVI_4101.MP4", "rejected", "server returned 413: Request Entity Too Large"),
+      ]);
+    }
+  }
+  return out;
 }
 
 /** sampleLog imitates app.log (slog's text format) with a few warnings. */
@@ -244,6 +313,9 @@ export function createMockTransport(): Transport {
     autostart: inBundle,
     autostartAvailable: inBundle,
     autostartTranslocated: translocated,
+    autoEject: true,
+    autoFormat: query.get("format_setting") === "on",
+    notifications: new NotificationsView({ enabled: true, done: true, errors: true, otherCard: true, server: true, card: true }),
   });
   const state = new StateView({
     status: makeStatus(pinned ?? "syncing"),
@@ -277,8 +349,19 @@ export function createMockTransport(): Transport {
   }
   if (pinned === "syncing") state.status = makeStatus("syncing", syncProgress(0.38, 0));
   if (pinned === "scanning") state.status = makeStatus("scanning");
+  if (pinned === "verifying") state.status = makeStatus("verifying", new Progress({ current: 1388, total: 2114 }));
+  if (pinned === "ejected") {
+    const outcome = formatOutcomes[query.get("format") ?? ""];
+    state.status = makeStatus("ejected", null, { ...params.ejected, ...outcome });
+  }
+  if (pinned === "ejected" || pinned === "formatted") {
+    // The ejected card is no longer mounted.
+    mounted = mounted.filter((c) => c.uuid !== mainCard.uuid);
+    state.card = unplugged(mainCard);
+  }
 
   let history = query.get("history") === "none" ? [] : sampleHistory();
+  const failures = sampleFailures(history);
 
   function setStatus(s: Status): void {
     state.status = s;
@@ -516,6 +599,27 @@ export function createMockTransport(): Transport {
       enter(0);
     },
     History: async (limit) => history.slice(0, limit),
+    RunFailures: async (runID) => delay(150, failures.get(runID) ?? []),
+    // As Go's RetryFailures: only the selected, mounted card's run, with a
+    // failure list, while no sync runs.
+    RetryFailures: async (runID) => {
+      const r = history.find((h) => h.id === runID);
+      const busy = ["scanning", "syncing", "verifying", "format_pending", "formatting"].includes(state.status.code);
+      const here = mounted.some((c) => c.uuid === state.card.uuid);
+      if (!r || !r.failuresRecorded || !failures.get(runID)?.length || r.volumeUUID !== state.card.uuid || !here || busy) {
+        await delay(200, null);
+        throw new Error("retry_unavailable");
+      }
+      await delay(200, null);
+      hold = 0;
+      if (pinned) setStatus(makeStatus("syncing", syncProgress(0.1, 0)));
+      else enter(0);
+    },
+    CancelFormat: async () => {
+      if (state.status.code !== "format_pending") return;
+      // The sync's result status is shown again.
+      setStatus(makeStatus("done"));
+    },
     LogTail: async (lines) => delay(150, sampleLog(lines)),
     RevealLog: async () => console.info("[mock] RevealLog"),
     OpenImmich: async () => console.info("[mock] OpenImmich", SERVER_URL),
@@ -538,6 +642,16 @@ export function createMockTransport(): Transport {
 
   const section = query.get("section");
   if (section) setTimeout(() => emit("navigate", section), 0);
+  const expand = query.get("expand");
+  if (expand) {
+    // Click the disclosure of that run once History has rendered it.
+    const click = (tries: number) => {
+      const b = document.querySelector<HTMLButtonElement>(`button[aria-controls="failures-${expand}"]`);
+      if (b) b.click();
+      else if (tries > 0) setTimeout(() => click(tries - 1), 100);
+    };
+    setTimeout(() => click(30), 300);
+  }
 
   return {
     backend,
