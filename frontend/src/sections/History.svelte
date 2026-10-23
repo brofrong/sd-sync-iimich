@@ -72,8 +72,9 @@
 
     // Go writes the counts when a run finishes: an unfinished run's zeros
     // mean "unknown", so it shows none.
-    const counted = Boolean(finished) || run.uploaded + run.skipped + run.errors > 0;
+    const counted = Boolean(finished) || run.uploaded + run.duplicates + run.skipped + run.errors > 0;
     const stats: Row["stats"] = counted ? [{ text: t("history.uploaded", { count: formatNumber(run.uploaded) }) }] : [];
+    if (run.duplicates > 0) stats.push({ text: t("history.duplicates", { count: formatNumber(run.duplicates) }) });
     if (run.skipped > 0) stats.push({ text: t("history.skipped", { count: formatNumber(run.skipped) }) });
     if (run.errors > 0) stats.push({ text: t("history.errors", { count: formatNumber(run.errors) }), bad: true });
     if (run.bytes > 0) stats.push({ text: formatBytes(run.bytes) });

@@ -22,6 +22,7 @@ type SyncRun struct {
 	Uploaded     int               `json:"uploaded"`
 	Skipped      int               `json:"skipped"`
 	Errors       int               `json:"errors"`
+	Duplicates   int               `json:"duplicates"`
 	Bytes        int64             `json:"bytes"`
 	ErrorSummary map[string]int    `json:"errorSummary"`
 }
@@ -61,11 +62,12 @@ func (s *DB) FinishRun(run SyncRun) error {
 			uploaded = ?,
 			skipped = ?,
 			errors = ?,
+			duplicates = ?,
 			bytes = ?,
 			error_summary = ?
 		WHERE id = ?
 	`, run.FinishedAt.Unix(), run.ResultCode, resultParams,
-		run.Uploaded, run.Skipped, run.Errors, run.Bytes, errorSummary,
+		run.Uploaded, run.Skipped, run.Errors, run.Duplicates, run.Bytes, errorSummary,
 		run.ID)
 	return err
 }
@@ -74,7 +76,7 @@ func (s *DB) FinishRun(run SyncRun) error {
 func (s *DB) RecentRuns(limit int) ([]SyncRun, error) {
 	rows, err := s.db.Query(`
 		SELECT id, started_at, finished_at, volume_uuid, volume_name,
-			result_code, result_params, uploaded, skipped, errors, bytes, error_summary
+			result_code, result_params, uploaded, skipped, errors, duplicates, bytes, error_summary
 		FROM sync_runs
 		ORDER BY started_at DESC, id DESC
 		LIMIT ?
@@ -101,7 +103,7 @@ func (s *DB) RecentRuns(limit int) ([]SyncRun, error) {
 func (s *DB) LastFinishedRun() (*SyncRun, error) {
 	row := s.db.QueryRow(`
 		SELECT id, started_at, finished_at, volume_uuid, volume_name,
-			result_code, result_params, uploaded, skipped, errors, bytes, error_summary
+			result_code, result_params, uploaded, skipped, errors, duplicates, bytes, error_summary
 		FROM sync_runs
 		WHERE finished_at IS NOT NULL
 		ORDER BY started_at DESC, id DESC
@@ -130,7 +132,7 @@ func scanSyncRun(r rowScanner) (SyncRun, error) {
 	if err := r.Scan(
 		&run.ID, &startedAtUnix, &finishedAtUnix, &run.VolumeUUID, &run.VolumeName,
 		&run.ResultCode, &resultParams, &run.Uploaded, &run.Skipped, &run.Errors,
-		&run.Bytes, &errorSummary,
+		&run.Duplicates, &run.Bytes, &errorSummary,
 	); err != nil {
 		return SyncRun{}, err
 	}

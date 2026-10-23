@@ -60,6 +60,27 @@ type Progress struct {
 	BytesPerSec float64 `json:"bytesPerSec"`
 	ETASeconds  int     `json:"etaSeconds"`
 	File        string  `json:"file"`
+	// How the files done so far ended: stored by Immich, already there, or
+	// failed (they add up to Current).
+	Uploaded   int `json:"uploaded"`
+	Duplicates int `json:"duplicates"`
+	Errors     int `json:"errors"`
+}
+
+// progressFrom converts the uploader's progress of a sync.
+func progressFrom(p uploader.Progress) *Progress {
+	return &Progress{
+		Current:     p.Current,
+		Total:       p.Total,
+		BytesDone:   p.BytesDone,
+		BytesTotal:  p.BytesTotal,
+		BytesPerSec: p.BytesPerSec,
+		ETASeconds:  int(p.ETA.Round(time.Second).Seconds()),
+		File:        p.File,
+		Uploaded:    p.Uploaded,
+		Duplicates:  p.Duplicates,
+		Errors:      p.Errors,
+	}
 }
 
 // Status is the structured, language-agnostic state of the app. The GUI

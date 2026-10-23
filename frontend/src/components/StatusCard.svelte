@@ -2,7 +2,8 @@
   // The status card: why sync is (or isn't) running and the one-click fix.
   // Title and detail come from status.<code>.title/detail; the buttons from
   // status.actions. While syncing it shows the current file, counts, bytes,
-  // speed and time left. Before setup it becomes an onboarding step.
+  // speed, time left and how many files were uploaded, were already in
+  // Immich (duplicates) or failed. Before setup it becomes an onboarding step.
   import { untrack } from "svelte";
   import { fade, fly } from "svelte/transition";
   import type { Status } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/app";
@@ -163,6 +164,11 @@
                 {#if progress.bytesTotal > 0}
                   <span>{t("progress.bytes", { done: formatBytes(progress.bytesDone), total: formatBytes(progress.bytesTotal) })}</span>
                 {/if}
+              </div>
+              <div class="counts">
+                <span class="uploaded"><i aria-hidden="true"></i>{t("progress.uploaded", { count: formatNumber(progress.uploaded) })}</span>
+                <span class="duplicates"><i aria-hidden="true"></i>{t("progress.duplicates", { count: formatNumber(progress.duplicates) })}</span>
+                <span class="errors" class:bad={progress.errors > 0}><i aria-hidden="true"></i>{t("progress.errors", { count: formatNumber(progress.errors) })}</span>
               </div>
             {:else}
               <p class="detail">{detail}</p>
@@ -375,6 +381,41 @@
     color: var(--text-3);
     font-size: 11.5px;
     font-variant-numeric: tabular-nums;
+  }
+
+  .counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    margin-top: 10px;
+    color: var(--text-2);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .counts span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .counts i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+  }
+  .counts .uploaded i {
+    background: #34c759;
+    box-shadow: 0 0 6px rgba(52, 199, 89, 0.6);
+  }
+  .counts .duplicates i {
+    background: #64a8ff;
+  }
+  .counts .bad {
+    color: #ff8a80;
+  }
+  .counts .bad i {
+    background: #ff453a;
+    box-shadow: 0 0 6px rgba(255, 69, 58, 0.6);
   }
 
   .steps {

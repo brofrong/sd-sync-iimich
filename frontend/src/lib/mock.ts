@@ -127,6 +127,11 @@ function syncProgress(fraction: number, tick: number): Progress {
     bytesPerSec,
     etaSeconds: Math.round((BYTES - bytesDone) / bytesPerSec),
     file: `DSC0${7133 + current - 412}.ARW`,
+    // Most files are new, about one in five Immich already has, and one
+    // failed once the sync was a third of the way through.
+    duplicates: Math.round(current * 0.2),
+    errors: fraction > 0.33 ? 1 : 0,
+    uploaded: current - Math.round(current * 0.2) - (fraction > 0.33 ? 1 : 0),
   });
 }
 
@@ -139,7 +144,7 @@ function sampleHistory(): SyncRun[] {
     card: CardView,
     code: string,
     p: Record<string, string>,
-    counts: { uploaded: number; skipped?: number; errors?: number; summary?: Record<string, number> },
+    counts: { uploaded: number; duplicates?: number; skipped?: number; errors?: number; summary?: Record<string, number> },
   ) => {
     const started = new Date(now - hoursAgo * 3600e3);
     return new SyncRun({
@@ -153,12 +158,13 @@ function sampleHistory(): SyncRun[] {
       uploaded: counts.uploaded,
       skipped: counts.skipped ?? 0,
       errors: counts.errors ?? 0,
+      duplicates: counts.duplicates ?? 0,
       bytes: counts.uploaded * 14.6e6,
       errorSummary: counts.summary ?? {},
     });
   };
   return [
-    run(3, 108, mainCard, "done", { uploaded: "2114" }, { uploaded: 2114, skipped: 3 }),
+    run(3, 108, mainCard, "done", { uploaded: "2114" }, { uploaded: 2114, duplicates: 37, skipped: 3 }),
     run(5, 2, mainCard, "nothing_new", {}, { uploaded: 0, skipped: 2117 }),
     run(27, 12, mainCard, "server_unreachable", params.server_unreachable, { uploaded: 412 }),
     run(30, 41, otherCard, "done_with_errors", { uploaded: "806", errors: "6" }, {

@@ -131,10 +131,14 @@ func TestNewUsesLastFinishedRunAsStartupStatus(t *testing.T) {
 		t.Fatalf("Status().Code is empty, want a concrete startup status")
 	}
 	// The selected card isn't actually mounted on the test machine, so this
-	// is the IdleStatus branch (ok==true); CodeWaitingForCard is the
-	// expected outcome given the config set above.
-	if got.Code != CodeWaitingForCard {
-		t.Errorf("Status().Code = %q, want %q", got.Code, CodeWaitingForCard)
+	// is the IdleStatus branch (ok==true): waiting for the card, or another
+	// card is mounted when the machine has a removable volume plugged in.
+	want := CodeWaitingForCard
+	if mounted, err := volume.ListRemovable(); err == nil && len(mounted) > 0 {
+		want = CodeOtherCardMounted
+	}
+	if got.Code != want {
+		t.Errorf("Status().Code = %q, want %q", got.Code, want)
 	}
 }
 

@@ -354,15 +354,7 @@ func (a *App) startSync() {
 				a.setStatus(newStatus(CodeScanning, nil))
 			case "syncing":
 				st := newStatus(CodeSyncing, nil)
-				st.Progress = &Progress{
-					Current:     p.Current,
-					Total:       p.Total,
-					BytesDone:   p.BytesDone,
-					BytesTotal:  p.BytesTotal,
-					BytesPerSec: p.BytesPerSec,
-					ETASeconds:  int(p.ETA.Round(time.Second).Seconds()),
-					File:        p.File,
-				}
+				st.Progress = progressFrom(p)
 				a.setStatus(st)
 			}
 		})
@@ -398,6 +390,7 @@ func (a *App) startSync() {
 				Uploaded:     result.Uploaded,
 				Skipped:      result.Skipped,
 				Errors:       result.Errors,
+				Duplicates:   result.Duplicates,
 				Bytes:        result.Bytes,
 				ErrorSummary: result.ErrorSummary,
 			}); finishErr != nil {

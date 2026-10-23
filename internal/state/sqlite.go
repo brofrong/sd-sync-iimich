@@ -2,6 +2,7 @@ package state
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -75,11 +76,28 @@ func (s *DB) migrate() error {
 			uploaded INTEGER NOT NULL DEFAULT 0,
 			skipped INTEGER NOT NULL DEFAULT 0,
 			errors INTEGER NOT NULL DEFAULT 0,
+			duplicates INTEGER NOT NULL DEFAULT 0,
 			bytes INTEGER NOT NULL DEFAULT 0,
 			error_summary TEXT NOT NULL DEFAULT '{}'
 		);
 		CREATE INDEX IF NOT EXISTS idx_sync_runs_started_at ON sync_runs(started_at);
 	`)
+	if err != nil {
+		return err
+	}
+	return s.addColumnIfMissing("sync_runs", "duplicates", "INTEGER NOT NULL DEFAULT 0")
+}
+
+// addColumnIfMissing adds a column to a table created by an older version.
+func (s *DB) addColumnIfMissing(table, column, decl string) error {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, table, column).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	_, err := s.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, decl))
 	return err
 }
 

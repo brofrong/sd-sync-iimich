@@ -270,3 +270,19 @@ func TestStatusFromRun(t *testing.T) {
 		})
 	}
 }
+
+func TestProgressFromCarriesCounts(t *testing.T) {
+	got := progressFrom(uploader.Progress{
+		Phase: "syncing", Current: 7, Total: 10, ETA: 90 * time.Second, File: "DCIM/7.JPG",
+		BytesDone: 70, BytesTotal: 100, BytesPerSec: 5,
+		Uploaded: 4, Duplicates: 2, Errors: 1,
+	})
+	want := &Progress{
+		Current: 7, Total: 10, ETASeconds: 90, File: "DCIM/7.JPG",
+		BytesDone: 70, BytesTotal: 100, BytesPerSec: 5,
+		Uploaded: 4, Duplicates: 2, Errors: 1,
+	}
+	if *got != *want {
+		t.Fatalf("progressFrom = %+v, want %+v", *got, *want)
+	}
+}
