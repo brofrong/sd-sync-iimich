@@ -1091,7 +1091,7 @@ func TestFormatCardChangedAfterLastTick(t *testing.T) {
 }
 
 // TestNoFormatRetryAfterFailure: after a failed format the card is not
-// verified or erased again until the app restarts.
+// verified or erased again during the same insertion.
 func TestNoFormatRetryAfterFailure(t *testing.T) {
 	for _, tt := range []struct {
 		name  string
@@ -1147,5 +1147,65 @@ func TestNoFormatRetryAfterErasedNotRemounted(t *testing.T) {
 	}
 	if v.count() != 1 {
 		t.Errorf("verify calls = %d, want 1", v.count())
+	}
+}
+
+// TestFormatRetryAfterCardReinserted: the no-retry rule after a failed
+// format lasts one insertion. Pulling the card out (an unmount that is not
+// the app's own eject) clears it: the next insertion verifies and formats
+// again.
+func TestFormatRetryAfterCardReinserted(t *testing.T) {
+	a, v, e, _ := formatApp(t)
+	if err := a.Config.Update(func(c *config.Config) { c.Card.AutoEject = false }); err != nil {
+		t.Fatal(err)
+	}
+	v.err = errors.New("verify card: permission denied")
+	statuses := recordFullStatuses(a)
+	card := *a.MountedTarget()
+
+	a.SyncNow()
+	waitFor(t, "format_failed", func() bool { return statuses.has(CodeFormatFailed) })
+	waitSyncFinished(t, a)
+	if !a.formatSuppressed(card.UUID) {
+		t.Fatal("formatSuppressed = false after format_failed, want true")
+	}
+
+	a.handleVolumeEvent(volume.Event{Type: volume.EventUnmounted, Info: card})
+	if a.formatSuppressed(card.UUID) {
+		t.Fatal("formatSuppressed = true after the card was pulled out, want false")
+	}
+
+	v.mu.Lock()
+	v.err = nil
+	v.mu.Unlock()
+	a.handleVolumeEvent(volume.Event{Type: volume.EventMounted, Info: card})
+	waitFor(t, "the card formatted after reinsertion", func() bool { return statuses.has(CodeFormatted) })
+	waitSyncFinished(t, a)
+	if v.count() != 2 {
+		t.Errorf("verify calls = %d, want 2 (once per insertion)", v.count())
+	}
+	if got := e.all(); len(got) != 1 {
+		t.Errorf("erase calls = %v, want 1", got)
+	}
+}
+
+// TestFormatSuppressionKeptOnOwnEject: the app's own eject of the card is
+// not a removal by the user and keeps the no-retry rule.
+func TestFormatSuppressionKeptOnOwnEject(t *testing.T) {
+	a, v, _, _ := formatApp(t)
+	v.err = errors.New("verify card: permission denied")
+	statuses := recordFullStatuses(a)
+	card := *a.MountedTarget()
+
+	a.SyncNow()
+	waitFor(t, "format_failed", func() bool { return statuses.has(CodeFormatFailed) })
+	waitSyncFinished(t, a)
+
+	a.mu.Lock()
+	a.ejecting = card.MountPoint
+	a.mu.Unlock()
+	a.handleVolumeEvent(volume.Event{Type: volume.EventUnmounted, Info: card})
+	if !a.formatSuppressed(card.UUID) {
+		t.Error("formatSuppressed = false after the app's own eject, want true")
 	}
 }

@@ -38,8 +38,8 @@ type formatOutcome struct {
 // wantsFormat reports whether the sync that ended with st (and res) may be
 // followed by an auto-format: the option is on, the run uploaded
 // everything without errors (done or nothing_new) and was not a dry run.
-// A card whose format failed is not formatted again until the app
-// restarts (see formatSuppressed).
+// A card whose format failed is not formatted again during the same
+// insertion (see formatSuppressed).
 func (a *App) wantsFormat(vol volume.Info, res uploader.Result, st Status) bool {
 	if a.dryRun || res.Errors != 0 || !a.Config.Get().Card.AutoFormat {
 		return false
@@ -54,8 +54,9 @@ func (a *App) wantsFormat(vol volume.Info, res uploader.Result, st Status) bool 
 	return true
 }
 
-// formatSuppressed reports whether a format of the card uuid failed since
-// the app started: there are no format retries.
+// formatSuppressed reports whether a format of the card uuid failed during
+// its current insertion: there are no format retries until the card is
+// pulled out (see clearFormatSuppressionLocked) or the app restarts.
 func (a *App) formatSuppressed(uuid string) bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -70,6 +71,15 @@ func (a *App) suppressFormat(uuid string) {
 		a.formatFailures = map[string]bool{}
 	}
 	a.formatFailures[strings.ToLower(uuid)] = true
+}
+
+// clearFormatSuppressionLocked forgets a failed format of the card uuid:
+// the user pulled it out, so its next insertion may format it again. Call
+// with a.mu held.
+func (a *App) clearFormatSuppressionLocked(uuid string) {
+	if uuid != "" {
+		delete(a.formatFailures, strings.ToLower(uuid))
+	}
 }
 
 // autoFormat verifies that everything on vol is in Immich, counts down and

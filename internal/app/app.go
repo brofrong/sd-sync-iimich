@@ -70,8 +70,8 @@ type App struct {
 	// format, not a card being plugged in.
 	adopted string
 	// formatFailures holds the lower-case UUIDs of cards whose format
-	// failed since the app started (guarded by mu): they are not
-	// formatted again.
+	// failed during their current insertion (guarded by mu): they are not
+	// formatted again until pulled out.
 	formatFailures map[string]bool
 
 	// Seams set by New; tests replace them so they never touch the Mac.
@@ -253,6 +253,15 @@ func (a *App) handleVolumeEvent(ev volume.Event) {
 		a.mu.Lock()
 		own := a.takeOwnEjectLocked(ev.Info.MountPoint)
 		removed := a.mountedTarget != nil && a.mountedTarget.MountPoint == ev.Info.MountPoint
+		if !own {
+			// The card was pulled out (events during the app's own erase
+			// never get here): a failed format may be tried again on its
+			// next insertion.
+			a.clearFormatSuppressionLocked(ev.Info.UUID)
+			if removed {
+				a.clearFormatSuppressionLocked(a.mountedTarget.UUID)
+			}
+		}
 		if removed {
 			a.setMountedTargetLocked(nil)
 		}
