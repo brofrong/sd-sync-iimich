@@ -1,6 +1,7 @@
 package immich
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -27,6 +28,13 @@ const (
 	// server (or the wrong URL) must not make "Test connection" read
 	// forever.
 	maxCheckBody = 1 << 20
+
+	// maxBulkCheckBody bounds how much of a bulk-upload-check response
+	// BulkUploadCheck reads. A full card verification batch can ask about
+	// 200 assets at once; 200 results with long UUIDs for id/assetId can
+	// run well past maxCheckBody's 1 MiB, so this is sized generously at
+	// 8 MiB.
+	maxBulkCheckBody = 8 << 20
 )
 
 // ErrUploadStalled means no body bytes were sent for StallTimeout.
@@ -397,4 +405,65 @@ func (c *Client) Check(ctx context.Context) (ServerInfo, error) {
 		return ServerInfo{}, &StatusError{Code: resp.StatusCode, Message: formatAPIError(resp.Status, body)}
 	}
 	return info, nil
+}
+
+// BulkCheckAsset is one asset to ask Immich about via BulkUploadCheck: ID is
+// a caller-chosen key echoed back in the matching BulkCheckResult (card
+// verification uses the file's relative path), and Checksum is its SHA-1
+// hex digest.
+type BulkCheckAsset struct {
+	ID       string `json:"id"`
+	Checksum string `json:"checksum"`
+}
+
+// BulkCheckResult is Immich's verdict for one asset sent to BulkUploadCheck.
+// A result is only a confirmed existing upload when Action == "reject",
+// Reason == "duplicate", and IsTrashed is false: anything else (including
+// an id Immich's response omits entirely) must be treated as not confirmed.
+type BulkCheckResult struct {
+	ID        string `json:"id"`
+	Action    string `json:"action"`
+	Reason    string `json:"reason"`
+	AssetID   string `json:"assetId"`
+	IsTrashed bool   `json:"isTrashed"`
+}
+
+// BulkUploadCheck asks Immich which of assets it already has, POSTing to
+// /assets/bulk-upload-check. It is the server round-trip behind whole-card
+// verification before a format: the caller interprets each BulkCheckResult.
+func (c *Client) BulkUploadCheck(ctx context.Context, assets []BulkCheckAsset) ([]BulkCheckResult, error) {
+	payload, err := json.Marshal(struct {
+		Assets []BulkCheckAsset `json:"assets"`
+	}{Assets: assets})
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/assets/bulk-upload-check", bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", c.APIKey)
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBulkCheckBody))
+	resp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, &StatusError{Code: resp.StatusCode, Message: formatAPIError(resp.Status, body)}
+	}
+
+	var parsed struct {
+		Results []BulkCheckResult `json:"results"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, err
+	}
+	return parsed.Results, nil
 }
