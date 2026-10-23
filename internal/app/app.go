@@ -13,6 +13,7 @@ import (
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/immich"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/power"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/state"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/uploader"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/volume"
@@ -24,8 +25,11 @@ type App struct {
 	Uploader *uploader.Service
 	Watcher  *volume.Watcher
 
-	mu            sync.RWMutex
-	status        Status
+	mu     sync.RWMutex
+	status Status
+	// statusGen counts published statuses (guarded by mu), so a delayed
+	// revert can tell whether its status is still the one shown.
+	statusGen     uint64
 	mountedTarget *volume.Info
 	// syncCancel is non-nil while a sync goroutine is running, until it has
 	// published its result; cancelling does not clear it.
@@ -42,7 +46,29 @@ type App struct {
 	// volume was unmounted, so the sync goroutine can tell that apart from a
 	// user-requested stop once the sync unwinds.
 	cardRemoved atomic.Bool
+
+	onNotice func(Notice)
+	// ejecting is the mount point the app is ejecting itself after a sync
+	// (guarded by mu), so the unmount that follows is not taken for the
+	// card being pulled out.
+	ejecting string
+	// followMu serializes following a formatted card (startup and mount
+	// events may both try). It is taken before any other App lock.
+	followMu sync.Mutex
+	// revertAfter is how long a terminal status that reverts on its own
+	// stays before the idle status replaces it (0: defaultRevertAfter).
+	revertAfter time.Duration
+
+	// Seams set by New; tests replace them so they never touch the Mac.
+	keepAwake     func() (release func())
+	eject         func(mountPoint string) error
+	isCameraCard  func(mountPoint string) bool
+	listRemovable func() ([]volume.Info, error)
 }
+
+// defaultRevertAfter is how long a status like CodeDone stays on screen
+// before the idle status replaces it.
+const defaultRevertAfter = 5 * time.Second
 
 func New(cfg *config.Store, st *state.DB, dryRun bool) (*App, error) {
 	w, err := volume.NewWatcher()
@@ -58,6 +84,11 @@ func New(cfg *config.Store, st *state.DB, dryRun bool) (*App, error) {
 		},
 		Watcher: w,
 		dryRun:  dryRun,
+
+		keepAwake:     power.KeepAwake,
+		eject:         volume.Eject,
+		isCameraCard:  isCameraCardDir,
+		listRemovable: volume.ListRemovable,
 	}
 	a.setStatus(a.startupStatus())
 	logx.Info("app started", "configured", cfg.IsConfigured(), "dry_run", dryRun)
@@ -71,7 +102,7 @@ func New(cfg *config.Store, st *state.DB, dryRun bool) (*App, error) {
 // shown instead (see statusFromRun) rather than a blank status.
 func (a *App) startupStatus() Status {
 	cfg := a.Config.Get()
-	mounted, err := volume.ListRemovable()
+	mounted, err := a.removableVolumes()
 	if err != nil {
 		logx.Warn("failed to list removable volumes", "err", err)
 		mounted = nil
@@ -97,7 +128,7 @@ func (a *App) OnStatus(fn func(Status)) {
 func (a *App) resume() *resumer {
 	a.resumeOnce.Do(func() {
 		if a.resumer == nil {
-			a.resumer = newResumer(a.pingServer, a.canResume, a.startSync)
+			a.resumer = newResumer(a.pingServer, a.canResume, a.startFullSync)
 		}
 	})
 	return a.resumer
@@ -129,7 +160,11 @@ func (a *App) Run(ctx context.Context) {
 	go a.watchVolumes(ctx)
 	a.refreshMountedTarget()
 	a.updateIdleStatus()
-	if a.Config.IsConfigured() && a.MountedTarget() != nil {
+	if a.MountedTarget() == nil {
+		// The selected card may have been formatted while the app wasn't
+		// running; following it starts its sync.
+		a.maybeFollowCard(nil)
+	} else if a.Config.IsConfigured() {
 		go a.SyncNow()
 	}
 
@@ -142,6 +177,9 @@ func (a *App) Run(ctx context.Context) {
 }
 
 func (a *App) watchVolumes(ctx context.Context) {
+	if a.Watcher == nil {
+		return
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -170,21 +208,32 @@ func (a *App) handleVolumeEvent(ev volume.Event) {
 			a.mu.Lock()
 			v := ev.Info
 			a.mountedTarget = &v
+			a.ejecting = ""
 			a.mu.Unlock()
 			a.updateIdleStatus()
 			if a.Config.IsConfigured() {
 				logx.Info("target volume connected, starting sync", "name", ev.Info.Name)
 				go a.SyncNow()
 			}
+		} else if a.MountedTarget() == nil {
+			a.maybeFollowCard(&ev.Info)
 		}
 	case volume.EventUnmounted:
 		logx.Info("volume unmounted", "name", ev.Info.Name, "path", ev.Info.MountPoint)
 		a.mu.Lock()
+		own := a.takeOwnEjectLocked(ev.Info.MountPoint)
 		removed := a.mountedTarget != nil && a.mountedTarget.MountPoint == ev.Info.MountPoint
 		if removed {
 			a.mountedTarget = nil
 		}
 		a.mu.Unlock()
+		if own {
+			// The app ejected the card after a sync: nothing was pulled
+			// out mid-sync, and the ejected status stays until the next
+			// mount or user action.
+			logx.Info("card ejected by the app is unmounted", "name", ev.Info.Name)
+			return
+		}
 		if removed {
 			// Neither a.mu nor syncMu may be held here: Stop waits for an
 			// in-progress resume, which takes both.
@@ -305,7 +354,7 @@ func (a *App) ForgetCard(uuid string) error {
 // selected card. It does nothing if a sync is already running.
 func (a *App) SyncNow() {
 	a.resume().Stop()
-	a.startSync()
+	a.startSync(nil)
 }
 
 // Retry is SyncNow, offered after a failed sync.
@@ -313,33 +362,44 @@ func (a *App) Retry() {
 	a.SyncNow()
 }
 
-// startSync starts a sync unless one is already running. The resumer calls
-// it directly so that it doesn't stop itself.
-func (a *App) startSync() {
+// startFullSync starts a sync of every new file (see startSync). The
+// resumer calls it directly so that it doesn't stop itself.
+func (a *App) startFullSync() {
+	a.startSync(nil)
+}
+
+// startSync starts a sync unless one is already running and reports
+// whether it did. only, when non-empty, limits it to those relative paths
+// (see uploader.SyncOptions.Only).
+func (a *App) startSync(only []string) bool {
 	a.syncMu.Lock()
 	defer a.syncMu.Unlock()
 
 	if !a.Config.IsConfigured() {
 		logx.Debug("sync skipped: not configured")
-		return
+		return false
 	}
 	vol := a.MountedTarget()
 	if vol == nil {
 		logx.Debug("sync skipped: volume not mounted")
-		return
+		return false
 	}
 	if a.syncCancel != nil {
 		logx.Debug("sync skipped: already running")
-		return
+		return false
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	a.syncCancel = cancel
 	a.cardRemoved.Store(false)
 
-	logx.Info("sync requested", "volume", vol.Name, "path", vol.MountPoint)
+	logx.Info("sync requested", "volume", vol.Name, "path", vol.MountPoint, "only", len(only))
 
 	go func() {
+		// The Mac stays awake for the sync and the post-sync phase.
+		release := a.keepMacAwake()
+		defer release()
+
 		syncStart := time.Now()
 		a.setStatus(newStatus(CodeScanning, nil))
 
@@ -348,7 +408,7 @@ func (a *App) startSync() {
 			logx.Error("state: failed to record sync run start", "err", startErr)
 		}
 
-		result, err := a.Uploader.Sync(ctx, *vol, uploader.SyncOptions{DryRun: a.dryRun}, func(p uploader.Progress) {
+		result, err := a.Uploader.Sync(ctx, *vol, uploader.SyncOptions{DryRun: a.dryRun, Only: only}, func(p uploader.Progress) {
 			switch p.Phase {
 			case "scanning":
 				a.setStatus(newStatus(CodeScanning, nil))
@@ -396,19 +456,32 @@ func (a *App) startSync() {
 			}); finishErr != nil {
 				logx.Error("state: failed to record sync run result", "err", finishErr)
 			}
+			if recErr := a.State.RecordFailures(runID, result.Failures); recErr != nil {
+				logx.Error("state: failed to record failed files", "err", recErr)
+			}
 		}
 
 		a.setStatus(st)
+		// The post-sync phase still counts as the sync running.
+		st = a.afterSync(ctx, *vol, result, st)
+
 		a.syncMu.Lock()
 		a.syncCancel = nil
 		a.syncMu.Unlock()
 		cancel()
 		a.maybeResume(st.Code)
 
+		// Decided on the final status: CodeEjected stays on screen.
 		if revertsAutomatically(st.Code) {
-			time.AfterFunc(5*time.Second, func() { a.updateIdleStatus() })
+			delay := a.revertAfter
+			if delay <= 0 {
+				delay = defaultRevertAfter
+			}
+			gen := a.currentStatusGen()
+			time.AfterFunc(delay, func() { a.revertToIdle(gen) })
 		}
 	}()
+	return true
 }
 
 // revertsAutomatically reports whether a terminal sync status should fall
@@ -460,7 +533,7 @@ func (a *App) syncRunning() bool {
 // run (or just did), so the current status is left alone.
 func (a *App) updateIdleStatus() {
 	cfg := a.Config.Get()
-	mounted, err := volume.ListRemovable()
+	mounted, err := a.removableVolumes()
 	if err != nil {
 		logx.Warn("failed to list removable volumes", "err", err)
 		mounted = nil
@@ -470,9 +543,26 @@ func (a *App) updateIdleStatus() {
 	}
 }
 
+// revertToIdle replaces the status with the idle status, but only if no
+// other status was published since generation gen (e.g. a later sync's
+// CodeEjected, which must stay).
+func (a *App) revertToIdle(gen uint64) {
+	if a.currentStatusGen() != gen {
+		return
+	}
+	a.updateIdleStatus()
+}
+
+func (a *App) currentStatusGen() uint64 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.statusGen
+}
+
 func (a *App) setStatus(s Status) {
 	a.mu.Lock()
 	a.status = s
+	a.statusGen++
 	a.mu.Unlock()
 	if a.onStatus != nil {
 		a.onStatus(s)

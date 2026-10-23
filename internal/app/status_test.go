@@ -149,7 +149,7 @@ func TestResultStatus(t *testing.T) {
 			res:         uploader.Result{Uploaded: 5, Errors: 2, ErrorSummary: map[string]int{"rejected": 2}},
 			wantCode:    CodeDoneWithErrors,
 			wantParams:  map[string]string{"uploaded": "5", "errors": "2"},
-			wantActions: []Action{ActionOpenLogs},
+			wantActions: []Action{ActionOpenHistory},
 		},
 		{
 			name:        "server unreachable",
@@ -235,7 +235,7 @@ func TestStatusFromRun(t *testing.T) {
 			wantCode:    CodeDoneWithErrors,
 			wantParams:  map[string]string{"uploaded": "5", "errors": "2"},
 			wantAt:      finishedAt,
-			wantActions: []Action{ActionOpenLogs},
+			wantActions: []Action{ActionOpenHistory},
 		},
 		{
 			name: "done carries the run's finish time",
@@ -284,5 +284,14 @@ func TestProgressFromCarriesCounts(t *testing.T) {
 	}
 	if *got != *want {
 		t.Fatalf("progressFrom = %+v, want %+v", *got, *want)
+	}
+}
+
+func TestActionsForLifecycleCodes(t *testing.T) {
+	if got := actionsFor(CodeEjected); !equalActions(got, []Action{ActionOpenImmich}) {
+		t.Errorf("actionsFor(ejected) = %v, want [open_immich]", got)
+	}
+	if got := actionsFor(CodeDoneWithErrors); !equalActions(got, []Action{ActionOpenHistory}) {
+		t.Errorf("actionsFor(done_with_errors) = %v, want [open_history]", got)
 	}
 }

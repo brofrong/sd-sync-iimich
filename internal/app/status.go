@@ -34,6 +34,9 @@ const (
 	CodeCardRemoved       Code = "card_removed"
 	CodeCancelled         Code = "cancelled"
 	CodeFailed            Code = "failed"
+	// CodeEjected follows CodeDone when the app ejected the card itself:
+	// it can be pulled out. It stays until the next mount or user action.
+	CodeEjected Code = "ejected"
 )
 
 // Action is a follow-up the GUI can offer for a given Code (see actionsFor).
@@ -48,6 +51,8 @@ const (
 	ActionEject      Action = "eject"
 	ActionOpenImmich Action = "open_immich"
 	ActionOpenLogs   Action = "open_logs"
+	// ActionOpenHistory opens the history, where the failed files are listed.
+	ActionOpenHistory Action = "open_history"
 )
 
 // Progress describes an in-flight sync. It is nil on Status unless Code is
@@ -108,7 +113,9 @@ func actionsFor(code Code) []Action {
 	case CodeDone:
 		return []Action{ActionEject, ActionOpenImmich}
 	case CodeDoneWithErrors:
-		return []Action{ActionOpenLogs}
+		return []Action{ActionOpenHistory}
+	case CodeEjected:
+		return []Action{ActionOpenImmich}
 	case CodeServerUnreachable, CodeServerError:
 		return []Action{ActionRetry}
 	case CodeAuthFailed:

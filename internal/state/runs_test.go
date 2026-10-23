@@ -203,3 +203,27 @@ func TestOpenAddsDuplicatesColumn(t *testing.T) {
 		}
 	}
 }
+
+func TestRunByID(t *testing.T) {
+	db := openTestDB(t)
+
+	id, err := db.StartRun("VOL", "CARD", time.Unix(1000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RecordFailures(id, nil); err != nil {
+		t.Fatal(err)
+	}
+	run, err := db.Run(id)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if run == nil || run.ID != id || run.VolumeUUID != "VOL" || !run.FailuresRecorded {
+		t.Errorf("Run(%d) = %+v, want the run with failures recorded", id, run)
+	}
+
+	missing, err := db.Run(id + 100)
+	if err != nil || missing != nil {
+		t.Errorf("Run(unknown) = %+v, %v; want nil, nil", missing, err)
+	}
+}

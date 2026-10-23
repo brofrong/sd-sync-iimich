@@ -125,6 +125,25 @@ func (s *DB) LastFinishedRun() (*SyncRun, error) {
 	return &run, nil
 }
 
+// Run returns the run with id, or nil if there is none.
+func (s *DB) Run(id int64) (*SyncRun, error) {
+	row := s.db.QueryRow(`
+		SELECT id, started_at, finished_at, volume_uuid, volume_name,
+			result_code, result_params, uploaded, skipped, errors, duplicates, bytes, error_summary,
+			failures_recorded
+		FROM sync_runs
+		WHERE id = ?
+	`, id)
+	run, err := scanSyncRun(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &run, nil
+}
+
 // rowScanner is satisfied by both *sql.Row and *sql.Rows.
 type rowScanner interface {
 	Scan(dest ...any) error
