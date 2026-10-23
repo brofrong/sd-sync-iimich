@@ -50,3 +50,22 @@ func TestKeepAwakeStartFailure(t *testing.T) {
 	release()
 	release()
 }
+
+func TestKeepAwakeNilStopDoesNotPanic(t *testing.T) {
+	orig := startCaffeinate
+	t.Cleanup(func() { startCaffeinate = orig })
+
+	// A seam that reports success but returns a nil stop function must be
+	// treated like a start failure, not trusted to be callable.
+	startCaffeinate = func(pid int) (func(), error) {
+		return nil, nil
+	}
+
+	release := KeepAwake()
+	if release == nil {
+		t.Fatal("KeepAwake() release = nil, want a safe no-op function")
+	}
+
+	release()
+	release()
+}

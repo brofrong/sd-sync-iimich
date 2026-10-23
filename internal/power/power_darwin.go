@@ -33,7 +33,7 @@ var startCaffeinate = func(pid int) (stop func(), err error) {
 // to start — a start failure is only logged.
 func KeepAwake() (release func()) {
 	stop, err := startCaffeinate(os.Getpid())
-	if err != nil {
+	if err != nil || stop == nil {
 		logx.Warn("power: caffeinate failed to start", "err", err)
 		return func() {}
 	}

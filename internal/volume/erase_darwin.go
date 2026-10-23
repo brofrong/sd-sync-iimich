@@ -3,8 +3,8 @@
 package volume
 
 import (
+	"errors"
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -14,29 +14,46 @@ import (
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
 )
 
-// eraseMountTimeout bounds how long Erase waits for the freshly formatted
-// volume to remount after `diskutil eraseVolume`.
-const eraseMountTimeout = 60 * time.Second
+// ErrErasedNotRemounted indicates `diskutil eraseVolume` succeeded but the
+// freshly formatted partition never reappeared with a new identity within
+// eraseRemountTimeout. Callers must treat this as "the card WAS erased"
+// even though Erase could not confirm it or return the new volume's Info.
+var ErrErasedNotRemounted = errors.New("card erased but its new volume was not found")
+
+// erasePollInterval and eraseRemountTimeout control how Erase polls for the
+// freshly erased partition to remount. They are variables so tests can
+// shrink them instead of waiting on a real timeout.
+var erasePollInterval = 500 * time.Millisecond
+var eraseRemountTimeout = 60 * time.Second
 
 // partitionIdentifier matches a diskutil partition identifier like
 // "disk4s1". A bare whole-disk identifier such as "disk4" never matches, so
 // Erase refuses to format an entire disk instead of a single partition.
 var partitionIdentifier = regexp.MustCompile(`^disk[0-9]+s[0-9]+$`)
 
-// waitForMount and getInfo are seams over WaitForMount and GetInfo so tests
-// can substitute fakes instead of touching a real mounted volume.
-var waitForMount = WaitForMount
-var getInfo = GetInfo
-
 // Erase reformats the volume mounted at mountPoint in place, keeping its
-// filesystem type (exFAT or FAT32/FAT16) and volume name, then returns the
-// Info of the newly mounted volume.
+// filesystem type (exFAT or FAT32/FAT16) and volume name.
 //
-// It refuses — without ever calling `diskutil eraseVolume` — when the
-// volume is not removable, when its filesystem is anything other than exFAT
-// or FAT, or when diskutil did not report a partition identifier (so a
-// whole-disk identifier can never reach eraseVolume).
-func Erase(mountPoint string) (Info, error) {
+// wantUUID must equal (case-insensitively) the volume's current
+// VolumeUUID, confirming Erase is about to format the exact card the
+// caller already verified. Erase refuses otherwise, and refuses an empty
+// wantUUID outright.
+//
+// Erase also refuses — without ever calling `diskutil eraseVolume` — when
+// mountPoint is the boot volume, when the volume is not removable, when
+// diskutil did not report a partition identifier, when the volume name is
+// empty or looks like a path ("/" or ".."), or when the filesystem is
+// anything other than exFAT, FAT32 or FAT16.
+//
+// After a successful eraseVolume, Erase polls `diskutil info -plist
+// <DeviceIdentifier>` for the new volume by device — not by name, since
+// diskutil can briefly report stale data for the name before the new
+// volume settles — until it reports a MountPoint and a VolumeUUID that
+// differs from the old one. If that never happens within
+// eraseRemountTimeout, Erase returns an error wrapping
+// ErrErasedNotRemounted: the card was erased, but Erase could not find the
+// result.
+func Erase(mountPoint, wantUUID string) (Info, error) {
 	out, err := runDiskutil("info", "-plist", mountPoint)
 	if err != nil {
 		return Info{}, fmt.Errorf("diskutil info %s: %w: %s", mountPoint, err, out)
@@ -51,6 +68,13 @@ func Erase(mountPoint string) (Info, error) {
 	fsType, _ := data["FilesystemType"].(string)
 	fsName, _ := data["FilesystemName"].(string)
 	volumeName, _ := data["VolumeName"].(string)
+	oldUUID, _ := data["VolumeUUID"].(string)
+
+	// The boot volume gate comes first and is unconditional: nothing else
+	// about the plist (even a UUID the caller verified) can override it.
+	if mountPoint == "/" {
+		return Info{}, fmt.Errorf("erase %s: refusing to erase the boot volume", mountPoint)
+	}
 
 	removable := false
 	if v, ok := data["Removable"].(bool); ok && v {
@@ -62,15 +86,23 @@ func Erase(mountPoint string) (Info, error) {
 	if v, ok := data["External"].(bool); ok && v {
 		removable = true
 	}
-	if mountPoint == "/" {
-		removable = false
-	}
-
 	if !removable {
 		return Info{}, fmt.Errorf("erase %s: refusing to erase a non-removable volume", mountPoint)
 	}
+
 	if deviceID == "" || !partitionIdentifier.MatchString(deviceID) {
 		return Info{}, fmt.Errorf("erase %s: refusing to erase device identifier %q, want a partition like diskNsN", mountPoint, deviceID)
+	}
+
+	if wantUUID == "" {
+		return Info{}, fmt.Errorf("erase %s: refusing to erase without a card identity to verify", mountPoint)
+	}
+	if oldUUID == "" || !strings.EqualFold(oldUUID, wantUUID) {
+		return Info{}, fmt.Errorf("erase %s: card identity mismatch, want UUID %s", mountPoint, wantUUID)
+	}
+
+	if volumeName == "" || strings.Contains(volumeName, "/") || strings.Contains(volumeName, "..") {
+		return Info{}, fmt.Errorf("erase %s: refusing to erase volume with invalid name %q", mountPoint, volumeName)
 	}
 
 	var format string
@@ -78,10 +110,13 @@ func Erase(mountPoint string) (Info, error) {
 	case "exfat":
 		format = "ExFAT"
 	case "msdos":
-		if strings.Contains(fsName, "FAT16") {
-			format = "MS-DOS FAT16"
-		} else {
+		switch {
+		case strings.Contains(fsName, "FAT32"):
 			format = "MS-DOS FAT32"
+		case strings.Contains(fsName, "FAT16"):
+			format = "MS-DOS FAT16"
+		default:
+			return Info{}, fmt.Errorf("erase %s: refusing to erase unsupported FAT variant %q", mountPoint, fsName)
 		}
 	default:
 		return Info{}, fmt.Errorf("erase %s: refusing to erase filesystem type %q, want exfat or msdos", mountPoint, fsType)
@@ -94,16 +129,68 @@ func Erase(mountPoint string) (Info, error) {
 		return Info{}, fmt.Errorf("diskutil eraseVolume %s %s %s: %w: %s", format, volumeName, deviceID, err, eraseOut)
 	}
 
-	newMountPoint := filepath.Join(volumesRoot, volumeName)
-	if err := waitForMount(newMountPoint, eraseMountTimeout); err != nil {
+	info, err := pollForRemount(deviceID, oldUUID)
+	if err != nil {
 		return Info{}, fmt.Errorf("erase %s: %w", mountPoint, err)
 	}
 
-	info, err := getInfo(newMountPoint)
-	if err != nil {
-		return Info{}, fmt.Errorf("erase %s: diskutil info after erase: %w", mountPoint, err)
+	logx.Info("volume: erase complete", "mountPoint", info.MountPoint, "uuid", info.UUID)
+	return info, nil
+}
+
+// pollForRemount looks for partition deviceID to come back online with a
+// mount point and a VolumeUUID different from oldUUID, after a successful
+// eraseVolume. It polls by device identifier, not by volume name, because
+// diskutil can briefly present stale data under the old name before the
+// new volume's identity settles.
+func pollForRemount(deviceID, oldUUID string) (Info, error) {
+	attempts := int(eraseRemountTimeout / erasePollInterval)
+	if attempts < 1 {
+		attempts = 1
 	}
 
-	logx.Info("volume: erase complete", "mountPoint", newMountPoint, "uuid", info.UUID)
-	return *info, nil
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(erasePollInterval)
+		}
+		if info, ok := probeRemount(deviceID, oldUUID); ok {
+			return info, nil
+		}
+	}
+
+	return Info{}, fmt.Errorf("device %s: %w", deviceID, ErrErasedNotRemounted)
+}
+
+// probeRemount makes one `diskutil info -plist <deviceID>` call and reports
+// whether it describes the freshly erased volume: the same device, now
+// mounted, with a VolumeUUID that actually changed from oldUUID.
+func probeRemount(deviceID, oldUUID string) (Info, bool) {
+	out, err := runDiskutil("info", "-plist", deviceID)
+	if err != nil {
+		return Info{}, false
+	}
+
+	var data map[string]any
+	if _, err := plist.Unmarshal(out, &data); err != nil {
+		return Info{}, false
+	}
+
+	gotDevice, _ := data["DeviceIdentifier"].(string)
+	gotMount, _ := data["MountPoint"].(string)
+	gotUUID, _ := data["VolumeUUID"].(string)
+	gotName, _ := data["VolumeName"].(string)
+
+	if gotDevice != deviceID || gotMount == "" || gotUUID == "" {
+		return Info{}, false
+	}
+	if strings.EqualFold(gotUUID, oldUUID) {
+		return Info{}, false
+	}
+
+	return Info{
+		Name:       gotName,
+		MountPoint: gotMount,
+		UUID:       strings.ToUpper(gotUUID),
+		Removable:  true,
+	}, true
 }
