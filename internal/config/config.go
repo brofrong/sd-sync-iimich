@@ -15,12 +15,14 @@ const (
 )
 
 type Config struct {
-	Immich ImmichConfig `yaml:"immich"`
-	Watch  WatchConfig  `yaml:"watch"`
-	Scan   ScanConfig   `yaml:"scan"`
-	Upload UploadConfig `yaml:"upload"`
-	State  StateConfig  `yaml:"state"`
-	UI     UIConfig     `yaml:"ui"`
+	Immich        ImmichConfig `yaml:"immich"`
+	Watch         WatchConfig  `yaml:"watch"`
+	Scan          ScanConfig   `yaml:"scan"`
+	Upload        UploadConfig `yaml:"upload"`
+	State         StateConfig  `yaml:"state"`
+	UI            UIConfig     `yaml:"ui"`
+	Card          CardConfig   `yaml:"card"`
+	Notifications NotifyConfig `yaml:"notifications"`
 }
 
 type ImmichConfig struct {
@@ -56,6 +58,22 @@ type UIConfig struct {
 	Language string `yaml:"language"`
 }
 
+// CardConfig controls what happens to the SD card after a sync.
+type CardConfig struct {
+	AutoEject  bool `yaml:"auto_eject"`
+	AutoFormat bool `yaml:"auto_format"`
+}
+
+// NotifyConfig controls which desktop notifications are shown.
+type NotifyConfig struct {
+	Enabled   bool `yaml:"enabled"`
+	Done      bool `yaml:"done"`
+	Errors    bool `yaml:"errors"`
+	OtherCard bool `yaml:"other_card"`
+	Server    bool `yaml:"server"`
+	Card      bool `yaml:"card"`
+}
+
 type Store struct {
 	mu   sync.RWMutex
 	path string
@@ -81,6 +99,18 @@ func Default() Config {
 		},
 		UI: UIConfig{
 			Language: "",
+		},
+		Card: CardConfig{
+			AutoEject:  true,
+			AutoFormat: false,
+		},
+		Notifications: NotifyConfig{
+			Enabled:   true,
+			Done:      true,
+			Errors:    true,
+			OtherCard: true,
+			Server:    true,
+			Card:      true,
 		},
 	}
 }
@@ -260,6 +290,17 @@ var knownCameraPaths = []string{
 	"MP_ROOT",
 	"PRIVATE/XDROOT/Clip",
 	"XDROOT/Clip",
+}
+
+// KnownMediaExtensions returns the lowercase, dot-less file extensions
+// recognized as camera media (stills, RAW and video), independent of any
+// user configuration.
+func KnownMediaExtensions() map[string]struct{} {
+	set := make(map[string]struct{}, len(knownCameraExtensions))
+	for _, ext := range knownCameraExtensions {
+		set[ext] = struct{}{}
+	}
+	return set
 }
 
 var knownCameraExtensions = []string{

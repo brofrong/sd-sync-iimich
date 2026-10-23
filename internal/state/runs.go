@@ -25,6 +25,10 @@ type SyncRun struct {
 	Duplicates   int               `json:"duplicates"`
 	Bytes        int64             `json:"bytes"`
 	ErrorSummary map[string]int    `json:"errorSummary"`
+	// FailuresRecorded reports whether RecordFailures has been called for
+	// this run (even when the failure list was empty). RunFailures returns
+	// no rows for a run where this is false.
+	FailuresRecorded bool `json:"failuresRecorded"`
 }
 
 // StartRun records the start of a sync attempt and returns its ID, to be
@@ -76,7 +80,8 @@ func (s *DB) FinishRun(run SyncRun) error {
 func (s *DB) RecentRuns(limit int) ([]SyncRun, error) {
 	rows, err := s.db.Query(`
 		SELECT id, started_at, finished_at, volume_uuid, volume_name,
-			result_code, result_params, uploaded, skipped, errors, duplicates, bytes, error_summary
+			result_code, result_params, uploaded, skipped, errors, duplicates, bytes, error_summary,
+			failures_recorded
 		FROM sync_runs
 		ORDER BY started_at DESC, id DESC
 		LIMIT ?
@@ -103,7 +108,8 @@ func (s *DB) RecentRuns(limit int) ([]SyncRun, error) {
 func (s *DB) LastFinishedRun() (*SyncRun, error) {
 	row := s.db.QueryRow(`
 		SELECT id, started_at, finished_at, volume_uuid, volume_name,
-			result_code, result_params, uploaded, skipped, errors, duplicates, bytes, error_summary
+			result_code, result_params, uploaded, skipped, errors, duplicates, bytes, error_summary,
+			failures_recorded
 		FROM sync_runs
 		WHERE finished_at IS NOT NULL
 		ORDER BY started_at DESC, id DESC
@@ -129,13 +135,15 @@ func scanSyncRun(r rowScanner) (SyncRun, error) {
 	var startedAtUnix int64
 	var finishedAtUnix sql.NullInt64
 	var resultParams, errorSummary string
+	var failuresRecorded int
 	if err := r.Scan(
 		&run.ID, &startedAtUnix, &finishedAtUnix, &run.VolumeUUID, &run.VolumeName,
 		&run.ResultCode, &resultParams, &run.Uploaded, &run.Skipped, &run.Errors,
-		&run.Duplicates, &run.Bytes, &errorSummary,
+		&run.Duplicates, &run.Bytes, &errorSummary, &failuresRecorded,
 	); err != nil {
 		return SyncRun{}, err
 	}
+	run.FailuresRecorded = failuresRecorded != 0
 
 	run.StartedAt = time.Unix(startedAtUnix, 0)
 	if finishedAtUnix.Valid {

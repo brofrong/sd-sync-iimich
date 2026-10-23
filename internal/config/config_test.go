@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -142,6 +144,55 @@ func TestEffectiveConcurrencyDefaultsToFourIndependentOfCPUCount(t *testing.T) {
 	cfg.Upload.Concurrency = 7
 	if got := cfg.EffectiveConcurrency(); got != 7 {
 		t.Fatalf("EffectiveConcurrency() with explicit value = %d, want 7", got)
+	}
+}
+
+func TestLoadOldConfigGetsCardDefaults(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	path, err := ConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Old config.yaml predates the card/notifications sections.
+	data := []byte("immich:\n  url: http://example.com\n  api_key: key\nwatch:\n  volume_uuid: VOL\n  volume_name: CARD\n")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	cfg := store.Get()
+
+	if !cfg.Card.AutoEject {
+		t.Error("Card.AutoEject = false, want true")
+	}
+	if cfg.Card.AutoFormat {
+		t.Error("Card.AutoFormat = true, want false")
+	}
+	n := cfg.Notifications
+	if !n.Enabled || !n.Done || !n.Errors || !n.OtherCard || !n.Server || !n.Card {
+		t.Errorf("Notifications = %+v, want all true", n)
+	}
+}
+
+func TestKnownMediaExtensions(t *testing.T) {
+	extensions := KnownMediaExtensions()
+
+	for _, want := range []string{"arw", "hif", "mxf"} {
+		if _, ok := extensions[want]; !ok {
+			t.Errorf("KnownMediaExtensions() missing %q", want)
+		}
+	}
+	for _, notWant := range []string{"xml", "xmp"} {
+		if _, ok := extensions[notWant]; ok {
+			t.Errorf("KnownMediaExtensions() contains %q, want absent", notWant)
+		}
 	}
 }
 
