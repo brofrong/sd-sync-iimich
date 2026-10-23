@@ -99,10 +99,22 @@ func (a *App) RetryFailures(runID int64) error {
 // afterSync runs in the sync goroutine once the result of a sync has been
 // recorded and st (its ResultStatus) published, while the sync still counts
 // as running and the Mac is kept awake. It decides what happens to the
-// card next and returns the final status. The decisions use the sync's
-// result (st.Code is the result code), never whatever status is current.
+// card next — auto-format (see autoFormat), then auto-eject — and returns
+// the final status. The decisions use the sync's result (st.Code is the
+// result code) or whether the card was just formatted, never whatever
+// status is current.
 func (a *App) afterSync(ctx context.Context, vol volume.Info, res uploader.Result, st Status) Status {
-	if st.Code == CodeDone && a.Config.Get().Card.AutoEject && a.stillMounted(ctx, vol) {
+	ejectable := st.Code == CodeDone
+	if a.wantsFormat(res, st) && a.stillMounted(ctx, vol) {
+		out := a.autoFormat(ctx, vol, st)
+		if out.failed {
+			// The card stays as it is for the user to look at.
+			return out.status
+		}
+		st, vol = out.status, out.vol
+		ejectable = ejectable || out.formatted
+	}
+	if ejectable && a.Config.Get().Card.AutoEject && a.stillMounted(ctx, vol) {
 		st = a.autoEject(vol, res, st)
 	}
 	return st
@@ -143,6 +155,17 @@ func (a *App) autoEject(vol volume.Info, res uploader.Result, st Status) Status 
 		return st
 	}
 	logx.Info("card ejected", "name", vol.Name)
+	// The card is gone even if its unmount event never comes (the watcher
+	// may not have seen a just-formatted card mount yet). The own-eject
+	// marker stays for an unmount event that does come.
+	a.mu.Lock()
+	if mt := a.mountedTarget; mt != nil && strings.EqualFold(mt.UUID, vol.UUID) && mt.MountPoint == vol.MountPoint {
+		a.mountedTarget = nil
+	}
+	if a.adopted == vol.MountPoint {
+		a.adopted = ""
+	}
+	a.mu.Unlock()
 	ej := newStatus(CodeEjected, map[string]string{"uploaded": strconv.Itoa(res.Uploaded)})
 	a.setStatus(ej)
 	return ej

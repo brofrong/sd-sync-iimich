@@ -59,11 +59,24 @@ type App struct {
 	// stays before the idle status replaces it (0: defaultRevertAfter).
 	revertAfter time.Duration
 
+	// countdownCancel cancels the running format countdown (guarded by mu;
+	// nil when none runs). See CancelFormat.
+	countdownCancel context.CancelFunc
+	// erasing is the mount point of the card being erased (guarded by mu):
+	// every volume event there is ignored until the erase is over.
+	erasing string
+	// adopted is the mount point of a card the app just erased and selected
+	// (guarded by mu): the watcher's mount event for it is an echo of the
+	// format, not a card being plugged in.
+	adopted string
+
 	// Seams set by New; tests replace them so they never touch the Mac.
 	keepAwake     func() (release func())
 	eject         func(mountPoint string) error
 	isCameraCard  func(mountPoint string) bool
 	listRemovable func() ([]volume.Info, error)
+	verify        func(ctx context.Context, vol volume.Info, onProgress func(done, total int)) (uploader.VerifyResult, error)
+	erase         func(mountPoint, wantUUID string) (volume.Info, error)
 }
 
 // defaultRevertAfter is how long a status like CodeDone stays on screen
@@ -89,7 +102,9 @@ func New(cfg *config.Store, st *state.DB, dryRun bool) (*App, error) {
 		eject:         volume.Eject,
 		isCameraCard:  isCameraCardDir,
 		listRemovable: volume.ListRemovable,
+		erase:         volume.Erase,
 	}
+	a.verify = a.Uploader.VerifyCard
 	a.setStatus(a.startupStatus())
 	logx.Info("app started", "configured", cfg.IsConfigured(), "dry_run", dryRun)
 	return a, nil
@@ -194,6 +209,9 @@ func (a *App) watchVolumes(ctx context.Context) {
 }
 
 func (a *App) handleVolumeEvent(ev volume.Event) {
+	if a.ignoreFormatEvent(ev) {
+		return
+	}
 	cfg := a.Config.Get()
 	watchUUID := cfg.Watch.VolumeUUID
 	if watchUUID == "" {
@@ -278,10 +296,11 @@ func (a *App) ConfigChanged() {
 }
 
 // setMountedTargetLocked sets mountedTarget to a copy of v (nil: none) and
-// forgets any own-eject marker: it belonged to the previous target. Call
-// with a.mu held.
+// forgets any own-eject and formatted-card marker: they belonged to the
+// previous target. Call with a.mu held.
 func (a *App) setMountedTargetLocked(v *volume.Info) {
 	a.ejecting = ""
+	a.adopted = ""
 	if v == nil {
 		a.mountedTarget = nil
 		return
@@ -589,14 +608,17 @@ func (a *App) currentStatusGen() uint64 {
 	return a.statusGen
 }
 
-func (a *App) setStatus(s Status) {
+// setStatus publishes s and returns its generation (see statusGen).
+func (a *App) setStatus(s Status) uint64 {
 	a.mu.Lock()
 	a.status = s
 	a.statusGen++
+	gen := a.statusGen
 	a.mu.Unlock()
 	if a.onStatus != nil {
 		a.onStatus(s)
 	}
+	return gen
 }
 
 func (a *App) Status() Status {

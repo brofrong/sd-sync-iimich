@@ -37,6 +37,29 @@ const (
 	// CodeEjected follows CodeDone when the app ejected the card itself:
 	// it can be pulled out. It stays until the next mount or user action.
 	CodeEjected Code = "ejected"
+
+	// The auto-format phase after a sync (see autoFormat).
+
+	// CodeVerifying: checking that every file on the card is in Immich.
+	// Progress: Current, Total.
+	CodeVerifying Code = "verifying"
+	// CodeFormatPending: the card will be formatted when the countdown
+	// ends. Params: seconds, name.
+	CodeFormatPending Code = "format_pending"
+	// CodeFormatting: the card is being erased. Params: name.
+	CodeFormatting Code = "formatting"
+	// CodeFormatted: the card was erased and is the selected card. Params:
+	// name.
+	CodeFormatted Code = "formatted"
+	// CodeFormatSkippedMissing: not formatted, files are not in Immich.
+	// Params: count.
+	CodeFormatSkippedMissing Code = "format_skipped_missing"
+	// CodeFormatSkippedUnsupported: not formatted, the card has files the
+	// app does not upload. Params: files (e.g. "12 × .HIF, 3 × .MXF").
+	CodeFormatSkippedUnsupported Code = "format_skipped_unsupported"
+	// CodeFormatFailed: verifying or erasing the card failed. Params:
+	// detail.
+	CodeFormatFailed Code = "format_failed"
 )
 
 // Action is a follow-up the GUI can offer for a given Code (see actionsFor).
@@ -53,10 +76,12 @@ const (
 	ActionOpenLogs   Action = "open_logs"
 	// ActionOpenHistory opens the history, where the failed files are listed.
 	ActionOpenHistory Action = "open_history"
+	// ActionCancelFormat cancels the countdown before a format.
+	ActionCancelFormat Action = "cancel_format"
 )
 
 // Progress describes an in-flight sync. It is nil on Status unless Code is
-// CodeSyncing.
+// CodeSyncing or CodeVerifying (which sets only Current and Total).
 type Progress struct {
 	Current     int     `json:"current"`
 	Total       int     `json:"total"`
@@ -120,10 +145,12 @@ func actionsFor(code Code) []Action {
 		return []Action{ActionRetry}
 	case CodeAuthFailed:
 		return []Action{ActionOpenServer}
-	case CodeFailed:
+	case CodeFailed, CodeFormatFailed:
 		return []Action{ActionOpenLogs}
-	case CodeSyncing:
+	case CodeSyncing, CodeVerifying:
 		return []Action{ActionStop}
+	case CodeFormatPending:
+		return []Action{ActionCancelFormat}
 	default:
 		return []Action{}
 	}
