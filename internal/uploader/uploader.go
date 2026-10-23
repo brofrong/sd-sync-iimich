@@ -72,9 +72,26 @@ type Result struct {
 	// ErrorSummary counts failures by kind (see the errorKind* constants),
 	// e.g. {"rejected": 2, "network": 1}.
 	ErrorSummary map[string]int
+	// Failures lists the files that failed, up to maxRecordedFailures of
+	// them, so a later retry can target just them.
+	Failures []state.FileFailure
 }
 
-func (s *Service) Sync(ctx context.Context, vol volume.Info, dryRun bool, onProgress ProgressFunc) (Result, error) {
+// SyncOptions configures a Sync call.
+type SyncOptions struct {
+	// DryRun scans and reports what would be uploaded without uploading.
+	DryRun bool
+	// Only, when non-empty, restricts the sync to scanned files whose
+	// RelativePath is listed here — e.g. to retry only the files that
+	// failed last time. The cursor watermark is not used to filter
+	// candidates in this mode, but recording progress (the sync session,
+	// state.DB.SetVolumeSync) never moves the cursor backward. Result.Skipped
+	// counts the scanned files not listed here; listed paths that no longer
+	// exist on the card are ignored (logged at Info).
+	Only []string
+}
+
+func (s *Service) Sync(ctx context.Context, vol volume.Info, opts SyncOptions, onProgress ProgressFunc) (Result, error) {
 	cfg := s.Config.Get()
 	if !s.Config.IsConfigured() {
 		return Result{}, fmt.Errorf("not configured")
@@ -97,10 +114,16 @@ func (s *Service) Sync(ctx context.Context, vol volume.Info, dryRun bool, onProg
 		return Result{}, err
 	}
 
-	candidates, skipped, err := s.filterNew(vol.UUID, files)
-	if err != nil {
-		logx.Error("sync: filter failed", "err", err)
-		return Result{}, err
+	var candidates []scanner.File
+	var skipped int
+	if len(opts.Only) > 0 {
+		candidates, skipped = filterOnly(files, opts.Only)
+	} else {
+		candidates, skipped, err = s.filterNew(vol.UUID, files)
+		if err != nil {
+			logx.Error("sync: filter failed", "err", err)
+			return Result{}, err
+		}
 	}
 
 	cursor, err := s.State.GetVolumeSync(vol.UUID)
@@ -123,6 +146,7 @@ func (s *Service) Sync(ctx context.Context, vol volume.Info, dryRun bool, onProg
 		"skipped_local", skipped,
 		"workers", workers,
 		"auto", auto,
+		"only", len(opts.Only) > 0,
 	)
 
 	if len(candidates) == 0 {
@@ -130,7 +154,7 @@ func (s *Service) Sync(ctx context.Context, vol volume.Info, dryRun bool, onProg
 		return Result{Skipped: len(files)}, nil
 	}
 
-	if dryRun {
+	if opts.DryRun {
 		logx.Info("sync: dry-run mode, skipping upload")
 		return Result{Skipped: len(files)}, nil
 	}
@@ -173,6 +197,7 @@ func (s *Service) uploadAll(
 	// (and are retried): the automatic mode backs off on them.
 	var congestion atomic.Int64
 	tally := newErrorTally()
+	failures := newFailureCollector()
 	uploadStart := time.Now()
 
 	defer checkpoint.flush()
@@ -207,7 +232,7 @@ func (s *Service) uploadAll(
 					lim.release()
 					return
 				}
-				o := s.syncOne(ctx, abort, volumeUUID, client, f, session, checkpoint, &bytesUploaded, &congestion, tally)
+				o := s.syncOne(ctx, abort, volumeUUID, client, f, session, checkpoint, &bytesUploaded, &congestion, tally, failures)
 				prog.done(f.Size, f.RelativePath, o)
 				lim.release()
 				if cur := prog.doneCount.Load(); cur%50 == 0 {
@@ -246,6 +271,7 @@ feed:
 	skipped := alreadySkipped + len(candidates) - upl - dup - errCount
 	bytesDone := bytesUploaded.Load()
 	errSummary := tally.snapshot()
+	failed := failures.list()
 
 	if cause := context.Cause(ctx); parent.Err() == nil && (errors.Is(cause, ErrServerUnavailable) || errors.Is(cause, ErrAuthFailed)) {
 		logx.Error("sync: stopped, upload aborted, progress saved",
@@ -254,7 +280,7 @@ feed:
 			"err", cause,
 			"duration", time.Since(uploadStart).Round(time.Second),
 		)
-		return Result{Uploaded: upl, Duplicates: dup, Skipped: skipped, Errors: errCount, Bytes: bytesDone, ErrorSummary: errSummary}, cause
+		return Result{Uploaded: upl, Duplicates: dup, Skipped: skipped, Errors: errCount, Bytes: bytesDone, ErrorSummary: errSummary, Failures: failed}, cause
 	}
 
 	if parent.Err() != nil {
@@ -263,7 +289,7 @@ feed:
 			"errors", errCount,
 			"duration", time.Since(uploadStart).Round(time.Second),
 		)
-		return Result{Uploaded: upl, Duplicates: dup, Skipped: skipped, Errors: errCount, Bytes: bytesDone, ErrorSummary: errSummary}, parent.Err()
+		return Result{Uploaded: upl, Duplicates: dup, Skipped: skipped, Errors: errCount, Bytes: bytesDone, ErrorSummary: errSummary, Failures: failed}, parent.Err()
 	}
 
 	logx.Info("sync: complete",
@@ -273,7 +299,7 @@ feed:
 		"errors", errCount,
 		"upload_duration", time.Since(uploadStart).Round(time.Second).String(),
 	)
-	return Result{Uploaded: upl, Duplicates: dup, Skipped: skipped, Errors: errCount, Bytes: bytesDone, ErrorSummary: errSummary}, nil
+	return Result{Uploaded: upl, Duplicates: dup, Skipped: skipped, Errors: errCount, Bytes: bytesDone, ErrorSummary: errSummary, Failures: failed}, nil
 }
 
 // syncOne uploads f and reports how it ended.
@@ -287,11 +313,13 @@ func (s *Service) syncOne(
 	checkpoint *syncCheckpoint,
 	bytesUploaded, congestion *atomic.Int64,
 	tally *errorTally,
+	failures *failureCollector,
 ) outcome {
 	sha1hex, err := s.fileSHA1(volumeUUID, f)
 	if err != nil {
 		logx.Warn("sync: sha1 failed", "file", f.RelativePath, "err", err)
 		tally.add(errorKindReadFailed)
+		failures.add(state.FileFailure{RelativePath: f.RelativePath, Kind: errorKindReadFailed, Detail: err.Error()})
 		return outcomeFailed
 	}
 
@@ -304,7 +332,9 @@ func (s *Service) syncOne(
 	})
 	if err != nil {
 		logx.Error("sync: upload failed", "file", f.RelativePath, "err", err)
-		tally.add(errorKind(err))
+		kind := errorKind(err)
+		tally.add(kind)
+		failures.add(state.FileFailure{RelativePath: f.RelativePath, Kind: kind, Detail: immich.Detail(err)})
 		switch {
 		case isAuthError(err):
 			abort(fmt.Errorf("%w: %w", ErrAuthFailed, err))
@@ -317,6 +347,7 @@ func (s *Service) syncOne(
 	if err := session.recordSuccess(f); err != nil {
 		logx.Error("sync: failed to save progress", "file", f.RelativePath, "err", err)
 		tally.add(errorKindState)
+		failures.add(state.FileFailure{RelativePath: f.RelativePath, Kind: errorKindState, Detail: err.Error()})
 		return outcomeFailed
 	}
 
@@ -368,6 +399,32 @@ func (s *Service) filterNew(volumeUUID string, files []scanner.File) ([]scanner.
 	}
 
 	return candidates, skipped, nil
+}
+
+// filterOnly restricts files to those whose RelativePath is listed in only,
+// logging (at Info) any listed path that no scanned file matches. It
+// returns the matched files and how many scanned files were left out.
+func filterOnly(files []scanner.File, only []string) ([]scanner.File, int) {
+	found := make(map[string]bool, len(only))
+	for _, p := range only {
+		found[p] = false
+	}
+
+	candidates := make([]scanner.File, 0, len(only))
+	for _, f := range files {
+		if _, ok := found[f.RelativePath]; ok {
+			found[f.RelativePath] = true
+			candidates = append(candidates, f)
+		}
+	}
+
+	for p, ok := range found {
+		if !ok {
+			logx.Info("sync: requested file not found on card", "path", p)
+		}
+	}
+
+	return candidates, len(files) - len(candidates)
 }
 
 // sortFilesByDate orders files oldest-first (by mtime, then path).

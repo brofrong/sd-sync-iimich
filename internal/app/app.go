@@ -348,7 +348,7 @@ func (a *App) startSync() {
 			logx.Error("state: failed to record sync run start", "err", startErr)
 		}
 
-		result, err := a.Uploader.Sync(ctx, *vol, a.dryRun, func(p uploader.Progress) {
+		result, err := a.Uploader.Sync(ctx, *vol, uploader.SyncOptions{DryRun: a.dryRun}, func(p uploader.Progress) {
 			switch p.Phase {
 			case "scanning":
 				a.setStatus(newStatus(CodeScanning, nil))
