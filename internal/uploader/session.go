@@ -2,6 +2,7 @@ package uploader
 
 import (
 	"sync"
+	"time"
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/scanner"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/state"
@@ -32,7 +33,12 @@ func newSyncSession(st *state.DB, volumeUUID string, order []scanner.File) *sync
 	}
 }
 
+// recordSuccess records that f is in Immich (uploaded, or already there)
+// and saves the watermark.
 func (s *syncSession) recordSuccess(f scanner.File) error {
+	if err := s.state.MarkUploaded(s.volumeUUID, f.RelativePath, time.Now()); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	s.completed[f.RelativePath] = struct{}{}
 	cur := s.watermarkLocked()

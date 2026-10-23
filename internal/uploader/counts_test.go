@@ -86,4 +86,16 @@ func TestUploadAllCountsDuplicatesApart(t *testing.T) {
 	if last.Current != 4 || last.Uploaded != 2 || last.Duplicates != 1 || last.Errors != 1 {
 		t.Fatalf("last progress = %+v, want 4 done: 2 uploaded, 1 duplicate, 1 error", last)
 	}
+
+	// Uploads and duplicates are in Immich: both are recorded as uploaded,
+	// the rejected file is not.
+	for name, want := range map[string]bool{"DSC00000": true, "DSC00001": true, "DSC00002": false, "DSC00003": true} {
+		rec, err := st.Get("vol", "DCIM/"+name+".JPG")
+		if err != nil || rec == nil {
+			t.Fatalf("Get(%s) = %+v, %v", name, rec, err)
+		}
+		if got := rec.UploadedAt != nil; got != want {
+			t.Errorf("%s recorded uploaded = %v, want %v", name, got, want)
+		}
+	}
 }

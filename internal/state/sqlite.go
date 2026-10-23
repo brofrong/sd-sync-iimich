@@ -97,7 +97,10 @@ func (s *DB) migrate() error {
 	if err := s.addColumnIfMissing("sync_runs", "duplicates", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
-	return s.addColumnIfMissing("sync_runs", "failures_recorded", "INTEGER NOT NULL DEFAULT 0")
+	if err := s.addColumnIfMissing("sync_runs", "failures_recorded", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	return s.markSyncedBehindCursor()
 }
 
 // addColumnIfMissing adds a column to a table created by an older version.
@@ -163,6 +166,33 @@ func (s *DB) MarkHashed(volumeUUID, relativePath, sha1 string, size int64, mtime
 			mtime = excluded.mtime,
 			sha1 = excluded.sha1
 	`, volumeUUID, relativePath, size, mtime.Unix(), sha1)
+	return err
+}
+
+// MarkUploaded records that a hashed file is in Immich (uploaded or already
+// there), keeping its hash.
+func (s *DB) MarkUploaded(volumeUUID, relativePath string, at time.Time) error {
+	_, err := s.db.Exec(`
+		UPDATE files SET uploaded_at = ?
+		WHERE volume_uuid = ? AND relative_path = ?
+	`, at.Unix(), volumeUUID, relativePath)
+	return err
+}
+
+// markSyncedBehindCursor marks the hashed files a volume's cursor has passed
+// as uploaded. Versions before MarkUploaded saved only the hash and the
+// cursor; the cursor only passes files that are in Immich.
+func (s *DB) markSyncedBehindCursor() error {
+	_, err := s.db.Exec(`
+		UPDATE files SET uploaded_at = ?
+		WHERE uploaded_at IS NULL AND sha1 != '' AND EXISTS (
+			SELECT 1 FROM volume_sync v
+			WHERE v.volume_uuid = files.volume_uuid AND v.last_synced_mtime > 0 AND (
+				files.mtime < v.last_synced_mtime OR
+				(files.mtime = v.last_synced_mtime AND files.relative_path <= v.last_synced_path)
+			)
+		)
+	`, time.Now().Unix())
 	return err
 }
 
@@ -236,6 +266,17 @@ func (s *DB) backfillVolumeSync(volumeUUID string) (VolumeSyncCursor, error) {
 		return VolumeSyncCursor{}, err
 	}
 	return VolumeSyncCursor{Mtime: time.Unix(mtimeUnix, 0), RelativePath: path}, nil
+}
+
+// EnsureVolumeSync saves an empty watermark for a volume that has none, so
+// GetVolumeSync no longer rebuilds one from the files recorded as uploaded.
+func (s *DB) EnsureVolumeSync(volumeUUID string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO volume_sync (volume_uuid, last_synced_mtime, last_synced_path)
+		VALUES (?, 0, '')
+		ON CONFLICT(volume_uuid) DO NOTHING
+	`, volumeUUID)
+	return err
 }
 
 // SetVolumeSync saves the sync watermark when it moves forward in file order.

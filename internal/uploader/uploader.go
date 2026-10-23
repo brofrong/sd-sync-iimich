@@ -173,6 +173,14 @@ func (s *Service) Sync(ctx context.Context, vol volume.Info, opts SyncOptions, o
 	logx.Info("sync: upload started", "candidates", len(candidates))
 	session := newSyncSession(s.State, vol.UUID, candidates)
 	session.keepCursor = len(opts.Only) > 0
+	if session.keepCursor {
+		// Without a saved cursor, GetVolumeSync would rebuild one from the
+		// files recorded as uploaded, i.e. from the retried ones.
+		if err := s.State.EnsureVolumeSync(vol.UUID); err != nil {
+			logx.Error("sync: volume cursor failed", "err", err)
+			return Result{}, err
+		}
+	}
 	checkpoint := newSyncCheckpoint(s.State, session, cfg.EffectiveCheckpointInterval())
 	return s.uploadAll(ctx, vol.UUID, client, workers, auto, len(files), skipped, candidates, prog, session, checkpoint)
 }

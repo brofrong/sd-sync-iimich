@@ -1,6 +1,7 @@
 package state
 
 import (
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -102,5 +103,61 @@ func TestForgetCardKeepsOtherCardsAndHistory(t *testing.T) {
 	}
 	if len(cards) != 1 || cards[0].UUID != "CARD-B" {
 		t.Fatalf("RememberedCards = %+v, want only CARD-B", cards)
+	}
+}
+
+func TestMarkUploaded(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Now().Truncate(time.Second)
+	if err := db.MarkHashed("CARD", "DCIM/1.JPG", "a1", 1, now); err != nil {
+		t.Fatalf("MarkHashed: %v", err)
+	}
+	if err := db.MarkUploaded("CARD", "DCIM/1.JPG", now); err != nil {
+		t.Fatalf("MarkUploaded: %v", err)
+	}
+	rec, err := db.Get("CARD", "DCIM/1.JPG")
+	if err != nil || rec == nil || rec.UploadedAt == nil || rec.SHA1 != "a1" {
+		t.Fatalf("Get = %+v, %v; want uploaded with its hash kept", rec, err)
+	}
+}
+
+// TestOpenMarksFilesBehindCursorUploaded covers databases written by
+// versions that saved only the hash and the cursor: files the cursor has
+// passed were synced, so the card's uploaded count must include them.
+func TestOpenMarksFilesBehindCursorUploaded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	base := time.Unix(1000, 0)
+	for i, name := range []string{"DCIM/A.JPG", "DCIM/B.JPG", "DCIM/C.JPG"} {
+		if err := db.MarkHashed("CARD", name, "h"+name, 1, base.Add(time.Duration(i)*time.Second)); err != nil {
+			t.Fatalf("MarkHashed: %v", err)
+		}
+	}
+	// The cursor is at B: A and B were synced, C was not.
+	if err := db.SetVolumeSync("CARD", base.Add(time.Second), "DCIM/B.JPG"); err != nil {
+		t.Fatalf("SetVolumeSync: %v", err)
+	}
+	_ = db.Close()
+
+	for range 2 { // and opening again changes nothing
+		db, err = Open(path)
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		cards, err := db.RememberedCards()
+		if err != nil {
+			t.Fatalf("RememberedCards: %v", err)
+		}
+		if len(cards) != 1 || cards[0].Uploaded != 2 {
+			t.Fatalf("RememberedCards = %+v, want CARD with 2 uploaded", cards)
+		}
+		rec, _ := db.Get("CARD", "DCIM/C.JPG")
+		if rec == nil || rec.UploadedAt != nil {
+			t.Fatalf("C = %+v, want not uploaded (after the cursor)", rec)
+		}
+		_ = db.Close()
 	}
 }

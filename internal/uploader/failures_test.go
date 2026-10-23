@@ -212,14 +212,17 @@ func TestSyncOnlyUploadsListedFiles(t *testing.T) {
 // cursor and the retried one that were never uploaded (the failure list a
 // retry comes from is capped). The retried file is still recorded in the
 // files table as usual (its hash), and counted as uploaded.
-func TestSyncOnlyNeverMovesCursor(t *testing.T) {
+// onlySyncCard returns an uploader for a card with DCIM/A.JPG, B.JPG and
+// C.JPG (mtimes 1000, 1001, 1002) and a server that accepts every upload.
+func onlySyncCard(t *testing.T) (*Service, *state.DB, volume.Info) {
+	t.Helper()
 	withoutRetryDelays(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"id":"a","status":"created"}`))
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	t.Setenv("HOME", t.TempDir())
 	cfgStore, err := config.Load()
@@ -236,7 +239,7 @@ func TestSyncOnlyNeverMovesCursor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	t.Cleanup(func() { _ = st.Close() })
 
 	mount := t.TempDir()
 	dcim := filepath.Join(mount, "DCIM")
@@ -254,6 +257,12 @@ func TestSyncOnlyNeverMovesCursor(t *testing.T) {
 		}
 	}
 
+	return &Service{Config: cfgStore, State: st}, st, volume.Info{UUID: "VOL-UUID", Name: "CARD", MountPoint: mount}
+}
+
+func TestSyncOnlyNeverMovesCursor(t *testing.T) {
+	svc, st, vol := onlySyncCard(t)
+
 	// Only A is behind the cursor; B was never uploaded; C failed and is
 	// retried.
 	if err := st.SetVolumeSync("VOL-UUID", time.Unix(1000, 0), "DCIM/A.JPG"); err != nil {
@@ -264,8 +273,6 @@ func TestSyncOnlyNeverMovesCursor(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	vol := volume.Info{UUID: "VOL-UUID", Name: "CARD", MountPoint: mount}
-	svc := &Service{Config: cfgStore, State: st}
 	res, err := svc.Sync(context.Background(), vol, SyncOptions{Only: []string{"DCIM/C.JPG"}}, nil)
 	if err != nil {
 		t.Fatalf("Sync() error = %v, want nil", err)
@@ -286,7 +293,26 @@ func TestSyncOnlyNeverMovesCursor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rec == nil || rec.SHA1 == "" {
-		t.Fatalf("files record for the retried file = %+v, want it recorded with its hash", rec)
+	if rec == nil || rec.SHA1 == "" || rec.UploadedAt == nil {
+		t.Fatalf("files record for the retried file = %+v, want it recorded uploaded with its hash", rec)
+	}
+}
+
+// TestSyncOnlyWithoutCursorKeepsFullRescan: a retry on a card that has no
+// saved cursor yet (its first sync failed for every file) must not let the
+// cursor be rebuilt from the retried files, which would skip the files
+// before them that were never uploaded.
+func TestSyncOnlyWithoutCursorKeepsFullRescan(t *testing.T) {
+	svc, st, vol := onlySyncCard(t)
+
+	if _, err := svc.Sync(context.Background(), vol, SyncOptions{Only: []string{"DCIM/C.JPG"}}, nil); err != nil {
+		t.Fatalf("Sync() error = %v, want nil", err)
+	}
+	cur, err := st.GetVolumeSync("VOL-UUID")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cur.Mtime.IsZero() || cur.RelativePath != "" {
+		t.Fatalf("cursor after retry = %+v, want none (A and B were never uploaded)", cur)
 	}
 }
