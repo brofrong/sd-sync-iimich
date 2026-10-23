@@ -47,7 +47,7 @@ var codeActions = map[app.Code]app.Action{
 	app.CodeDoneWithErrors:    app.ActionOpenHistory,
 	app.CodeOtherCardMounted:  app.ActionSelectCard,
 	app.CodeServerUnreachable: app.ActionRetry,
-	app.CodeAuthFailed:        app.ActionRetry,
+	app.CodeAuthFailed:        app.ActionOpenServer,
 	app.CodeServerError:       app.ActionRetry,
 	app.CodeFormatPending:     app.ActionCancelFormat,
 }
@@ -254,7 +254,8 @@ func (n *notifier) notice(no app.Notice, cfg config.Config, c *i18n.Catalog) {
 // responseSection returns the window section to show for the user's
 // response to a notification (its action and Data), and false when the
 // response is not about the window: clicking a notification opens the
-// history for errors and the status otherwise; "Details" opens the history.
+// history for errors and the status otherwise; "Details" opens the history
+// and "Open Server Settings" (a rejected API key) the Server section.
 func responseSection(action string, data map[string]string) (string, bool) {
 	switch action {
 	case notify.DefaultAction:
@@ -264,6 +265,8 @@ func responseSection(action string, data map[string]string) (string, bool) {
 		return "status", true
 	case string(app.ActionOpenHistory):
 		return "history", true
+	case string(app.ActionOpenServer):
+		return "server", true
 	}
 	return "", false
 }

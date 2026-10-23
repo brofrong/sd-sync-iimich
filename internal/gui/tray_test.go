@@ -92,3 +92,30 @@ func TestTrayLineAtMostOncePerSecond(t *testing.T) {
 		t.Fatalf("a code change was held back (%d updates)", n)
 	}
 }
+
+// TestIsRunning checks the tray offers Stop (not Sync now) for every phase
+// StopSync can end: scanning, syncing and the auto-format phase after it.
+func TestIsRunning(t *testing.T) {
+	running := []app.Code{
+		app.CodeScanning, app.CodeSyncing,
+		app.CodeVerifying, app.CodeFormatPending, app.CodeFormatting,
+	}
+	idle := []app.Code{
+		app.CodeNotConfigured, app.CodeNoCardSelected, app.CodeWaitingForCard,
+		app.CodeOtherCardMounted, app.CodeNothingNew, app.CodeDone,
+		app.CodeDoneWithErrors, app.CodeServerUnreachable, app.CodeAuthFailed,
+		app.CodeServerError, app.CodeCardRemoved, app.CodeCancelled, app.CodeFailed,
+		app.CodeEjected, app.CodeFormatted, app.CodeFormatSkippedMissing,
+		app.CodeFormatSkippedUnsupported, app.CodeFormatFailed,
+	}
+	for _, c := range running {
+		if !isRunning(c) {
+			t.Errorf("isRunning(%q) = false, want true", c)
+		}
+	}
+	for _, c := range idle {
+		if isRunning(c) {
+			t.Errorf("isRunning(%q) = true, want false", c)
+		}
+	}
+}
