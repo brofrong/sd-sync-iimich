@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,7 +20,6 @@ import (
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/i18n"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/install"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
-	"github.com/dmitiigorshkov/sd-sync-immich/internal/notify"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/state"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/update"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/version"
@@ -60,6 +58,7 @@ type Service struct {
 
 	systemLanguages []string
 	status          *throttle
+	notifier        *notifier
 
 	mu       sync.Mutex
 	cat      *i18n.Catalog
@@ -70,7 +69,7 @@ type Service struct {
 	installMu sync.Mutex
 }
 
-func newService(a *app.App, cfg *config.Store, st *state.DB, ver string, sh *shell) *Service {
+func newService(a *app.App, cfg *config.Store, st *state.DB, ver string, sh *shell, out sender) *Service {
 	s := &Service{
 		app:             a,
 		cfg:             cfg,
@@ -80,6 +79,7 @@ func newService(a *app.App, cfg *config.Store, st *state.DB, ver string, sh *she
 		shell:           sh,
 		systemLanguages: i18n.SystemLanguages(),
 		lastCode:        a.Status().Code,
+		notifier:        newNotifier(out),
 	}
 	if exe, err := currentExecutable(); err != nil {
 		logx.Warn("gui: cannot resolve executable", "err", err)
@@ -126,6 +126,7 @@ func (s *Service) availableUpdate() *update.Release {
 // application has started.
 func (s *Service) start(ctx context.Context) {
 	s.app.OnStatus(s.onStatus)
+	s.app.OnNotice(s.onNotice)
 	go s.app.Run(ctx)
 	go s.watchVolumes(ctx)
 	go s.runUpdateChecks(ctx)
@@ -145,12 +146,9 @@ func (s *Service) onStatus(st app.Status) {
 		return
 	}
 	s.shell.tray.refresh()
-	if st.Code == app.CodeDone || st.Code == app.CodeDoneWithErrors {
-		if n, _ := strconv.Atoi(st.Params["uploaded"]); n > 0 {
-			c := s.catalog()
-			go notify.Show(c.T("notify.done.title", nil), c.T("notify.done.body", map[string]string{"count": strconv.Itoa(n)}))
-		}
-	}
+	// Only a code change can be a new notification (a countdown's seconds
+	// are not); the notifier's gate keeps a card from repeating one.
+	s.notifier.status(st, s.cfg.Get(), s.catalog())
 }
 
 // forwardStatus sends st to the window: a code change always, progress
