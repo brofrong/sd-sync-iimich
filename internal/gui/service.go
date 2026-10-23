@@ -215,14 +215,10 @@ func (s *Service) State() StateView {
 			URL:    cfg.Immich.URL,
 			HasKey: strings.TrimSpace(cfg.Immich.APIKey) != "",
 		},
-		Card: s.selectedCard(cfg),
-		Settings: s.autostartSettings(SettingsView{
-			Language:    cfg.UI.Language,
-			Concurrency: settingsConcurrency(cfg),
-			AutoPaths:   cfg.Scan.AutoPaths,
-		}),
-		Version: s.version,
-		Update:  updateView(rel),
+		Card:     s.selectedCard(cfg),
+		Settings: s.autostartSettings(settingsView(cfg)),
+		Version:  s.version,
+		Update:   updateView(rel),
 	}
 }
 
@@ -422,8 +418,48 @@ func validConcurrency(n int) bool {
 	return n >= 0 && n <= config.MaxConcurrency
 }
 
-// SaveSettings saves the language, upload concurrency (0: automatic) and
-// automatic path discovery.
+// settingsView is the editable settings of cfg, without the autostart
+// fields (see autostartSettings).
+func settingsView(cfg config.Config) SettingsView {
+	n := cfg.Notifications
+	return SettingsView{
+		Language:    cfg.UI.Language,
+		Concurrency: settingsConcurrency(cfg),
+		AutoPaths:   cfg.Scan.AutoPaths,
+		AutoEject:   cfg.Card.AutoEject,
+		AutoFormat:  cfg.Card.AutoFormat,
+		Notifications: NotificationsView{
+			Enabled:   n.Enabled,
+			Done:      n.Done,
+			Errors:    n.Errors,
+			OtherCard: n.OtherCard,
+			Server:    n.Server,
+			Card:      n.Card,
+		},
+	}
+}
+
+// applySettings copies the saved fields of v into c (the autostart fields
+// are not saved here, see SetAutostart). v is validated by SaveSettings.
+func applySettings(c *config.Config, v SettingsView) {
+	c.UI.Language = v.Language
+	c.Upload.Concurrency = v.Concurrency
+	c.Scan.AutoPaths = v.AutoPaths
+	c.Card = config.CardConfig{AutoEject: v.AutoEject, AutoFormat: v.AutoFormat}
+	n := v.Notifications
+	c.Notifications = config.NotifyConfig{
+		Enabled:   n.Enabled,
+		Done:      n.Done,
+		Errors:    n.Errors,
+		OtherCard: n.OtherCard,
+		Server:    n.Server,
+		Card:      n.Card,
+	}
+}
+
+// SaveSettings saves the language, upload concurrency (0: automatic),
+// automatic path discovery, the card settings and the notification
+// switches.
 func (s *Service) SaveSettings(v SettingsView) error {
 	if v.Language != "" && !slices.Contains(i18n.Supported, v.Language) {
 		return fmt.Errorf("unsupported language %q", v.Language)
@@ -432,14 +468,14 @@ func (s *Service) SaveSettings(v SettingsView) error {
 		return fmt.Errorf("concurrency must be 0 (auto) or between 1 and %d", config.MaxConcurrency)
 	}
 	prev := s.cfg.Get()
-	if err := s.cfg.Update(func(c *config.Config) {
-		c.UI.Language = v.Language
-		c.Upload.Concurrency = v.Concurrency
-		c.Scan.AutoPaths = v.AutoPaths
-	}); err != nil {
+	if err := s.cfg.Update(func(c *config.Config) { applySettings(c, v) }); err != nil {
 		return fmt.Errorf("save settings: %w", err)
 	}
-	logx.Info("settings saved", "language", v.Language, "concurrency", v.Concurrency, "auto_paths", v.AutoPaths)
+	n := v.Notifications
+	logx.Info("settings saved", "language", v.Language, "concurrency", v.Concurrency, "auto_paths", v.AutoPaths,
+		"auto_eject", v.AutoEject, "auto_format", v.AutoFormat,
+		"notifications", n.Enabled, "notify_done", n.Done, "notify_errors", n.Errors,
+		"notify_other_card", n.OtherCard, "notify_server", n.Server, "notify_card", n.Card)
 	if prev.UI.Language != v.Language {
 		c := s.loadCatalog(v.Language)
 		s.mu.Lock()
@@ -499,6 +535,38 @@ func (s *Service) SetAutostart(enabled bool) error {
 func (s *Service) SyncNow()  { s.app.SyncNow() }
 func (s *Service) StopSync() { s.app.StopSync() }
 func (s *Service) Retry()    { s.app.Retry() }
+
+// CancelFormat cancels the countdown before an automatic format.
+func (s *Service) CancelFormat() { s.app.CancelFormat() }
+
+// errRetryUnavailable is the message of the error RetryFailures returns
+// when the failed files can't be retried now (the run's card isn't the
+// selected, mounted card, or a sync is running); the window shows
+// "history.retry_unavailable" for it.
+const errRetryUnavailable = "retry_unavailable"
+
+// retryError maps an error of app.RetryFailures to what the window gets.
+func retryError(err error) error {
+	if errors.Is(err, app.ErrRetryUnavailable) {
+		return &codeError{code: errRetryUnavailable, err: err}
+	}
+	return err
+}
+
+// RetryFailures syncs again the files that failed in run runID.
+func (s *Service) RetryFailures(runID int64) error {
+	err := s.app.RetryFailures(runID)
+	if err != nil && !errors.Is(err, app.ErrRetryUnavailable) {
+		logx.Error("failed to retry failed files", "run", runID, "err", err)
+	}
+	return retryError(err)
+}
+
+// RunFailures returns the files that failed in run runID (none for a run
+// whose failures were never recorded, see state.SyncRun.FailuresRecorded).
+func (s *Service) RunFailures(runID int64) ([]state.FileFailure, error) {
+	return s.st.RunFailures(runID)
+}
 
 // History returns up to limit most recent sync runs, newest first.
 func (s *Service) History(limit int) ([]state.SyncRun, error) {

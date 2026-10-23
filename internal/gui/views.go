@@ -45,7 +45,9 @@ type CardView struct {
 
 // SettingsView holds the editable settings. Language is the preference
 // ("" follows the system language). Concurrency is the number of parallel
-// uploads, 0 when each sync picks it automatically.
+// uploads, 0 when each sync picks it automatically. AutoEject and
+// AutoFormat are what happens to the card after a sync; Notifications are
+// the notification switches.
 //
 // Autostart (the LaunchAgent is installed) is changed with
 // Service.SetAutostart, not SaveSettings, which ignores it and
@@ -61,6 +63,21 @@ type SettingsView struct {
 	Autostart             bool   `json:"autostart"`
 	AutostartAvailable    bool   `json:"autostartAvailable"`
 	AutostartTranslocated bool   `json:"autostartTranslocated"`
+
+	AutoEject     bool              `json:"autoEject"`
+	AutoFormat    bool              `json:"autoFormat"`
+	Notifications NotificationsView `json:"notifications"`
+}
+
+// NotificationsView holds the notification switches: Enabled turns all of
+// them off; the others are the kinds (see config.NotifyConfig).
+type NotificationsView struct {
+	Enabled   bool `json:"enabled"`
+	Done      bool `json:"done"`
+	Errors    bool `json:"errors"`
+	OtherCard bool `json:"otherCard"`
+	Server    bool `json:"server"`
+	Card      bool `json:"card"`
 }
 
 // ServerCheckView is the result of Service.TestServer. Code is "" when OK,

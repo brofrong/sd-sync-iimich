@@ -45,6 +45,7 @@ export const errorCodes: readonly string[] = [
   "server_error",
   "card_removed",
   "failed",
+  "format_failed",
 ];
 
 export function toneFor(code: string): Tone {
@@ -52,12 +53,19 @@ export function toneFor(code: string): Tone {
   switch (code) {
     case "scanning":
     case "syncing":
+    case "verifying":
+    case "format_pending":
+    case "formatting":
       return "accent";
     case "done":
     case "nothing_new":
+    case "ejected":
+    case "formatted":
       return "success";
     case "done_with_errors":
     case "other_card_mounted":
+    case "format_skipped_missing":
+    case "format_skipped_unsupported":
       return "warn";
     default:
       return "idle";

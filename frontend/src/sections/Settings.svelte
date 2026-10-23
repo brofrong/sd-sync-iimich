@@ -2,12 +2,15 @@
   // The Settings section: language, parallel uploads, automatic camera
   // paths and autostart (each saved as soon as it changes; Go answers with
   // a "state" event, which also switches the UI language; autostart is
-  // disabled when the app does not run from its bundle), then updates: the
+  // disabled when the app does not run from its bundle), what happens to
+  // the card after a sync (turning auto-format on asks first, in the row),
+  // the notification switches (the kinds are disabled while notifications
+  // are off), then updates: the
   // running version, a manual check, and the available update's notes
   // with an Install button that asks first (the app restarts after it).
   import { onDestroy } from "svelte";
   import { fade, fly, slide } from "svelte/transition";
-  import { SettingsView, type UpdateView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
+  import { NotificationsView, SettingsView, type UpdateView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
   import Button from "../components/Button.svelte";
   import GlassCard from "../components/GlassCard.svelte";
   import Switch from "../components/Switch.svelte";
@@ -33,6 +36,20 @@
   let concurrency = $state(DEFAULT_CONCURRENCY);
   let autoPaths = $state(true);
   let autostart = $state(false);
+  let autoEject = $state(true);
+  let autoFormat = $state(false);
+  // Turning auto-format on waits for this confirmation.
+  let confirmFormat = $state(false);
+  let notifications = $state(new NotificationsView({ enabled: true, done: true, errors: true, otherCard: true, server: true, card: true }));
+
+  // The notification kinds, in the order of the spec.
+  const notifyKinds = [
+    { key: "done", label: "settings.notify_done" },
+    { key: "errors", label: "settings.notify_errors" },
+    { key: "otherCard", label: "settings.notify_other_card" },
+    { key: "server", label: "settings.notify_server" },
+    { key: "card", label: "settings.notify_card" },
+  ] as const;
 
   function syncFromState(s: SettingsView): void {
     language = s.language;
@@ -40,9 +57,16 @@
     concurrency = s.concurrency >= 1 && s.concurrency <= MAX_CONCURRENCY ? s.concurrency : DEFAULT_CONCURRENCY;
     autoPaths = s.autoPaths;
     autostart = s.autostart;
+    autoEject = s.autoEject;
+    autoFormat = s.autoFormat;
+    if (s.notifications) notifications = new NotificationsView(s.notifications);
   }
   $effect(() => syncFromState($appState.settings));
 
+  // Which card the "Saved" / error feedback shows in: the one whose
+  // setting changed last.
+  type Group = "general" | "card" | "notify";
+  let group = $state<Group>("general");
   let saveError = $state("");
   let saved = $state(false);
   let savedTimer: ReturnType<typeof setTimeout> | undefined;
@@ -53,11 +77,21 @@
     savedTimer = setTimeout(() => (saved = false), 2000);
   }
 
-  async function save(): Promise<void> {
+  async function save(g: Group = "general"): Promise<void> {
+    group = g;
     saveError = "";
     saved = false;
     try {
-      await backend.SaveSettings(new SettingsView({ language, concurrency: auto ? 0 : concurrency, autoPaths }));
+      await backend.SaveSettings(
+        new SettingsView({
+          language,
+          concurrency: auto ? 0 : concurrency,
+          autoPaths,
+          autoEject,
+          autoFormat,
+          notifications: new NotificationsView(notifications),
+        }),
+      );
     } catch (err) {
       saveError = t("settings.save_failed", { detail: message(err) });
       syncFromState($appState.settings);
@@ -67,6 +101,7 @@
   }
 
   async function saveAutostart(enabled: boolean): Promise<void> {
+    group = "general";
     autostart = enabled;
     saveError = "";
     saved = false;
@@ -82,6 +117,28 @@
       return;
     }
     showSaved();
+  }
+
+  function setAutoFormat(enabled: boolean): void {
+    if (enabled) {
+      // The switch stays off until the user confirms.
+      confirmFormat = true;
+      return;
+    }
+    confirmFormat = false;
+    autoFormat = false;
+    save("card");
+  }
+
+  function enableAutoFormat(): void {
+    confirmFormat = false;
+    autoFormat = true;
+    save("card");
+  }
+
+  function setNotify(key: keyof NotificationsView, enabled: boolean): void {
+    notifications = new NotificationsView({ ...notifications, [key]: enabled });
+    save("notify");
   }
 
   const fill = $derived(((concurrency - 1) / (MAX_CONCURRENCY - 1)) * 100);
@@ -123,6 +180,20 @@
 
   onDestroy(() => clearTimeout(savedTimer));
 </script>
+
+{#snippet feedback(g: Group)}
+  <div class="feedback" aria-live="polite">
+    {#if group === g}
+      {#if saveError}
+        <p class="error-text" role="alert">{saveError}</p>
+      {:else if saved}
+        <p class="ok-text" transition:fade={{ duration: ms(200) }}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.check} /></svg>{t("settings.saved")}
+        </p>
+      {/if}
+    {/if}
+  </div>
+{/snippet}
 
 <div class="section">
   <GlassCard padding="16px 18px 6px" sheen={false}>
@@ -181,7 +252,7 @@
               aria-describedby="set-concurrency-hint"
               value={concurrency}
               oninput={(e) => (concurrency = Number(e.currentTarget.value))}
-              onchange={save}
+              onchange={() => save()}
             />
             <output for="set-concurrency">{formatNumber(concurrency)}</output>
           </div>
@@ -227,15 +298,87 @@
       />
     </div>
 
-    <div class="feedback" aria-live="polite">
-      {#if saveError}
-        <p class="error-text" role="alert">{saveError}</p>
-      {:else if saved}
-        <p class="ok-text" transition:fade={{ duration: ms(200) }}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.check} /></svg>{t("settings.saved")}
-        </p>
+    {@render feedback("general")}
+  </GlassCard>
+
+  <GlassCard padding="16px 18px 6px" sheen={false}>
+    <h2 class="eyebrow">{t("settings.card")}</h2>
+
+    <div class="row">
+      <div class="text">
+        <label for="set-auto-eject">{t("settings.auto_eject")}</label>
+        <p class="hint" id="set-auto-eject-hint">{t("settings.auto_eject_hint")}</p>
+      </div>
+      <Switch
+        id="set-auto-eject"
+        checked={autoEject}
+        describedby="set-auto-eject-hint"
+        onchange={(v) => {
+          autoEject = v;
+          save("card");
+        }}
+      />
+    </div>
+
+    <div class="row">
+      <div class="text">
+        <label for="set-auto-format">{t("settings.auto_format")}</label>
+        <p class="hint" id="set-auto-format-hint">{t("settings.auto_format_hint")}</p>
+      </div>
+      <Switch
+        id="set-auto-format"
+        checked={autoFormat}
+        describedby="set-auto-format-hint"
+        onchange={setAutoFormat}
+      />
+      {#if confirmFormat}
+        <div class="confirm-row" transition:slide={{ duration: ms(250) }}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.warning} /></svg>
+          <p id="set-auto-format-confirm">{t("settings.auto_format_confirm")}</p>
+          <div class="buttons">
+            <Button onclick={() => (confirmFormat = false)}>{t("settings.cancel")}</Button>
+            <Button variant="primary" describedby="set-auto-format-confirm" onclick={enableAutoFormat}>
+              {t("settings.auto_format_enable")}
+            </Button>
+          </div>
+        </div>
       {/if}
     </div>
+
+    {@render feedback("card")}
+  </GlassCard>
+
+  <GlassCard padding="16px 18px 6px" sheen={false}>
+    <h2 class="eyebrow">{t("settings.notifications")}</h2>
+
+    <div class="row">
+      <div class="text">
+        <label for="set-notify">{t("settings.notify_enabled")}</label>
+        <p class="hint" id="set-notify-hint">{t("settings.notify_enabled_hint")}</p>
+      </div>
+      <Switch
+        id="set-notify"
+        checked={notifications.enabled}
+        describedby="set-notify-hint"
+        onchange={(v) => setNotify("enabled", v)}
+      />
+    </div>
+
+    <ul class="kinds" class:off={!notifications.enabled}>
+      {#each notifyKinds as kind (kind.key)}
+        <li>
+          <label for="set-notify-{kind.key}">{t(kind.label)}</label>
+          <Switch
+            id="set-notify-{kind.key}"
+            checked={notifications[kind.key]}
+            disabled={!notifications.enabled}
+            onchange={(v) => setNotify(kind.key, v)}
+          />
+        </li>
+      {/each}
+    </ul>
+
+    {@render feedback("notify")}
   </GlassCard>
 
   <GlassCard tone={update ? "accent" : "idle"} padding="16px 18px 18px" sheen={false}>
@@ -401,6 +544,64 @@
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     text-align: right;
+  }
+
+  /* ---- Auto-format confirmation ---- */
+  .confirm-row {
+    display: flex;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 10px 12px;
+    border: 1px solid rgba(255, 179, 64, 0.28);
+    border-radius: var(--radius-m);
+    background: rgba(255, 159, 10, 0.08);
+  }
+  .confirm-row svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    fill: none;
+    stroke: var(--amber);
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .confirm-row p {
+    flex: 1 1 200px;
+    margin: 0;
+    color: var(--text);
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+  .confirm-row .buttons {
+    margin: 0;
+    margin-left: auto;
+  }
+
+  /* ---- Notification kinds ---- */
+  .kinds {
+    margin: 0 0 6px;
+    padding: 2px 0 0 14px;
+    border-left: 2px solid rgba(255, 255, 255, 0.08);
+    list-style: none;
+    transition: opacity 0.25s;
+  }
+  .kinds.off {
+    opacity: 0.55;
+  }
+  .kinds li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 7px 0;
+  }
+  .kinds label {
+    min-width: 0;
+    font-weight: 400;
+    color: var(--text-2);
   }
 
   .feedback {
