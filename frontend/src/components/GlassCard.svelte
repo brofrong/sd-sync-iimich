@@ -1,6 +1,7 @@
 <script lang="ts">
   // A frosted-glass card: blurred and tinted over whatever lies behind it,
-  // with a grain layer and a soft highlight that follows the pointer. The
+  // with a grain layer and (unless `sheen` is off) a soft highlight that
+  // follows the pointer. The
   // tone recolours the tint, border and glow with a crossfade; bumping
   // `shake` makes the card nudge once (used when an error appears).
   import type { Snippet } from "svelte";
@@ -12,10 +13,12 @@
     tone?: Tone;
     shake?: number;
     padding?: string;
+    /** The highlight under the pointer. */
+    sheen?: boolean;
     children: Snippet;
   }
 
-  let { tone = "idle", shake = 0, padding = "16px 18px", children }: Props = $props();
+  let { tone = "idle", shake = 0, padding = "16px 18px", sheen = true, children }: Props = $props();
 
   let el: HTMLDivElement;
   const tones: Tone[] = ["idle", "accent", "error", "warn", "success"];
@@ -43,13 +46,13 @@
   }
 </script>
 
-<div class="glass noise tone-{tone}" style:padding bind:this={el} onpointermove={track} role="presentation">
+<div class="glass noise tone-{tone}" style:padding bind:this={el} onpointermove={sheen ? track : undefined} role="presentation">
   <div class="tints" aria-hidden="true">
     {#each tones as t (t)}
       <i class="tint {t}" class:on={t === tone}></i>
     {/each}
   </div>
-  <div class="sheen" aria-hidden="true"></div>
+  {#if sheen}<div class="sheen" aria-hidden="true"></div>{/if}
   <div class="content">{@render children()}</div>
 </div>
 

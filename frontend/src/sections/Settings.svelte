@@ -125,7 +125,7 @@
 </script>
 
 <div class="section">
-  <GlassCard padding="16px 18px 6px">
+  <GlassCard padding="16px 18px 6px" sheen={false}>
     <h2 class="eyebrow">{t("settings.general")}</h2>
 
     <div class="row">
@@ -238,7 +238,7 @@
     </div>
   </GlassCard>
 
-  <GlassCard tone={update ? "accent" : "idle"} padding="16px 18px 18px">
+  <GlassCard tone={update ? "accent" : "idle"} padding="16px 18px 18px" sheen={false}>
     <h2 class="eyebrow">{t("settings.updates")}</h2>
 
     <div class="version-row">
