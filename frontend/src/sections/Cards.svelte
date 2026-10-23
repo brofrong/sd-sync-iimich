@@ -1,21 +1,28 @@
 <script lang="ts">
-  // The Cards section: the mounted removable volumes, with the selected
-  // card first (shown even while it is not plugged in). A mounted card can
-  // be selected; the selected mounted card can be ejected. The list reloads
-  // on every "state" event (Go sends one when a volume mounts or unmounts).
+  // The Cards section: the selected card first (shown even while it is not
+  // plugged in), then the mounted removable volumes, then the cards the app
+  // remembers. A mounted card can be selected; the selected mounted card can
+  // be ejected; a remembered or selected card can be forgotten, after a
+  // confirmation, except while it syncs. The list reloads on every "state"
+  // event (Go sends one when a volume mounts or unmounts, or a card is
+  // forgotten).
   import { flip } from "svelte/animate";
-  import { fade } from "svelte/transition";
+  import { fade, slide } from "svelte/transition";
   import type { CardView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
   import Button from "../components/Button.svelte";
   import GlassCard from "../components/GlassCard.svelte";
-  import { appState, backend } from "../lib/backend";
-  import { formatBytes, t } from "../lib/i18n";
+  import { appState, backend, status } from "../lib/backend";
+  import { formatBytes, formatNumber, t } from "../lib/i18n";
   import { icons } from "../lib/icons";
   import { reducedMotion } from "../lib/stores";
 
   let cards = $state<CardView[] | null>(null);
   let loadError = $state("");
   let actionError = $state("");
+  // The card whose "Forget" awaits confirmation.
+  let confirming = $state<string | null>(null);
+  // Only the selected card syncs; it can't be forgotten meanwhile.
+  const syncing = $derived($status.code === "syncing" || $status.code === "scanning");
   const ms = (n: number) => ($reducedMotion ? 0 : n);
 
   function message(err: unknown): string {
@@ -94,6 +101,9 @@
                   {:else}
                     <span class="offline"><i class="dot" aria-hidden="true"></i>{t("cards.not_connected")}</span>
                   {/if}
+                  {#if card.remembered}
+                    <span>{t("cards.uploaded", { count: formatNumber(card.uploaded) })}</span>
+                  {/if}
                 </div>
                 <div class="uuid">{t("cards.uuid", { uuid: card.uuid })}</div>
               </div>
@@ -107,8 +117,37 @@
                     {t("cards.eject")}
                   </Button>
                 {/if}
+                {#if (card.remembered || card.selected) && confirming !== card.uuid}
+                  <Button
+                    describedby="card-{card.uuid}"
+                    disabled={card.selected && syncing}
+                    onclick={() => (confirming = card.uuid)}
+                  >
+                    {t("cards.forget")}
+                  </Button>
+                {/if}
               </div>
             </div>
+            {#if confirming === card.uuid}
+              <div class="confirm" transition:slide={{ duration: ms(250) }}>
+                <p id="forget-{card.uuid}">{t("cards.forget_confirm", { name: card.name || t("cards.unnamed") })}</p>
+                <div class="actions">
+                  <Button onclick={() => (confirming = null)}>{t("cards.cancel")}</Button>
+                  <Button
+                    variant="primary"
+                    describedby="forget-{card.uuid}"
+                    disabled={card.selected && syncing}
+                    onclick={() =>
+                      act(async () => {
+                        await backend.ForgetCard(card.uuid);
+                        confirming = null;
+                      })}
+                  >
+                    {t("cards.forget")}
+                  </Button>
+                </div>
+              </div>
+            {/if}
           </GlassCard>
         </li>
       {/each}
@@ -251,7 +290,25 @@
   }
 
   .actions {
+    display: flex;
     flex-shrink: 0;
+    gap: 8px;
+  }
+
+  .confirm {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .confirm p {
+    flex: 1;
+    margin: 0;
+    color: var(--text-2);
+    font-size: 12.5px;
+    line-height: 1.5;
   }
 
 

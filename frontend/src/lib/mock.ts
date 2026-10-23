@@ -252,6 +252,13 @@ export function createMockTransport(): Transport {
   // The mounted removable volumes; the selected card is state.card.
   let mounted = [new CardView(mainCard), new CardView(otherCard), new CardView(spareCard)];
   const unplugged = (c: CardView) => new CardView({ ...c, mounted: false, mountPoint: "", sizeBytes: 0 });
+  // The cards with sync state (as Go's state.RememberedCards): the main card,
+  // an old copy of it from before it was formatted, and one never named.
+  let remembered = [
+    { uuid: mainCard.uuid, name: mainCard.name, uploaded: 13821 },
+    { uuid: "3A8C3713-C262-3DB7-8BEC-604865B64393", name: "Brofrong", uploaded: 18900 },
+    { uuid: "9B04E7A1-52D3-4E6F-8C21-7A0F3D5B6E19", name: "", uploaded: 412 },
+  ];
 
   if (pinned === "not_configured") {
     state.server = new ServerView();
@@ -349,7 +356,7 @@ export function createMockTransport(): Transport {
   function run(): void {
     clearInterval(timer);
     timer = undefined;
-    if (!pinned && !document.hidden) timer = setInterval(step, TICK);
+    if (!pinned && !document.hidden && state.card.uuid) timer = setInterval(step, TICK);
   }
   document.addEventListener("visibilitychange", run);
   if (!pinned) {
@@ -385,19 +392,47 @@ export function createMockTransport(): Transport {
 
   const backend: Backend = {
     State: async () => new StateView({ ...state }),
+    // As Go's listCards: the selected card, the mounted ones, then the
+    // remembered ones that are not mounted.
     Cards: async () => {
-      const list = mounted.map((c) => new CardView({ ...c, selected: c.uuid === state.card.uuid }));
-      const i = list.findIndex((c) => c.selected);
-      if (i > 0) list.unshift(...list.splice(i, 1));
-      if (i < 0 && state.card.uuid) list.unshift(new CardView({ ...state.card, selected: true }));
+      const list: CardView[] = [];
+      const listed = (uuid: string) => list.some((c) => c.uuid === uuid);
+      const remember = (c: CardView) => {
+        const r = remembered.find((r) => r.uuid === c.uuid);
+        return r ? new CardView({ ...c, name: c.name || r.name, remembered: true, uploaded: r.uploaded }) : c;
+      };
+      if (state.card.uuid) {
+        const m = mounted.find((c) => c.uuid === state.card.uuid);
+        list.push(remember(new CardView({ ...(m ?? state.card), selected: true })));
+      }
+      for (const c of mounted) if (!listed(c.uuid)) list.push(remember(new CardView({ ...c, selected: false })));
+      for (const r of remembered) if (!listed(r.uuid)) list.push(new CardView({ uuid: r.uuid, name: r.name, remembered: true, uploaded: r.uploaded }));
       return delay(120, list);
+    },
+    ForgetCard: async (uuid) => {
+      const selected = uuid === state.card.uuid;
+      if (selected && (state.status.code === "syncing" || state.status.code === "scanning")) {
+        throw new Error("the card is syncing");
+      }
+      await delay(300, null);
+      remembered = remembered.filter((r) => r.uuid !== uuid);
+      if (selected) {
+        state.card = new CardView();
+        run(); // stops the scenario: there is no card to sync
+        hold = 0;
+        setStatus(makeStatus("no_card_selected"));
+      }
+      pushState();
     },
     SelectCard: async (uuid) => {
       const card = mounted.find((c) => c.uuid === uuid);
       if (!card) throw new Error(`card ${uuid} is not mounted`);
       state.card = new CardView({ ...card, selected: true });
       pushState();
-      if (!pinned) enter(0);
+      if (!pinned) {
+        enter(0);
+        run();
+      }
     },
     EjectCard: async () => {
       const card = mounted.find((c) => c.uuid === state.card.uuid);

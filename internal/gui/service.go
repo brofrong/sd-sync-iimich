@@ -259,30 +259,87 @@ func mountedCard(v volume.Info, selectedUUID string) CardView {
 	}
 }
 
-// Cards lists the mounted removable volumes. The selected card is listed
-// first even when it is not mounted.
+// Cards lists the selected card first (even when it is not mounted), then
+// the mounted removable volumes, then the cards the app remembers that are
+// not mounted.
 func (s *Service) Cards() ([]CardView, error) {
 	vols, err := volume.ListRemovable()
 	if err != nil {
 		return nil, fmt.Errorf("list removable volumes: %w", err)
 	}
+	remembered, err := s.st.RememberedCards()
+	if err != nil {
+		return nil, fmt.Errorf("list remembered cards: %w", err)
+	}
 	cfg := s.cfg.Get()
-	selected := cfg.Watch.VolumeUUID
-	cards := make([]CardView, 0, len(vols)+1)
-	found := false
+	mounted := make([]CardView, 0, len(vols))
 	for _, v := range vols {
-		c := mountedCard(v, selected)
-		if c.Selected {
-			found = true
-			cards = append([]CardView{c}, cards...)
+		mounted = append(mounted, mountedCard(v, cfg.Watch.VolumeUUID))
+	}
+	return listCards(mounted, remembered, cfg.Watch.VolumeUUID, cfg.Watch.VolumeName), nil
+}
+
+// listCards merges the mounted cards, the remembered ones and the selected
+// card (selectedUUID, "" for none) into the order Cards returns.
+func listCards(mounted []CardView, remembered []state.RememberedCard, selectedUUID, selectedName string) []CardView {
+	cards := make([]CardView, 0, len(mounted)+len(remembered)+1)
+	listed := func(uuid string) bool {
+		for _, c := range cards {
+			if strings.EqualFold(c.UUID, uuid) {
+				return true
+			}
+		}
+		return false
+	}
+	remember := func(c *CardView) {
+		for _, r := range remembered {
+			if strings.EqualFold(r.UUID, c.UUID) {
+				c.Remembered = true
+				c.Uploaded = r.Uploaded
+				if c.Name == "" {
+					c.Name = r.Name
+				}
+				return
+			}
+		}
+	}
+
+	if selectedUUID != "" {
+		sel := CardView{UUID: selectedUUID, Name: selectedName, Selected: true}
+		for _, c := range mounted {
+			if strings.EqualFold(c.UUID, selectedUUID) {
+				sel = c
+				sel.Selected = true
+			}
+		}
+		remember(&sel)
+		cards = append(cards, sel)
+	}
+	for _, c := range mounted {
+		if listed(c.UUID) {
 			continue
 		}
+		c.Selected = false
+		remember(&c)
 		cards = append(cards, c)
 	}
-	if !found && selected != "" {
-		cards = append([]CardView{{UUID: selected, Name: cfg.Watch.VolumeName, Selected: true}}, cards...)
+	for _, r := range remembered {
+		if listed(r.UUID) {
+			continue
+		}
+		cards = append(cards, CardView{UUID: r.UUID, Name: r.Name, Remembered: true, Uploaded: r.Uploaded})
 	}
-	return cards, nil
+	return cards
+}
+
+// ForgetCard deletes what the app remembers about the card with uuid (see
+// app.App.ForgetCard) and deselects it if it is the selected card.
+func (s *Service) ForgetCard(uuid string) error {
+	if err := s.app.ForgetCard(uuid); err != nil {
+		return err
+	}
+	s.stateChanged()
+	return nil
 }
 
 // SelectCard makes the mounted card with uuid the one to sync.

@@ -28,8 +28,10 @@ type ServerView struct {
 	HasKey bool   `json:"hasKey"`
 }
 
-// CardView is a removable volume (or the selected card while it is not
-// mounted). SizeBytes is 0 when the card is not mounted.
+// CardView is a removable volume, the selected card or a card the app
+// remembers (has sync state for), mounted or not. SizeBytes is 0 when the
+// card is not mounted. Name is "" for a remembered card whose name was never
+// recorded. Uploaded is the number of its files recorded as uploaded.
 type CardView struct {
 	UUID       string `json:"uuid"`
 	Name       string `json:"name"`
@@ -37,6 +39,8 @@ type CardView struct {
 	Mounted    bool   `json:"mounted"`
 	Selected   bool   `json:"selected"`
 	SizeBytes  int64  `json:"sizeBytes"`
+	Remembered bool   `json:"remembered"`
+	Uploaded   int    `json:"uploaded"`
 }
 
 // SettingsView holds the editable settings. Language is the preference

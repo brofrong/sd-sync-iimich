@@ -258,6 +258,49 @@ func (a *App) EjectCard() error {
 	return volume.Eject(vol.MountPoint)
 }
 
+// ErrCardSyncing is returned by ForgetCard for the card being synced.
+var ErrCardSyncing = errors.New("the card is syncing")
+
+// ForgetCard deletes what the app remembers about the card with uuid: which
+// of its files were uploaded and where its sync stopped (the history is
+// kept). The selected card is deselected. It fails while that card syncs.
+func (a *App) ForgetCard(uuid string) error {
+	selectedUUID := a.Config.Get().Watch.VolumeUUID
+	selected := strings.EqualFold(selectedUUID, uuid)
+	if selected {
+		uuid = selectedUUID // as the database has it
+		// Under syncMu no sync can start: once it is released the card is
+		// no longer the target, so none will.
+		a.syncMu.Lock()
+		if a.syncCancel != nil {
+			a.syncMu.Unlock()
+			return ErrCardSyncing
+		}
+		err := a.Config.Update(func(c *config.Config) {
+			c.Watch.VolumeUUID = ""
+			c.Watch.VolumeName = ""
+		})
+		if err == nil {
+			a.mu.Lock()
+			a.mountedTarget = nil
+			a.mu.Unlock()
+		}
+		a.syncMu.Unlock()
+		if err != nil {
+			return fmt.Errorf("deselect card: %w", err)
+		}
+		a.resume().Stop()
+	}
+	if err := a.State.ForgetCard(uuid); err != nil {
+		return fmt.Errorf("forget card: %w", err)
+	}
+	logx.Info("card forgotten", "uuid", uuid, "was_selected", selected)
+	if selected {
+		a.ConfigChanged()
+	}
+	return nil
+}
+
 // SyncNow stops waiting for an automatic resume and starts a sync of the
 // selected card. It does nothing if a sync is already running.
 func (a *App) SyncNow() {
