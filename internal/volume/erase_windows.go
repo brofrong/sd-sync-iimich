@@ -49,10 +49,13 @@ type volumeDetails struct {
 	FileSystem string
 }
 
-// formatRequest is one format.com run: the drive root ("E:\"), the
-// filesystem to create (as format.com's /FS: spells it) and the label.
+// formatRequest is one format.com run: the volume GUID path that passed
+// the identity check (what format.com is pointed at), its drive root ("E:\",
+// for messages), the filesystem to create (as format.com's /FS: spells it)
+// and the label.
 type formatRequest struct {
 	Root       string
+	Volume     string
 	FileSystem string
 	Label      string
 }
@@ -119,7 +122,9 @@ var (
 )
 
 // Erase reformats the removable volume at the drive letter mountPoint ("E:\")
-// in place, keeping its filesystem (exFAT, FAT32 or FAT) and label.
+// in place, keeping its filesystem (exFAT or FAT32) and label. format.com is
+// pointed at the volume GUID path read with the identity check, not at the
+// letter.
 //
 // wantUUID must equal (case-insensitively) the volume's current serial
 // number ("XXXX-XXXX"), read in the same GetVolumeInformation call as the
@@ -131,7 +136,7 @@ var (
 // a bare drive letter, the system drive (or any drive when the system drive
 // can't be found), a drive that is not DRIVE_REMOVABLE, a letter without a
 // volume GUID path, an empty or path-like label, and filesystems other than
-// exFAT, FAT32 and FAT.
+// exFAT and FAT32 (Windows' "FAT" may be FAT12).
 //
 // format.com only runs with administrator rights, which the app never asks
 // for: without them Erase returns ErrNeedsAdmin without starting it, and an
@@ -197,17 +202,17 @@ func Erase(mountPoint, wantUUID string) (Info, error) {
 		fs = "exFAT"
 	case strings.EqualFold(d.FileSystem, "FAT32"):
 		fs = "FAT32"
-	case strings.EqualFold(d.FileSystem, "FAT"):
-		fs = "FAT"
 	default:
-		return Info{}, fmt.Errorf("erase %s: refusing to erase filesystem %q, want exFAT, FAT32 or FAT", root, d.FileSystem)
+		// "FAT" is refused too: Windows reports FAT12 and FAT16 alike, and
+		// darwin never erases FAT12.
+		return Info{}, fmt.Errorf("erase %s: refusing to erase filesystem %q, want exFAT or FAT32", root, d.FileSystem)
 	}
 
 	if !isElevatedFn() {
 		return Info{}, fmt.Errorf("erase %s: format.com needs an elevated process: %w", root, ErrNeedsAdmin)
 	}
 
-	req := formatRequest{Root: root, FileSystem: fs, Label: d.Name}
+	req := formatRequest{Root: root, Volume: guid, FileSystem: fs, Label: d.Name}
 	logx.Info("volume: erasing", "mountPoint", root, "device", guid, "format", fs, "name", d.Name)
 
 	out, err := runFormatFn(req)
@@ -243,24 +248,37 @@ func validEraseLabel(label string) bool {
 	return true
 }
 
-// formatArgs is format.com's command line for req: the drive letter, the
-// same filesystem and label, a quick format, and /Y so it does not ask for
-// confirmation.
-func formatArgs(req formatRequest) []string {
-	return []string{
-		strings.TrimSuffix(req.Root, `\`),
+// formatCommandLine is format.com's full command line for req: the volume
+// GUID path, the same filesystem and label, a quick format, and /Y so it
+// does not ask for confirmation. It is passed as SysProcAttr.CmdLine so the
+// label is quoted the way format.com expects, /V:"NIKON D850", rather than
+// Go's "/V:NIKON D850". A label never holds a quote or a backslash
+// (validEraseLabel), so quoting it needs no escapes.
+func formatCommandLine(exe string, req formatRequest) string {
+	label := req.Label
+	if strings.ContainsAny(label, " \t") {
+		label = `"` + label + `"`
+	}
+	return strings.Join([]string{
+		syscall.EscapeArg(exe),
+		req.Volume,
 		"/FS:" + req.FileSystem,
-		"/V:" + req.Label,
+		"/V:" + label,
 		"/Q",
 		"/Y",
-	}
+	}, " ")
 }
 
-// formatStdin is what format.com reads if it prompts anyway: two lines
-// holding the label Erase verified. One answers "Insert new disk ... and
-// press ENTER when ready", the other "Enter current volume label for drive
-// E:", in whichever order they come; anything else then reads end of
-// input. It never answers a Y/N question with "Y".
+// formatStdin is format.com's standard input, in case it prompts despite /Y
+// and /V: two lines holding the label Erase verified, then end of input. It
+// is meant for the prompts format.com is known to show on removable media,
+// "Insert new disk ... and press ENTER when ready" (any line will do) and
+// "Enter current volume label for drive E:" (the verified label), in
+// whichever order they come; it is a best effort, not a guarantee about
+// every prompt every Windows version may show. A Y/N question would read the
+// label as its answer (a label starting with "Y" means yes, which /Y has
+// already said); a prompt that gets an answer it does not accept, or end of
+// input, makes format.com fail, which Erase reports.
 func formatStdin(req formatRequest) string {
 	return req.Label + "\r\n" + req.Label + "\r\n"
 }
@@ -273,12 +291,17 @@ func runFormatCom(req formatRequest) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("find format.com: %w", err)
 	}
+	exe := filepath.Join(sysDir, "format.com")
 	ctx, cancel := context.WithTimeout(context.Background(), formatTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, filepath.Join(sysDir, "format.com"), formatArgs(req)...)
+	cmd := exec.CommandContext(ctx, exe)
 	cmd.Stdin = strings.NewReader(formatStdin(req))
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CmdLine:       formatCommandLine(exe, req),
+		HideWindow:    true,
+		CreationFlags: windows.CREATE_NO_WINDOW,
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil && ctx.Err() == context.DeadlineExceeded {
 		err = fmt.Errorf("timed out after %s: %w", formatTimeout, err)

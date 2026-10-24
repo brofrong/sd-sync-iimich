@@ -150,7 +150,6 @@ func TestWindowsEraseKeepsLabelAndFormat(t *testing.T) {
 	}{
 		{"exFAT", "exFAT"},
 		{"FAT32", "FAT32"},
-		{"FAT", "FAT"},
 	} {
 		t.Run(tt.fs, func(t *testing.T) {
 			f := newWinEraseFake(t)
@@ -161,7 +160,9 @@ func TestWindowsEraseKeepsLabelAndFormat(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Erase() error = %v", err)
 			}
-			want := []formatRequest{{Root: `E:\`, FileSystem: tt.wantFS, Label: "EOS_DIGITAL"}}
+			// format.com is pointed at the volume that passed the identity
+			// check, not at whatever the letter means by then.
+			want := []formatRequest{{Root: `E:\`, Volume: testCardGUID, FileSystem: tt.wantFS, Label: "EOS_DIGITAL"}}
 			if !reflect.DeepEqual(f.formats, want) {
 				t.Fatalf("format requests = %+v, want %+v", f.formats, want)
 			}
@@ -173,18 +174,29 @@ func TestWindowsEraseKeepsLabelAndFormat(t *testing.T) {
 	}
 }
 
-// TestWindowsFormatCommandLine pins the exact format.com invocation: the
-// drive letter only, the same filesystem and label, quick, no prompts.
+// TestWindowsFormatCommandLine pins the exact format.com command line: the
+// verified volume GUID path, the same filesystem and label (quoted when it
+// has spaces), quick, no confirmation.
 func TestWindowsFormatCommandLine(t *testing.T) {
-	got := formatArgs(formatRequest{Root: `E:\`, FileSystem: "FAT32", Label: "MY CARD"})
-	want := []string{"E:", "/FS:FAT32", "/V:MY CARD", "/Q", "/Y"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("formatArgs() = %q, want %q", got, want)
+	for _, tt := range []struct {
+		name, exe, label, want string
+	}{
+		{"plain label", `C:\Windows\System32\format.com`, "EOS_DIGITAL",
+			`C:\Windows\System32\format.com ` + testCardGUID + ` /FS:FAT32 /V:EOS_DIGITAL /Q /Y`},
+		{"label with a space", `C:\Windows\System32\format.com`, "NIKON D850",
+			`C:\Windows\System32\format.com ` + testCardGUID + ` /FS:FAT32 /V:"NIKON D850" /Q /Y`},
+		{"exe path with a space", `D:\Win Dir\System32\format.com`, "NIKON D850",
+			`"D:\Win Dir\System32\format.com" ` + testCardGUID + ` /FS:FAT32 /V:"NIKON D850" /Q /Y`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req := formatRequest{Root: `E:\`, Volume: testCardGUID, FileSystem: "FAT32", Label: tt.label}
+			if got := formatCommandLine(tt.exe, req); got != tt.want {
+				t.Fatalf("formatCommandLine() =\n%s\nwant\n%s", got, tt.want)
+			}
+		})
 	}
-	// Whatever format.com asks ("Insert new disk ... press ENTER", "Enter
-	// current volume label"), the answer is Enter or the label Erase
-	// verified, and then end of input: never a "Y".
-	in := formatStdin(formatRequest{Root: `E:\`, FileSystem: "FAT32", Label: "MY CARD"})
+
+	in := formatStdin(formatRequest{Root: `E:\`, Volume: testCardGUID, FileSystem: "FAT32", Label: "MY CARD"})
 	if in != "MY CARD\r\nMY CARD\r\n" {
 		t.Fatalf("formatStdin() = %q", in)
 	}
@@ -289,7 +301,7 @@ func TestWindowsEraseRefusesInvalidLabel(t *testing.T) {
 }
 
 func TestWindowsEraseRefusesOtherFilesystems(t *testing.T) {
-	for _, fs := range []string{"NTFS", "ReFS", "FAT12", "CDFS", "UDF", ""} {
+	for _, fs := range []string{"NTFS", "ReFS", "FAT", "FAT12", "FAT16", "CDFS", "UDF", ""} {
 		f := newWinEraseFake(t)
 		f.card.FileSystem = fs
 

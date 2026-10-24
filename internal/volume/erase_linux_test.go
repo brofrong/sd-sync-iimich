@@ -70,6 +70,9 @@ type fakeEraseConn struct {
 	// last one repeats) instead of after.
 	states []udisksBlockState
 	looks  int
+	// swapped, if set, is what the block reports once unmounted (and not
+	// yet formatted): another card was put in, or UDisks2 changed its mind.
+	swapped *udisksBlockState
 }
 
 func newFakeEraseConn(t *testing.T) *fakeEraseConn {
@@ -113,7 +116,13 @@ func (f *fakeEraseConn) blockState(path dbus.ObjectPath) (udisksBlockState, erro
 	if !f.formatted {
 		st := f.card
 		if f.unmounted {
+			if f.swapped != nil {
+				st = *f.swapped
+			}
 			st.MountPoints = nil
+			if f.mountedPath != "" {
+				st.MountPoints = []string{f.mountedPath}
+			}
 		}
 		return st, nil
 	}
@@ -182,7 +191,6 @@ func TestLinuxEraseKeepsLabelAndFormat(t *testing.T) {
 	}{
 		{"exfat", "1.0", "exfat"},
 		{"vfat", "FAT32", "vfat"},
-		{"vfat", "FAT16", "vfat"},
 	} {
 		t.Run(tt.idType+"/"+tt.idVersion, func(t *testing.T) {
 			f := newFakeEraseConn(t)
@@ -196,6 +204,7 @@ func TestLinuxEraseKeepsLabelAndFormat(t *testing.T) {
 			want := []string{
 				"blockState:" + string(testLinuxBlock),
 				"unmount:" + string(testLinuxBlock),
+				"blockState:" + string(testLinuxBlock), // re-checked once unmounted
 				"format:" + string(testLinuxBlock) + ":" + tt.wantType + ":EOS_DIGITAL",
 				"blockState:" + string(testLinuxBlock),
 				"mount:" + string(testLinuxBlock),
@@ -321,7 +330,7 @@ func TestLinuxEraseRefusesInvalidLabel(t *testing.T) {
 
 func TestLinuxEraseRefusesOtherFilesystems(t *testing.T) {
 	for _, tt := range []struct{ idType, idVersion string }{
-		{"ext4", "1.0"}, {"ntfs", ""}, {"vfat", "FAT12"}, {"vfat", ""}, {"btrfs", ""}, {"", ""}, {"crypto_LUKS", "2"},
+		{"ext4", "1.0"}, {"ntfs", ""}, {"vfat", "FAT12"}, {"vfat", "FAT16"}, {"vfat", ""}, {"btrfs", ""}, {"", ""}, {"crypto_LUKS", "2"},
 	} {
 		f := newFakeEraseConn(t)
 		f.card.IdType, f.card.IdVersion = tt.idType, tt.idVersion
@@ -542,4 +551,104 @@ func TestBlockStateFromProps(t *testing.T) {
 	if !empty.HintSystem || empty.IsPartition || empty.HasFilesystem {
 		t.Fatalf("blockStateFromProps(empty) = %+v, want HintSystem, no partition, no filesystem", empty)
 	}
+}
+
+// TestLinuxEraseReverifiesAfterUnmount: the block is read again once
+// unmounted, right before Format. If it is no longer the verified card on
+// the same partition and drive, nothing is formatted and it is mounted
+// back.
+func TestLinuxEraseReverifiesAfterUnmount(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		setup func(st *udisksBlockState)
+	}{
+		{"other uuid", func(st *udisksBlockState) { st.IdUUID = "9999-0000" }},
+		{"no uuid", func(st *udisksBlockState) { st.IdUUID = "" }},
+		{"other device", func(st *udisksBlockState) { st.Device = "/dev/sdc1" }},
+		{"system device", func(st *udisksBlockState) { st.HintSystem = true }},
+		{"whole disk", func(st *udisksBlockState) { st.IsPartition = false }},
+		{"other drive", func(st *udisksBlockState) { st.Drive = "/org/freedesktop/UDisks2/drives/Other" }},
+		{"other filesystem", func(st *udisksBlockState) { st.IdType = "ext4" }},
+		{"other label", func(st *udisksBlockState) { st.IdLabel = "OTHER" }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFakeEraseConn(t)
+			swapped := f.card
+			tt.setup(&swapped)
+			f.swapped = &swapped
+
+			_, err := Erase(testLinuxMount, "1234-ABCD")
+			if err == nil || !strings.Contains(err.Error(), "changed") {
+				t.Fatalf("Erase() error = %v, want a refusal: the card changed", err)
+			}
+			if errors.Is(err, ErrNeedsAdmin) || errors.Is(err, ErrErasedNotRemounted) {
+				t.Fatalf("Erase() error = %v, want a plain refusal (not erased)", err)
+			}
+			if got := f.formatCalls(); len(got) != 0 {
+				t.Fatalf("calls = %v, want no format", f.calls)
+			}
+			if last := f.calls[len(f.calls)-1]; last != "mount:"+string(testLinuxBlock) {
+				t.Fatalf("calls = %v, want the card mounted back", f.calls)
+			}
+		})
+	}
+}
+
+func (f *fakeEraseConn) mountCalls() int {
+	n := 0
+	for _, c := range f.calls {
+		if strings.HasPrefix(c, "mount:") {
+			n++
+		}
+	}
+	return n
+}
+
+// TestLinuxEraseMountRefusedNotRepeated: after the format, a Mount that is
+// not authorized is not asked again on every poll (the state is still
+// re-read, in case the desktop mounts it); other Mount failures are retried
+// with a growing gap.
+func TestLinuxEraseMountRefusedNotRepeated(t *testing.T) {
+	t.Run("not authorized", func(t *testing.T) {
+		f := newFakeEraseConn(t)
+		eraseRemountTimeout = 20 * time.Millisecond // 20 polls
+		f.mountErr = dbus.Error{Name: "org.freedesktop.UDisks2.Error.NotAuthorizedCanObtain"}
+
+		_, err := Erase(testLinuxMount, "1234-ABCD")
+		if !errors.Is(err, ErrErasedNotRemounted) {
+			t.Fatalf("Erase() error = %v, want ErrErasedNotRemounted", err)
+		}
+		if n := f.mountCalls(); n != 1 {
+			t.Fatalf("Mount called %d times, want once", n)
+		}
+	})
+	t.Run("other failure", func(t *testing.T) {
+		f := newFakeEraseConn(t)
+		eraseRemountTimeout = 20 * time.Millisecond // 20 polls
+		f.mountErr = dbus.Error{Name: "org.freedesktop.UDisks2.Error.Failed"}
+
+		if _, err := Erase(testLinuxMount, "1234-ABCD"); !errors.Is(err, ErrErasedNotRemounted) {
+			t.Fatalf("Erase() error = %v, want ErrErasedNotRemounted", err)
+		}
+		// Polls 0, 1, 3, 7 and 15.
+		if n := f.mountCalls(); n != 5 {
+			t.Fatalf("Mount called %d times in 20 polls, want 5 (backing off)", n)
+		}
+	})
+	t.Run("desktop mounts it later", func(t *testing.T) {
+		f := newFakeEraseConn(t)
+		eraseRemountTimeout = time.Second
+		f.mountErr = dbus.Error{Name: "org.freedesktop.UDisks2.Error.NotAuthorized"}
+		mounted := f.after
+		mounted.MountPoints = []string{"/media/user/EOS_DIGITAL"}
+		f.states = []udisksBlockState{f.after, f.after, f.after, mounted}
+
+		got, err := Erase(testLinuxMount, "1234-ABCD")
+		if err != nil {
+			t.Fatalf("Erase() error = %v", err)
+		}
+		if got.MountPoint != "/media/user/EOS_DIGITAL" || f.mountCalls() != 1 {
+			t.Fatalf("Erase() = %+v with %d Mount calls, want the desktop's mount after one refused Mount", got, f.mountCalls())
+		}
+	})
 }

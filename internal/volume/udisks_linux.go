@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 )
@@ -61,8 +62,14 @@ func (c *realUDisksConn) object(path dbus.ObjectPath) dbus.BusObject {
 	return c.conn.Object(udisksBusName, path)
 }
 
+// udisksCallTimeout bounds UDisks2's Unmount and Mount calls (Format has
+// its own, longer formatTimeout), so a hung daemon can't hang the app.
+var udisksCallTimeout = 2 * time.Minute
+
 func (c *realUDisksConn) unmount(path dbus.ObjectPath) error {
-	return c.object(path).Call(udisksFilesystemIface+".Unmount", 0, noInteractionOptions()).Err
+	ctx, cancel := context.WithTimeout(context.Background(), udisksCallTimeout)
+	defer cancel()
+	return c.object(path).CallWithContext(ctx, udisksFilesystemIface+".Unmount", 0, noInteractionOptions()).Err
 }
 
 func (c *realUDisksConn) drivePath(path dbus.ObjectPath) (dbus.ObjectPath, error) {
@@ -175,8 +182,10 @@ func (c *realUDisksConn) format(path dbus.ObjectPath, fsType, label string) erro
 }
 
 func (c *realUDisksConn) mount(path dbus.ObjectPath) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), udisksCallTimeout)
+	defer cancel()
 	var mountPoint string
-	err := c.object(path).Call(udisksFilesystemIface+".Mount", 0, noInteractionOptions()).Store(&mountPoint)
+	err := c.object(path).CallWithContext(ctx, udisksFilesystemIface+".Mount", 0, noInteractionOptions()).Store(&mountPoint)
 	return mountPoint, err
 }
 

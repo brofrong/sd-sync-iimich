@@ -73,7 +73,7 @@ var connectUDisksEraseFn = func() (udisksEraseConn, func(), error) {
 }
 
 // Erase reformats the removable filesystem mounted at mountPoint in place,
-// keeping its type (exFAT, or FAT32/FAT16 as vfat) and label, through
+// keeping its type (exFAT, or FAT32 as vfat) and label, through
 // UDisks2 and without user interaction: no password prompt, no root.
 //
 // wantUUID must equal (case-insensitively) the filesystem's IdUUID, read in
@@ -86,7 +86,9 @@ var connectUDisksEraseFn = func() (udisksEraseConn, func(), error) {
 // hints is a system device or reports for another device node or mount
 // point, a block without a drive, a whole disk (only a partition is
 // formatted), an empty or path-like label, and anything other than exfat
-// or vfat FAT32/FAT16.
+// or vfat FAT32 (a FAT16 card could come back FAT32). Once unmounted, the
+// block is read again and the card mounted back, unformatted, unless it is
+// still the verified card.
 //
 // UDisks2 refusing for lack of authorization (polkit) is ErrNeedsAdmin.
 //
@@ -165,10 +167,12 @@ func eraseBlock(conn udisksEraseConn, mountPoint, device, wantUUID string) (Info
 	switch {
 	case st.IdType == "exfat":
 		fsType = "exfat"
-	case st.IdType == "vfat" && (st.IdVersion == "FAT32" || st.IdVersion == "FAT16"):
+	case st.IdType == "vfat" && st.IdVersion == "FAT32":
+		// Only FAT32: Block.Format has no portable way to ask mkfs.fat
+		// for FAT16, so a FAT16 card could come back FAT32.
 		fsType = "vfat"
 	default:
-		return Info{}, fmt.Errorf("erase %s: refusing to erase filesystem %q %q, want exfat or vfat FAT32/FAT16", mountPoint, st.IdType, st.IdVersion)
+		return Info{}, fmt.Errorf("erase %s: refusing to erase filesystem %q %q, want exfat or vfat FAT32", mountPoint, st.IdType, st.IdVersion)
 	}
 
 	logx.Info("volume: erasing", "mountPoint", mountPoint, "device", device, "format", fsType, "name", label)
@@ -184,11 +188,21 @@ func eraseBlock(conn udisksEraseConn, mountPoint, device, wantUUID string) (Info
 		}
 	}
 
+	// Unmounting takes time and lets go of the card: read the block again
+	// and format only if it is still the card verified above.
+	again, err := conn.blockState(path)
+	if err != nil {
+		mountBack(conn, path, device)
+		return Info{}, fmt.Errorf("erase %s: refusing to format: could not re-check the card after unmounting: %w", mountPoint, err)
+	}
+	if why := blockChanged(st, again, device, wantUUID); why != "" {
+		mountBack(conn, path, device)
+		return Info{}, fmt.Errorf("erase %s: refusing to format: the card changed after unmounting (%s)", mountPoint, why)
+	}
+
 	if err := conn.format(path, fsType, label); err != nil {
 		// Not formatted: give the card back to the user as it was.
-		if _, merr := conn.mount(path); merr != nil {
-			logx.Warn("volume: mounting the card again after a failed format failed", "device", device, "err", merr)
-		}
+		mountBack(conn, path, device)
 		if isNotAuthorizedErr(err) {
 			return Info{}, fmt.Errorf("erase %s: format: %w: %v", mountPoint, ErrNeedsAdmin, err)
 		}
@@ -204,6 +218,41 @@ func eraseBlock(conn udisksEraseConn, mountPoint, device, wantUUID string) (Info
 	return info, nil
 }
 
+// blockChanged reports how block state now differs from before, the state
+// Erase verified for device and wantUUID ("" when it is still that card on
+// the same partition and drive, with the same filesystem and label).
+func blockChanged(before, now udisksBlockState, device, wantUUID string) string {
+	switch {
+	case now.Device != device:
+		return fmt.Sprintf("device %q", now.Device)
+	case now.IdUUID == "" || !strings.EqualFold(now.IdUUID, wantUUID):
+		return fmt.Sprintf("UUID %q", now.IdUUID)
+	case now.HintSystem:
+		return "now a system device"
+	case !now.IsPartition:
+		return "no longer a partition"
+	case now.Drive != before.Drive:
+		return fmt.Sprintf("drive %q", now.Drive)
+	case now.IdType != before.IdType || now.IdVersion != before.IdVersion:
+		return fmt.Sprintf("filesystem %q %q", now.IdType, now.IdVersion)
+	case now.IdLabel != before.IdLabel:
+		return fmt.Sprintf("label %q", now.IdLabel)
+	}
+	return ""
+}
+
+// mountBack mounts the card at block path again after Erase unmounted it
+// but did not format it, so the user gets it back as it was.
+func mountBack(conn udisksEraseConn, path dbus.ObjectPath, device string) {
+	if _, err := conn.mount(path); err != nil {
+		logx.Warn("volume: mounting the card again after not formatting it failed", "device", device, "err", err)
+	}
+}
+
+// maxMountBackoffShift caps the gap between Mount retries at 1<<6 = 64
+// polls.
+const maxMountBackoffShift = 6
+
 // pollForRemount looks for the freshly formatted filesystem on block path
 // (device node device): a non-empty IdUUID different from oldUUID, then
 // mounted. It polls the block object, the device itself, never a name.
@@ -213,18 +262,40 @@ func pollForRemount(conn udisksEraseConn, path dbus.ObjectPath, device, oldUUID 
 		attempts = 1
 	}
 
+	// Mount is not asked on every poll: never again once it was refused
+	// for lack of authorization, otherwise with a doubling gap. The state
+	// is still read every poll, in case the desktop mounts the card.
 	var mountErr error
+	mountRefused := false
+	failures, nextMount := 0, 0
 	for attempt := 0; attempt < attempts; attempt++ {
 		if attempt > 0 {
 			time.Sleep(erasePollInterval)
 		}
-		info, ok, err := probeRemount(conn, path, device, oldUUID)
-		if ok {
-			return info, nil
+		st, ok := probeFormatted(conn, path, device, oldUUID)
+		if !ok {
+			continue
 		}
-		if err != nil {
-			mountErr = err
+		if len(st.MountPoints) > 0 && st.MountPoints[0] != "" {
+			return formattedInfo(st, st.MountPoints[0]), nil
 		}
+		if mountRefused || attempt < nextMount {
+			continue
+		}
+		mp, err := conn.mount(path)
+		if err == nil && mp != "" {
+			return formattedInfo(st, mp), nil
+		}
+		if err == nil {
+			err = fmt.Errorf("Mount returned no mount point")
+		}
+		mountErr = err
+		if isNotAuthorizedErr(err) {
+			mountRefused = true
+			continue
+		}
+		failures++
+		nextMount = attempt + 1<<min(failures-1, maxMountBackoffShift)
 	}
 
 	if mountErr != nil {
@@ -234,31 +305,22 @@ func pollForRemount(conn udisksEraseConn, path dbus.ObjectPath, device, oldUUID 
 	return Info{}, fmt.Errorf("device %s: %w", device, ErrErasedNotRemounted)
 }
 
-// probeRemount makes one look at block path and reports whether it holds
-// the freshly formatted filesystem, mounting it if nothing has yet; err is
-// a failed Mount.
-func probeRemount(conn udisksEraseConn, path dbus.ObjectPath, device, oldUUID string) (info Info, ok bool, err error) {
+// probeFormatted makes one look at block path and reports whether it holds
+// the freshly formatted filesystem: the same device, a filesystem, and a
+// non-empty IdUUID different from oldUUID.
+func probeFormatted(conn udisksEraseConn, path dbus.ObjectPath, device, oldUUID string) (udisksBlockState, bool) {
 	st, err := conn.blockState(path)
 	if err != nil || st.Device != device || !st.HasFilesystem {
-		return Info{}, false, nil
+		return udisksBlockState{}, false
 	}
 	if st.IdUUID == "" || strings.EqualFold(st.IdUUID, oldUUID) {
-		return Info{}, false, nil
+		return udisksBlockState{}, false
 	}
+	return st, true
+}
 
-	var mp string
-	if len(st.MountPoints) > 0 {
-		mp = st.MountPoints[0]
-	} else {
-		mp, err = conn.mount(path)
-		if err != nil {
-			return Info{}, false, err
-		}
-	}
-	if mp == "" {
-		return Info{}, false, nil
-	}
-
+// formattedInfo describes the formatted filesystem st mounted at mp.
+func formattedInfo(st udisksBlockState, mp string) Info {
 	name := st.IdLabel
 	if name == "" {
 		name = filepath.Base(mp)
@@ -268,5 +330,5 @@ func probeRemount(conn udisksEraseConn, path dbus.ObjectPath, device, oldUUID st
 		MountPoint: mp,
 		UUID:       strings.ToUpper(st.IdUUID),
 		Removable:  true,
-	}, true, nil
+	}
 }
