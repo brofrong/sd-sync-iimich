@@ -5,9 +5,53 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
+
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/app"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/gui/icon"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/i18n"
 )
+
+// fakeTraySetter stands in for *application.SystemTray in
+// TestTrayIconSetter: it records which of the two icon-setting methods was
+// called instead of needing a real, running tray.
+type fakeTraySetter struct {
+	templateCalls, iconCalls int
+	lastPNG                  []byte
+}
+
+func (f *fakeTraySetter) SetTemplateIcon(icon []byte) *application.SystemTray {
+	f.templateCalls++
+	f.lastPNG = icon
+	return nil
+}
+
+func (f *fakeTraySetter) SetIcon(icon []byte) *application.SystemTray {
+	f.iconCalls++
+	f.lastPNG = icon
+	return nil
+}
+
+// TestTrayIconSetter checks setTrayIcon picks the template (monochrome)
+// setter on macOS and the colored one elsewhere, matching icon.Template.
+func TestTrayIconSetter(t *testing.T) {
+	f := &fakeTraySetter{}
+	png := []byte{1, 2, 3}
+	setTrayIcon(f, png)
+
+	if icon.Template {
+		if f.templateCalls != 1 || f.iconCalls != 0 {
+			t.Fatalf("template calls = %d, colored calls = %d; want template only", f.templateCalls, f.iconCalls)
+		}
+	} else {
+		if f.iconCalls != 1 || f.templateCalls != 0 {
+			t.Fatalf("colored calls = %d, template calls = %d; want colored only", f.iconCalls, f.templateCalls)
+		}
+	}
+	if string(f.lastPNG) != string(png) {
+		t.Fatalf("icon bytes = %v, want %v", f.lastPNG, png)
+	}
+}
 
 func loadCatalog(t *testing.T, lang string) *i18n.Catalog {
 	t.Helper()

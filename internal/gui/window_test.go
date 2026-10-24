@@ -50,6 +50,19 @@ func TestForwardStatusSkipsProgressWhileWindowHidden(t *testing.T) {
 	}
 }
 
+// TestCloseActionWithoutTray checks the pure decision closing the window
+// makes: hide it when a tray is available to reopen it from, else
+// minimise it so it stays reachable (and syncing keeps running) without
+// one.
+func TestCloseActionWithoutTray(t *testing.T) {
+	if got := decideWindowClose(false); got != closeActionMinimise {
+		t.Errorf("decideWindowClose(false) = %v, want closeActionMinimise", got)
+	}
+	if got := decideWindowClose(true); got != closeActionHide {
+		t.Errorf("decideWindowClose(true) = %v, want closeActionHide", got)
+	}
+}
+
 func TestWindowShownSendsLatestStatusAtOnce(t *testing.T) {
 	r := newRecorder()
 	s := &Service{shell: &shell{}, status: newThrottle(time.Hour, r.emit)}

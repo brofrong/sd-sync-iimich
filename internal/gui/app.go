@@ -1,7 +1,7 @@
-// Package gui runs the Wails application: the menu bar icon and menu, the
-// main window (with a Dock icon only while it is shown; hidden at startup
-// when launchd starts a set-up app at login, see showWindowAtStartup) and
-// the Service bound to the frontend.
+// Package gui runs the Wails application: the tray icon and menu, the main
+// window (with a Dock icon only while it is shown, macOS only; hidden at
+// startup when launchd starts a set-up app at login, see
+// showWindowAtStartup) and the Service bound to the frontend.
 package gui
 
 import (
@@ -57,6 +57,12 @@ type shell struct {
 	visible atomic.Bool
 	onShow  func()
 
+	// hasTray is decided once at startup (see trayAvailable, which is
+	// platform-specific): whether there is a tray to reopen the window
+	// from once it is hidden. It decides what closing the window does
+	// (see decideWindowClose).
+	hasTray bool
+
 	// exitCode is the process exit code once the application has shut down.
 	exitCode atomic.Int32
 }
@@ -65,22 +71,30 @@ func (sh *shell) emit(name string, data any) {
 	sh.app.Event.Emit(name, data)
 }
 
-// showWindow shows the main window together with the Dock icon.
-func (sh *shell) showWindow() {
-	sh.visible.Store(true)
-	sh.dock.ShowAppIcon()
-	sh.window.Show()
-	sh.window.Focus()
-	if sh.onShow != nil {
-		sh.onShow()
-	}
-}
+// showWindow and hideWindow are platform-specific (shell_darwin.go,
+// shell_other.go): on macOS they also show/hide the Dock icon; elsewhere
+// there is no Dock to touch.
 
-// hideWindow hides the main window together with the Dock icon.
-func (sh *shell) hideWindow() {
-	sh.visible.Store(false)
-	sh.window.Hide()
-	sh.dock.HideAppIcon()
+// windowCloseAction is what closing the window does.
+type windowCloseAction int
+
+const (
+	// closeActionHide hides the window; it can be reopened from the tray.
+	closeActionHide windowCloseAction = iota
+	// closeActionMinimise minimises the window instead: without a tray
+	// (GNOME without an AppIndicator extension) hiding it would leave no
+	// way to reopen it, so it stays in the taskbar/dock while syncing
+	// keeps running.
+	closeActionMinimise
+)
+
+// decideWindowClose decides what closing the window does, given whether a
+// tray is available (see trayAvailable).
+func decideWindowClose(trayAvailable bool) windowCloseAction {
+	if trayAvailable {
+		return closeActionHide
+	}
+	return closeActionMinimise
 }
 
 // showWindowAtStartup reports whether the window opens when the app
@@ -110,7 +124,7 @@ func Run(a *app.App, cfg *config.Store, st *state.DB, version string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sh := &shell{dock: dock.New()}
+	sh := &shell{dock: dock.New(), hasTray: trayAvailable()}
 	// The service's responses reach svc, which is created after it.
 	var svc *Service
 	notes := notify.NewCenter(notifications.New(), func(action string, data map[string]string) {
@@ -163,11 +177,18 @@ func Run(a *app.App, cfg *config.Store, st *state.DB, version string) error {
 		BackgroundColour: application.NewRGB(15, 14, 20),
 		URL:              "/",
 	})
-	// Closing the window only hides it, together with the Dock icon; the
-	// app keeps running in the menu bar.
+	// Closing the window hides it when there is a tray to reopen it from
+	// (together with the Dock icon on macOS); without one (GNOME without
+	// an AppIndicator extension) it is minimised instead, so it stays
+	// reachable and syncing keeps running. See decideWindowClose.
 	sh.window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		e.Cancel()
-		sh.hideWindow()
+		switch decideWindowClose(sh.hasTray) {
+		case closeActionHide:
+			sh.hideWindow()
+		case closeActionMinimise:
+			sh.window.Minimise()
+		}
 	})
 	// Clicking the Dock icon (shown while the window is open) shows it.
 	sh.app.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) {

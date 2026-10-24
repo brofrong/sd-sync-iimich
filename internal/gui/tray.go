@@ -71,10 +71,32 @@ func newTray(wapp *application.App, svc *Service, sh *shell) *trayMenu {
 	t.apply()
 
 	t.tray = wapp.SystemTray.New()
-	t.tray.SetTemplateIcon(icon.IdlePNG())
+	setTrayIcon(t.tray, icon.IdlePNG())
 	t.tray.SetTooltip(appName)
 	t.tray.SetMenu(menu)
+	if trayClickOpensWindow {
+		t.tray.OnClick(func() { sh.showWindow() })
+	}
 	return t
+}
+
+// trayIconSetter is the part of *application.SystemTray that sets its
+// icon, factored out so setTrayIcon can be tested with a fake tray
+// instead of a real, running one.
+type trayIconSetter interface {
+	SetTemplateIcon(icon []byte) *application.SystemTray
+	SetIcon(icon []byte) *application.SystemTray
+}
+
+// setTrayIcon sets png as tray's icon: a template (monochrome, tinted by
+// the menu bar) image on macOS, matching icon.Template; the colored logo
+// elsewhere, so it reads on both a light and a dark panel.
+func setTrayIcon(tray trayIconSetter, png []byte) {
+	if icon.Template {
+		tray.SetTemplateIcon(png)
+	} else {
+		tray.SetIcon(png)
+	}
 }
 
 // refresh updates the menu from the current status, language and update.
@@ -185,10 +207,10 @@ func (t *trayMenu) animate(ctx context.Context) {
 	ticker := time.NewTicker(spinnerFrameInterval)
 	defer ticker.Stop()
 	for frame := 0; ; frame = (frame + 1) % icon.FrameCount {
-		t.tray.SetTemplateIcon(icon.SyncingPNG(frame))
+		setTrayIcon(t.tray, icon.SyncingPNG(frame))
 		select {
 		case <-ctx.Done():
-			t.tray.SetTemplateIcon(icon.IdlePNG())
+			setTrayIcon(t.tray, icon.IdlePNG())
 			return
 		case <-ticker.C:
 		}
