@@ -865,6 +865,68 @@ func TestFormatErasedNotRemounted(t *testing.T) {
 	}
 }
 
+// TestFormatNeedsAdmin: the system would only erase the card with
+// administrator rights. The card was not erased: format_needs_admin names
+// it (no detail from Go), offers the logs, keeps the card selected and
+// remembered, does not eject it, and the next sync does not try again.
+func TestFormatNeedsAdmin(t *testing.T) {
+	a, v, e, _ := formatApp(t)
+	e.err = fmt.Errorf("format E:\\: %w", volume.ErrNeedsAdmin)
+	useFakeImmich(t, a)
+	putPhotos(t, a, "A.JPG")
+	card := *a.MountedTarget()
+	a.listRemovable = func() ([]volume.Info, error) { return []volume.Info{card}, nil }
+	ej := fakeEject(a, nil)
+	statuses := recordFullStatuses(a)
+
+	a.SyncNow()
+	waitFor(t, "format_needs_admin", func() bool { return statuses.has(CodeFormatNeedsAdmin) })
+	waitSyncFinished(t, a)
+
+	got := squash(statuses.after(CodeSyncing))
+	want := []Code{CodeDone, CodeVerifying, CodeFormatPending, CodeFormatting, CodeFormatNeedsAdmin}
+	if !slices.Equal(got, want) {
+		t.Errorf("statuses = %v, want %v", got, want)
+	}
+	st, _ := statuses.last(CodeFormatNeedsAdmin)
+	if !maps.Equal(st.Params, map[string]string{"name": card.Name}) {
+		t.Errorf("format_needs_admin params = %v, want only the card name %q", st.Params, card.Name)
+	}
+	if !slices.Equal(st.Actions, []Action{ActionOpenLogs}) {
+		t.Errorf("format_needs_admin actions = %v, want [open_logs]", st.Actions)
+	}
+	if statuses.has(CodeFormatFailed) {
+		t.Errorf("statuses = %v, want no format_failed alongside format_needs_admin", statuses.codes())
+	}
+	if got := ej.all(); len(got) != 0 {
+		t.Errorf("eject calls = %v, want none: the card stays as it is", got)
+	}
+	if got := a.Status().Code; got != CodeFormatNeedsAdmin {
+		t.Errorf("Status().Code = %q, want format_needs_admin kept", got)
+	}
+	if got := a.Config.Get().Watch.VolumeUUID; got != "VOL-UUID" {
+		t.Errorf("selected = %q, want VOL-UUID kept", got)
+	}
+	if got := rememberedUUIDs(t, a); !slices.Contains(got, "VOL-UUID") {
+		t.Errorf("remembered = %v, want VOL-UUID kept (not erased)", got)
+	}
+	if mt := a.MountedTarget(); mt == nil || mt.UUID != "VOL-UUID" {
+		t.Errorf("MountedTarget() = %+v, want the card still mounted", mt)
+	}
+
+	// Like format_failed: no second try during the same insertion.
+	verifies, erases := v.count(), len(e.all())
+	a.SyncNow()
+	waitFor(t, "the second sync", func() bool {
+		runs, err := a.State.RecentRuns(10)
+		return err == nil && len(runs) == 2 && runs[0].FinishedAt != nil
+	})
+	waitSyncFinished(t, a)
+	if v.count() != verifies || len(e.all()) != erases {
+		t.Errorf("verify calls %d→%d, erase calls %d→%d; want no retry", verifies, v.count(), erases, len(e.all()))
+	}
+}
+
 // TestVolumeEventsIgnoredWhileErasing: the card's unmount and the blank
 // card's mount while diskutil erases it neither cancel the phase nor
 // change the status.

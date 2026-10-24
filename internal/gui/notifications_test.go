@@ -99,6 +99,7 @@ func TestNotificationKind(t *testing.T) {
 		{app.CodeFormatSkippedMissing, kindCard, true},
 		{app.CodeFormatSkippedUnsupported, kindCard, true},
 		{app.CodeFormatFailed, kindCard, true},
+		{app.CodeFormatNeedsAdmin, kindCard, true},
 		// A successful sync is told by the sync_done notice, once, whatever
 		// followed it (eject, format, a failed eject).
 		{app.CodeDone, "", false},

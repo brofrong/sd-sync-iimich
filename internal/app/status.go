@@ -63,6 +63,10 @@ const (
 	// CodeFormatFailed: verifying or erasing the card failed. Params:
 	// detail.
 	CodeFormatFailed Code = "format_failed"
+	// CodeFormatNeedsAdmin: not formatted, the system would only erase the
+	// card with administrator rights, which the app never asks for. Params:
+	// name.
+	CodeFormatNeedsAdmin Code = "format_needs_admin"
 )
 
 // Action is a follow-up the GUI can offer for a given Code (see actionsFor).
@@ -148,7 +152,7 @@ func actionsFor(code Code) []Action {
 		return []Action{ActionRetry}
 	case CodeAuthFailed:
 		return []Action{ActionOpenServer}
-	case CodeFailed, CodeFormatFailed:
+	case CodeFailed, CodeFormatFailed, CodeFormatNeedsAdmin:
 		return []Action{ActionOpenLogs}
 	case CodeSyncing, CodeVerifying:
 		return []Action{ActionStop}

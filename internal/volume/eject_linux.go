@@ -3,7 +3,6 @@
 package volume
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -127,17 +126,9 @@ func udisksEscapeObjectPathSegment(s string) string {
 // locally rather than receiving one off the wire) returns *dbus.Error. The
 // first draft of this function only checked the pointer form, so it would
 // never have recognized a real "DeviceBusy" reply from UDisks2: both forms
-// are checked here (see TestIsDeviceBusyErr and
+// are checked, by dbusErrorName (udisks_linux.go; see TestIsDeviceBusyErr and
 // TestEjectDeviceBusyFilesystemValueFormMentionsCardInUse, which construct
 // the error exactly as real dispatch does).
 func isDeviceBusyErr(err error) bool {
-	var valErr dbus.Error
-	if errors.As(err, &valErr) {
-		return valErr.Name == udisksBusyErrorName
-	}
-	var ptrErr *dbus.Error
-	if errors.As(err, &ptrErr) {
-		return ptrErr.Name == udisksBusyErrorName
-	}
-	return false
+	return dbusErrorName(err) == udisksBusyErrorName
 }

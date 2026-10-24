@@ -40,6 +40,7 @@ var codeKinds = map[app.Code]string{
 	app.CodeFormatSkippedMissing:     kindCard,
 	app.CodeFormatSkippedUnsupported: kindCard,
 	app.CodeFormatFailed:             kindCard,
+	app.CodeFormatNeedsAdmin:         kindCard,
 }
 
 // codeActions is the button of a notified code, if it has one.

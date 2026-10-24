@@ -78,6 +78,7 @@ const actions: Record<string, string[]> = {
   auth_failed: ["open_server"],
   failed: ["open_logs"],
   format_failed: ["open_logs"],
+  format_needs_admin: ["open_logs"],
   syncing: ["stop"],
   verifying: ["stop"],
   format_pending: ["cancel_format"],
@@ -104,6 +105,7 @@ const params: Record<string, Record<string, string>> = {
   format_skipped_missing: { count: "3" },
   format_skipped_unsupported: { files: "12 × .HIF" },
   format_failed: { detail: "diskutil: Could not unmount disk (-69888)" },
+  format_needs_admin: { name: mainCard.name },
 };
 
 // As Go's ejectedParams: the format outcome and its param.

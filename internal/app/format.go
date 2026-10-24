@@ -254,7 +254,8 @@ func (a *App) beginErase(ctx context.Context, vol volume.Info) bool {
 
 // eraseCard erases vol (beginErase marked it) and adopts the new volume as
 // the selected card; the old card's state is forgotten (its history is
-// kept). Any failure is reported as CodeFormatFailed.
+// kept). Any failure is reported as CodeFormatFailed (or
+// CodeFormatNeedsAdmin, see formatFailed).
 func (a *App) eraseCard(vol volume.Info, keep formatOutcome) formatOutcome {
 	a.setStatus(newStatus(CodeFormatting, map[string]string{"name": vol.Name}))
 	logx.Warn("erasing card", "name", vol.Name, "uuid", vol.UUID, "path", vol.MountPoint)
@@ -372,11 +373,17 @@ func formatOutcomeParams(st Status) map[string]string {
 	return map[string]string{"format": outcome, key: st.Params[key]}
 }
 
-// formatFailed publishes CodeFormatFailed for err and suppresses further
-// formats of the card (keep.vol, the card the phase started with).
+// formatFailed publishes CodeFormatFailed for err (CodeFormatNeedsAdmin
+// when the system would only erase the card with administrator rights) and
+// suppresses further formats of the card (keep.vol, the card the phase
+// started with).
 func (a *App) formatFailed(keep formatOutcome, err error) formatOutcome {
 	a.suppressFormat(keep.vol.UUID)
-	keep.status = newStatus(CodeFormatFailed, map[string]string{"detail": err.Error()})
+	if errors.Is(err, volume.ErrNeedsAdmin) {
+		keep.status = newStatus(CodeFormatNeedsAdmin, map[string]string{"name": keep.vol.Name})
+	} else {
+		keep.status = newStatus(CodeFormatFailed, map[string]string{"detail": err.Error()})
+	}
 	keep.failed = true
 	a.setStatus(keep.status)
 	return keep

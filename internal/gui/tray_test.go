@@ -106,7 +106,7 @@ func TestIsRunning(t *testing.T) {
 		app.CodeDoneWithErrors, app.CodeServerUnreachable, app.CodeAuthFailed,
 		app.CodeServerError, app.CodeCardRemoved, app.CodeCancelled, app.CodeFailed,
 		app.CodeEjected, app.CodeFormatted, app.CodeFormatSkippedMissing,
-		app.CodeFormatSkippedUnsupported, app.CodeFormatFailed,
+		app.CodeFormatSkippedUnsupported, app.CodeFormatFailed, app.CodeFormatNeedsAdmin,
 	}
 	for _, c := range running {
 		if !isRunning(c) {

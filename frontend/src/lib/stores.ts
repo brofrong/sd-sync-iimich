@@ -46,6 +46,7 @@ export const errorCodes: readonly string[] = [
   "card_removed",
   "failed",
   "format_failed",
+  "format_needs_admin",
 ];
 
 export function toneFor(code: string): Tone {
