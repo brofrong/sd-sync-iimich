@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/appimageenv"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
 )
 
@@ -112,7 +112,7 @@ func (c *Client) replaceAppImage(ctx context.Context, rel *Release, appimage, ap
 	err = start(process{
 		name: "/bin/sh",
 		args: []string{"-c", relaunchScript, "sh", strconv.Itoa(pid), target, strconv.Itoa(relaunchTries), logx.LogPath()},
-		env:  relaunchEnv(os.Environ(), appdir),
+		env:  appimageenv.Clean(os.Environ(), appdir),
 		dir:  dir,
 	})
 	if err != nil {
@@ -121,36 +121,6 @@ func (c *Client) replaceAppImage(ctx context.Context, rel *Release, appimage, ap
 		return fmt.Errorf("the update is installed but cannot start; reopen the app: %w", err)
 	}
 	return nil
-}
-
-// relaunchEnv is environ without what the AppImage runtime and its AppRun
-// set for the old version: $APPIMAGE, $APPDIR, $ARGV0, $OWD, and every
-// path into appdir, the old mount, which goes away. A list of paths
-// (PATH, LD_LIBRARY_PATH, XDG_DATA_DIRS, ...) loses those entries; a
-// variable left empty, or a single path into appdir (a GTK or GIO module
-// file, say), is dropped. The new AppImage sets its own.
-func relaunchEnv(environ []string, appdir string) []string {
-	env := make([]string, 0, len(environ))
-	for _, kv := range environ {
-		name, value, _ := strings.Cut(kv, "=")
-		switch {
-		case name == "APPIMAGE" || name == "APPDIR" || name == "ARGV0" || name == "OWD":
-			continue
-		case appdir != "" && strings.Contains(value, appdir):
-			var kept []string
-			for _, entry := range strings.Split(value, ":") {
-				if !strings.Contains(entry, appdir) {
-					kept = append(kept, entry)
-				}
-			}
-			if len(kept) == 0 {
-				continue
-			}
-			kv = name + "=" + strings.Join(kept, ":")
-		}
-		env = append(env, kv)
-	}
-	return env
 }
 
 // writeTemp writes data to a new file in dir named after pattern (see

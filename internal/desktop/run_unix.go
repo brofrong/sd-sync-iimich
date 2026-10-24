@@ -4,10 +4,17 @@ package desktop
 
 import "os/exec"
 
-// runCommand runs a command and waits for it.
-func runCommand(name string, args ...string) error {
-	return exec.Command(name, args...).Run()
+// command is the helper command name with args, with the environment
+// helperEnv gives it.
+func command(name string, args ...string) *exec.Cmd {
+	cmd := exec.Command(name, args...)
+	cmd.Env = helperEnv()
+	return cmd
 }
 
-// run runs the desktop's helper commands (open, xdg-open); tests replace it.
+// runCommand runs cmd and waits for it.
+func runCommand(cmd *exec.Cmd) error { return cmd.Run() }
+
+// run runs the desktop's helper commands (open, xdg-open); tests replace
+// it, so nothing is started.
 var run = runCommand

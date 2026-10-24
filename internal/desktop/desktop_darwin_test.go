@@ -1,14 +1,18 @@
 package desktop
 
 import (
+	"os/exec"
 	"reflect"
 	"testing"
 )
 
 func TestDesktopCommandsOnMac(t *testing.T) {
 	var got [][]string
-	run = func(name string, args ...string) error {
-		got = append(got, append([]string{name}, args...))
+	run = func(cmd *exec.Cmd) error {
+		got = append(got, cmd.Args)
+		if cmd.Env != nil {
+			t.Errorf("%q: environment = %q, want this process's (nil)", cmd.Args, cmd.Env)
+		}
 		return nil
 	}
 	t.Cleanup(func() { run = runCommand })
