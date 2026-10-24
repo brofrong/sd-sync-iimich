@@ -125,6 +125,53 @@ func TestEjectDeviceBusyFilesystemMentionsCardInUse(t *testing.T) {
 	assertCalls(t, f.calls, want)
 }
 
+// TestEjectDeviceBusyFilesystemValueFormMentionsCardInUse is the
+// regression test for the real-dispatch bug: godbus's actual error
+// dispatch (conn.go's handleDBusError -> finalizeWithError) constructs a
+// VALUE dbus.Error, not a pointer — dbus.NewError (used by every other
+// test in this file, matching how a caller might construct one locally)
+// returns *dbus.Error, which is a different concrete type. This test
+// builds the error exactly the way a real UDisks2 "DeviceBusy" reply
+// would arrive on Call.Err, to prove isDeviceBusyErr (and so ejectDevice's
+// "card is in use" message) actually fires against it.
+func TestEjectDeviceBusyFilesystemValueFormMentionsCardInUse(t *testing.T) {
+	f := &fakeUDisksConn{
+		unmountErr: dbus.Error{Name: udisksBusyErrorName, Body: []any{"target is busy"}},
+	}
+
+	err := ejectDevice(f, "/media/u/CARD", "/dev/sdb1")
+	if err == nil {
+		t.Fatal("ejectDevice() error = nil, want error for a busy filesystem")
+	}
+	if !strings.Contains(err.Error(), "in use") {
+		t.Fatalf("ejectDevice() error = %q, want it to mention the card being in use (value dbus.Error, as real godbus dispatch produces it)", err.Error())
+	}
+}
+
+// TestEjectDeviceCanPowerOffErrorFallsThroughToEject checks that a failed
+// CanPowerOff property read (e.g. the drive doesn't expose it, or UDisks2
+// is slow to respond) doesn't abort the eject or leak out of ejectDevice:
+// it's logged and treated the same as CanPowerOff being false, falling
+// through to a plain Drive.Eject.
+func TestEjectDeviceCanPowerOffErrorFallsThroughToEject(t *testing.T) {
+	f := &fakeUDisksConn{
+		drive:          "/org/freedesktop/UDisks2/drives/Generic_SD_Card_Reader",
+		canPowerOffErr: dbus.NewError("org.freedesktop.DBus.Error.UnknownProperty", nil),
+	}
+
+	if err := ejectDevice(f, "/media/u/CARD", "/dev/sdb1"); err != nil {
+		t.Fatalf("ejectDevice() error = %v, want the CanPowerOff failure to be non-fatal", err)
+	}
+
+	want := []string{
+		"unmount:/org/freedesktop/UDisks2/block_devices/sdb1",
+		"drivePath:/org/freedesktop/UDisks2/block_devices/sdb1",
+		"canPowerOff:/org/freedesktop/UDisks2/drives/Generic_SD_Card_Reader",
+		"eject:/org/freedesktop/UDisks2/drives/Generic_SD_Card_Reader",
+	}
+	assertCalls(t, f.calls, want)
+}
+
 func TestEjectDeviceOtherUnmountFailureIsReported(t *testing.T) {
 	f := &fakeUDisksConn{
 		unmountErr: dbus.NewError("org.freedesktop.UDisks2.Error.NotAuthorized", nil),
@@ -165,14 +212,30 @@ func TestBlockObjectPathEscapesSpecialCharacters(t *testing.T) {
 }
 
 func TestIsDeviceBusyErr(t *testing.T) {
-	busy := dbus.NewError(udisksBusyErrorName, nil)
-	if !isDeviceBusyErr(busy) {
-		t.Error("isDeviceBusyErr(DeviceBusy) = false, want true")
+	// The pointer form, as dbus.NewError (and this package's own tests
+	// that construct an error locally) returns it.
+	ptrBusy := dbus.NewError(udisksBusyErrorName, nil)
+	if !isDeviceBusyErr(ptrBusy) {
+		t.Error("isDeviceBusyErr(pointer DeviceBusy) = false, want true")
+	}
+
+	// The value form, exactly as godbus's real dispatch path (conn.go's
+	// handleDBusError -> finalizeWithError(..., Error{name, msg.Body}))
+	// constructs it for an error received off the wire — see
+	// TestEjectDeviceBusyFilesystemValueFormMentionsCardInUse for why this
+	// distinction matters.
+	valBusy := dbus.Error{Name: udisksBusyErrorName, Body: []any{"target is busy"}}
+	if !isDeviceBusyErr(valBusy) {
+		t.Error("isDeviceBusyErr(value DeviceBusy) = false, want true")
 	}
 
 	other := dbus.NewError("org.freedesktop.UDisks2.Error.NotAuthorized", nil)
 	if isDeviceBusyErr(other) {
 		t.Error("isDeviceBusyErr(NotAuthorized) = true, want false")
+	}
+	otherVal := dbus.Error{Name: "org.freedesktop.UDisks2.Error.NotAuthorized"}
+	if isDeviceBusyErr(otherVal) {
+		t.Error("isDeviceBusyErr(value NotAuthorized) = true, want false")
 	}
 
 	if isDeviceBusyErr(nil) {

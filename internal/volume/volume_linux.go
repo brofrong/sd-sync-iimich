@@ -19,6 +19,12 @@ const mountinfoPath = "/proc/self/mountinfo"
 // its device node (e.g. "1234-5678" -> "../../sdb1"), maintained by udev.
 const byUUIDDir = "/dev/disk/by-uuid"
 
+// byLabelDir holds one symlink per mounted filesystem's label, pointing at
+// its device node (e.g. "CARD" -> "../../sdb1"), maintained by udev. A
+// label can contain characters a filename can't, which udev encodes as
+// "\xHH" (unescapeUdevName decodes it back).
+const byLabelDir = "/dev/disk/by-label"
+
 // IO behind seams so ListRemovable/GetInfo/FindByUUID can be driven by
 // tests with fixtures instead of this machine's real /proc, /sys and /dev
 // (which, per the project's development-safety rule, must never be
@@ -45,6 +51,9 @@ var (
 
 	// listByUUIDFn lists byUUIDDir's UUID-to-device symlinks.
 	listByUUIDFn = listByUUID
+
+	// listByLabelFn lists byLabelDir's label-to-device symlinks.
+	listByLabelFn = listByLabel
 )
 
 // mountEntry is one parsed line of /proc/self/mountinfo: the fields
@@ -52,8 +61,6 @@ var (
 type mountEntry struct {
 	// MountPoint is where the filesystem is mounted, e.g. "/media/user/CARD".
 	MountPoint string
-	// FSType is the filesystem type, e.g. "vfat", "exfat", "ext4".
-	FSType string
 	// Source is the mount's device node, e.g. "/dev/sdb1" — or something
 	// else entirely ("proc", "tmpfs", "none", ...) for a pseudo filesystem,
 	// which callers must recognize and skip rather than treat as a device.
@@ -107,9 +114,11 @@ func parseMountinfoLine(line string) (mountEntry, error) {
 		return mountEntry{}, fmt.Errorf("malformed mountinfo line (no fs type/source after separator): %q", line)
 	}
 
+	// fields[sep+1] is the fs type (field 9); it isn't currently used by any
+	// decision in this package, so it isn't kept on mountEntry — only its
+	// position needs to be known, to find Source right after it.
 	return mountEntry{
 		MountPoint: unescapeMountinfoField(fields[4]),
-		FSType:     fields[sep+1],
 		Source:     unescapeMountinfoField(fields[sep+2]),
 	}, nil
 }
@@ -241,6 +250,70 @@ func uuidForDevice(device string, links []uuidLink) string {
 	return ""
 }
 
+// labelLink is one entry of byLabelDir: a filesystem label and the device
+// node it points at.
+type labelLink struct {
+	Label  string
+	Device string
+}
+
+// listByLabel reads byLabelDir's label symlinks, decoding udev's "\xHH"
+// escaping of each symlink's name back into the real label text.
+func listByLabel() ([]labelLink, error) {
+	entries, err := os.ReadDir(byLabelDir)
+	if err != nil {
+		return nil, err
+	}
+	links := make([]labelLink, 0, len(entries))
+	for _, e := range entries {
+		target, err := os.Readlink(filepath.Join(byLabelDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(byLabelDir, target)
+		}
+		links = append(links, labelLink{Label: unescapeUdevName(e.Name()), Device: filepath.Clean(target)})
+	}
+	return links, nil
+}
+
+// unescapeUdevName decodes udev's "\xHH" hex-escaping (HH is the byte's
+// value in lower-case hex) of characters that can't appear literally in a
+// symlink's filename — most commonly a space, written "\x20" — in a
+// /dev/disk/by-label or /dev/disk/by-id entry's name. This is a different
+// escaping scheme from mountinfo's octal "\NNN" (see
+// unescapeMountinfoField): udev's own udev_util_encode_string/
+// blkid_encode_string helpers always use hex, never octal.
+func unescapeUdevName(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+4 <= len(s) && s[i+1] == 'x' {
+			if v, err := strconv.ParseUint(s[i+2:i+4], 16, 8); err == nil {
+				b.WriteByte(byte(v))
+				i += 3
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+// labelForDevice returns the filesystem label for device (e.g.
+// "/dev/sdb1"), as reported by links (byLabelDir's entries), or "" if
+// device has no label (common for cards formatted on a camera) or isn't
+// listed there yet.
+func labelForDevice(device string, links []labelLink) string {
+	want := filepath.Base(device)
+	for _, l := range links {
+		if filepath.Base(l.Device) == want {
+			return l.Label
+		}
+	}
+	return ""
+}
+
 // listAllVolumes describes every currently mounted volume backed by a real
 // device node (under /dev/), removable or not — pseudo filesystems (proc,
 // sysfs, tmpfs, cgroup, a snap's squashfs loop mount, ...) are skipped
@@ -256,15 +329,27 @@ func listAllVolumes() ([]Info, error) {
 	if err != nil {
 		return nil, err
 	}
-	links, _ := listByUUIDFn() // best-effort: a missing UUID isn't fatal.
+	links, _ := listByUUIDFn()   // best-effort: a missing UUID isn't fatal.
+	labels, _ := listByLabelFn() // best-effort: falls back to the mount-point name below.
 
 	var result []Info
 	for _, e := range entries {
 		if !strings.HasPrefix(e.Source, "/dev/") {
 			continue
 		}
+		// The real filesystem label is preferred over the mount point's
+		// base name: when two cards share a label, the desktop
+		// auto-mounter dedup-suffixes the *directory* it mounts the
+		// second one at (e.g. "/media/user/NO NAME1" when the first
+		// unlabeled card already took "/media/user/NO NAME"), so the
+		// directory name alone no longer matches the card's real label —
+		// see TestLinuxVolumeNameDedupSuffixReturnsRealLabel.
+		name := labelForDevice(e.Source, labels)
+		if name == "" {
+			name = filepath.Base(e.MountPoint)
+		}
 		result = append(result, Info{
-			Name:       filepath.Base(e.MountPoint),
+			Name:       name,
 			MountPoint: e.MountPoint,
 			UUID:       uuidForDevice(e.Source, links),
 			Removable:  isRemovableEntry(e),

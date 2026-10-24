@@ -16,11 +16,20 @@ func withVolumeSeams(t *testing.T) {
 	origMountinfo := readMountinfoFn
 	origSysRemovable := isSysRemovableFn
 	origByUUID := listByUUIDFn
+	origByLabel := listByLabelFn
 	t.Cleanup(func() {
 		readMountinfoFn = origMountinfo
 		isSysRemovableFn = origSysRemovable
 		listByUUIDFn = origByUUID
+		listByLabelFn = origByLabel
 	})
+	// Every test sets its own fixture for whichever of these it cares
+	// about; default the rest to empty rather than leaving them pointed at
+	// this machine's real /dev/disk/by-uuid or /dev/disk/by-label (neither
+	// of which a test should ever touch, even read-only, even if reading
+	// them would currently fail harmlessly inside the Docker container).
+	listByUUIDFn = func() ([]uuidLink, error) { return nil, nil }
+	listByLabelFn = func() ([]labelLink, error) { return nil, nil }
 }
 
 func TestParseMountinfo(t *testing.T) {
@@ -36,8 +45,8 @@ func TestParseMountinfo(t *testing.T) {
 	}
 
 	want := []mountEntry{
-		{MountPoint: "/", FSType: "ext4", Source: "/dev/mapper/vgubuntu-root"},
-		{MountPoint: "/media/user/My Card", FSType: "vfat", Source: "/dev/sdc1"},
+		{MountPoint: "/", Source: "/dev/mapper/vgubuntu-root"},
+		{MountPoint: "/media/user/My Card", Source: "/dev/sdc1"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("parseMountinfo() = %+v, want %+v", got, want)
@@ -127,6 +136,121 @@ func TestUUIDFromByUUID(t *testing.T) {
 	}
 	if got := uuidForDevice("/dev/sdz9", links); got != "" {
 		t.Errorf("uuidForDevice(no match) = %q, want \"\"", got)
+	}
+}
+
+func TestLabelFromByLabel(t *testing.T) {
+	links := []labelLink{
+		{Label: "CARD", Device: "/dev/sdb1"},
+		{Label: "NO NAME", Device: "/dev/sdc1"},
+	}
+
+	if got, want := labelForDevice("/dev/sdb1", links), "CARD"; got != want {
+		t.Errorf("labelForDevice(/dev/sdb1) = %q, want %q", got, want)
+	}
+	if got, want := labelForDevice("/dev/sdc1", links), "NO NAME"; got != want {
+		t.Errorf("labelForDevice(/dev/sdc1) = %q, want %q (not upper-cased, unlike a UUID)", got, want)
+	}
+	if got := labelForDevice("/dev/sdz9", links); got != "" {
+		t.Errorf("labelForDevice(no match) = %q, want \"\"", got)
+	}
+}
+
+func TestUnescapeUdevName(t *testing.T) {
+	cases := map[string]string{
+		"NO\\x20NAME": "NO NAME",
+		"CARD":        "CARD",
+		// A backslash not followed by "x" + two hex digits is left as-is.
+		"back\\slash": "back\\slash",
+		// "\x" followed by non-hex digits doesn't decode either.
+		"bad\\xzzname": "bad\\xzzname",
+	}
+	for in, want := range cases {
+		if got := unescapeUdevName(in); got != want {
+			t.Errorf("unescapeUdevName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestLinuxVolumeNamePrefersLabel confirms ListRemovable/GetInfo/FindByUUID
+// prefer the real filesystem label (from /dev/disk/by-label) over the
+// mount point's base name whenever one is available.
+func TestLinuxVolumeNamePrefersLabel(t *testing.T) {
+	withVolumeSeams(t)
+
+	readMountinfoFn = func() (string, error) {
+		return "60 25 8:17 / /media/u/CARD rw,relatime shared:34 - vfat /dev/sdb1 rw\n", nil
+	}
+	isSysRemovableFn = func(disk string) bool { return true }
+	listByLabelFn = func() ([]labelLink, error) {
+		return []labelLink{{Label: "MY-CAMERA", Device: "/dev/sdb1"}}, nil
+	}
+
+	got, err := ListRemovable()
+	if err != nil {
+		t.Fatalf("ListRemovable() error = %v", err)
+	}
+	want := []Info{
+		{Name: "MY-CAMERA", MountPoint: "/media/u/CARD", UUID: "", Removable: true},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListRemovable() = %+v, want %+v (label, not the mount-point basename)", got, want)
+	}
+}
+
+// TestLinuxVolumeNameDedupSuffixReturnsRealLabel is the dedup-suffix
+// regression test: two cards sharing the (very common, literal) label
+// "NO NAME" get mounted as "/media/u/NO NAME" and "/media/u/NO NAME1" —
+// udisks2/gvfs's auto-mounter appends a numeric suffix to the *directory*
+// name to avoid a collision, but the second card's real label is still
+// exactly "NO NAME", with no "1". Before this fix, Name was always the
+// mount-point basename, so it would have reported "NO NAME1" — which the
+// app's "follow a reformatted card" logic then fails to match back to the
+// card's actual label.
+func TestLinuxVolumeNameDedupSuffixReturnsRealLabel(t *testing.T) {
+	withVolumeSeams(t)
+
+	readMountinfoFn = func() (string, error) {
+		return "61 25 8:18 / /media/u/NO\\040NAME1 rw,relatime shared:35 - vfat /dev/sdc1 rw\n", nil
+	}
+	isSysRemovableFn = func(disk string) bool { return true }
+	listByLabelFn = func() ([]labelLink, error) {
+		return []labelLink{{Label: "NO NAME", Device: "/dev/sdc1"}}, nil
+	}
+
+	got, err := ListRemovable()
+	if err != nil {
+		t.Fatalf("ListRemovable() error = %v", err)
+	}
+	want := []Info{
+		{Name: "NO NAME", MountPoint: "/media/u/NO NAME1", UUID: "", Removable: true},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListRemovable() = %+v, want %+v (the real label, without the dedup suffix)", got, want)
+	}
+}
+
+// TestLinuxVolumeNameFallsBackToBasenameWithoutLabel confirms the fallback
+// still works when there's no by-label entry at all (e.g. udev hasn't
+// created it yet, or lsblk/udisks2 mounted the device before udev settled).
+func TestLinuxVolumeNameFallsBackToBasenameWithoutLabel(t *testing.T) {
+	withVolumeSeams(t)
+
+	readMountinfoFn = func() (string, error) {
+		return "60 25 8:17 / /media/u/CARD rw,relatime shared:34 - vfat /dev/sdb1 rw\n", nil
+	}
+	isSysRemovableFn = func(disk string) bool { return true }
+	// listByLabelFn already defaults to no entries via withVolumeSeams.
+
+	got, err := ListRemovable()
+	if err != nil {
+		t.Fatalf("ListRemovable() error = %v", err)
+	}
+	want := []Info{
+		{Name: "CARD", MountPoint: "/media/u/CARD", UUID: "", Removable: true},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListRemovable() = %+v, want %+v (basename fallback)", got, want)
 	}
 }
 

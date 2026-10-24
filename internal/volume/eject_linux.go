@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
 	"github.com/godbus/dbus/v5"
 )
 
@@ -67,7 +68,15 @@ func ejectDevice(conn udisksConn, mountPoint, device string) error {
 		return fmt.Errorf("eject %s: find drive: %w", mountPoint, err)
 	}
 
-	if canPowerOff, _ := conn.canPowerOff(drive); canPowerOff {
+	canPowerOff, cpoErr := conn.canPowerOff(drive)
+	if cpoErr != nil {
+		// Not fatal: a drive this can't read the property of (or doesn't
+		// have it at all) is simply treated as not power-off-capable,
+		// falling through to a plain eject below — but it's worth a log
+		// line since it means UDisks2 behaved unexpectedly for this drive.
+		logx.Warn("udisks2 CanPowerOff query failed", "drive", string(drive), "err", cpoErr)
+	}
+	if canPowerOff {
 		if err := conn.powerOff(drive); err == nil {
 			return nil
 		}
@@ -110,10 +119,25 @@ func udisksEscapeObjectPathSegment(s string) string {
 // isDeviceBusyErr reports whether err is UDisks2's "DeviceBusy" D-Bus error
 // (Filesystem.Unmount failing because something still has the filesystem
 // open).
+//
+// godbus's real dispatch path (conn.go's handleDBusError ->
+// finalizeWithError(..., Error{name, msg.Body})) sets Call.Err to a VALUE
+// dbus.Error, not a pointer — only the dbus.NewError helper (used by this
+// package's own tests, and by some callers that construct an error
+// locally rather than receiving one off the wire) returns *dbus.Error. The
+// first draft of this function only checked the pointer form, so it would
+// never have recognized a real "DeviceBusy" reply from UDisks2: both forms
+// are checked here (see TestIsDeviceBusyErr and
+// TestEjectDeviceBusyFilesystemValueFormMentionsCardInUse, which construct
+// the error exactly as real dispatch does).
 func isDeviceBusyErr(err error) bool {
-	var dbusErr *dbus.Error
-	if errors.As(err, &dbusErr) {
-		return dbusErr.Name == udisksBusyErrorName
+	var valErr dbus.Error
+	if errors.As(err, &valErr) {
+		return valErr.Name == udisksBusyErrorName
+	}
+	var ptrErr *dbus.Error
+	if errors.As(err, &ptrErr) {
+		return ptrErr.Name == udisksBusyErrorName
 	}
 	return false
 }
