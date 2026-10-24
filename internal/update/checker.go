@@ -43,12 +43,25 @@ type Client struct {
 	goos string
 }
 
+// Timeouts, variables for tests. The client has no overall timeout: a
+// download of a large file on a slow link may take minutes, and is bounded
+// by the caller's context instead.
+var (
+	// apiTimeout bounds the GitHub API request of Check.
+	apiTimeout = 30 * time.Second
+	// responseHeaderTimeout bounds the wait for a server's response
+	// headers, so a server that never answers fails fast.
+	responseHeaderTimeout = 30 * time.Second
+)
+
 func NewClient(currentVersion string) *Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = responseHeaderTimeout
 	return &Client{
 		CurrentVersion: currentVersion,
 		APIURL:         defaultAPIURL,
 		HTTPClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Transport: transport,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				if len(via) >= 10 {
 					return fmt.Errorf("too many redirects")
@@ -67,6 +80,8 @@ func (c *Client) Check(ctx context.Context) (*Release, error) {
 		return nil, fmt.Errorf("current version %q is not a release version: %w", c.CurrentVersion, err)
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, apiTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.APIURL, nil)
 	if err != nil {
 		return nil, err
