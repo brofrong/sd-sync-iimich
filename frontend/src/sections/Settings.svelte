@@ -169,10 +169,16 @@
     installError = "";
     installing = true;
     try {
-      // On success the app quits and launchd starts the new version.
+      // On success the app quits and the new version starts (launchd on
+      // macOS, the installer on Windows, the new AppImage on Linux).
       await backend.InstallUpdate();
     } catch (err) {
-      installError = t("settings.install_failed", { detail: message(err) });
+      // Go answers a copy that cannot update itself (Linux outside an
+      // AppImage) with this code instead of a message.
+      installError =
+        message(err) === "update_manual"
+          ? t("settings.update_manual")
+          : t("settings.install_failed", { detail: message(err) });
       installing = false;
       confirming = false;
     }

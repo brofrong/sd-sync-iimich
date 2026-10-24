@@ -1,7 +1,10 @@
-package gui
+package update
 
 import (
+	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -64,5 +67,51 @@ func TestPrepareRestartOutsideBundleDoesNothing(t *testing.T) {
 	}
 	if len(*calls) != 0 {
 		t.Fatalf("calls = %q, want none", *calls)
+	}
+}
+
+func TestDarwinApplyReplacesExecutableAndRestarts(t *testing.T) {
+	newBinary := []byte("new executable")
+	client, rel, _ := fakeRelease(t, AssetName("darwin"), newBinary, "")
+	exe := filepath.Join(t.TempDir(), "SD Sync Immich.app", "Contents", "MacOS", "sd-sync-immich")
+	if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, []byte("old executable"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origExe := currentExecutable
+	currentExecutable = func() (string, error) { return exe, nil }
+	t.Cleanup(func() { currentExecutable = origExe })
+	calls := fakeRestart(t, true, nil)
+
+	quit, err := Apply(context.Background(), client, rel)
+	if err != nil || !quit {
+		t.Fatalf("Apply() = %v, %v; want quit, no error", quit, err)
+	}
+	if got, _ := os.ReadFile(exe); string(got) != string(newBinary) {
+		t.Fatalf("executable = %q, want %q", got, newBinary)
+	}
+	if want := []string{"resign " + filepath.Dir(filepath.Dir(filepath.Dir(exe)))}; !reflect.DeepEqual(*calls, want) {
+		t.Fatalf("calls = %q, want %q", *calls, want)
+	}
+}
+
+func TestDarwinApplyDoesNotQuitWhenResignFails(t *testing.T) {
+	client, rel, _ := fakeRelease(t, AssetName("darwin"), []byte("new executable"), "")
+	exe := filepath.Join(t.TempDir(), "SD Sync Immich.app", "Contents", "MacOS", "sd-sync-immich")
+	if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, []byte("old executable"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origExe := currentExecutable
+	currentExecutable = func() (string, error) { return exe, nil }
+	t.Cleanup(func() { currentExecutable = origExe })
+	fakeRestart(t, false, errors.New("codesign failed"))
+
+	if quit, err := Apply(context.Background(), client, rel); err == nil || quit {
+		t.Fatalf("Apply() = %v, %v; want no quit and an error", quit, err)
 	}
 }

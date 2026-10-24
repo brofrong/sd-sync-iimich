@@ -228,5 +228,6 @@
   "settings.cancel": "キャンセル",
   "settings.installing": "インストール中… 完了するとアプリが再起動します。",
   "settings.install_failed": "アップデートをインストールできませんでした: {detail}",
+  "settings.update_manual": "手動で更新してください：GitHub から新しいバージョンをダウンロードしてください。",
   "ui.load_failed": "読み込めませんでした: {detail}"
 }

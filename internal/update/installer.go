@@ -17,30 +17,13 @@ const (
 	maxBinaryBytes   = 512 << 20
 )
 
+// Install downloads the release's file, checks it against checksums.txt
+// and atomically replaces destination with it (mode 0755). destination is
+// left untouched unless every step before the final rename succeeds.
 func (c *Client) Install(ctx context.Context, release *Release, destination string) error {
-	if release == nil {
-		return fmt.Errorf("no release given")
-	}
-	checksums, err := c.download(ctx, release.Checksums.URL, maxChecksumBytes)
-	if err != nil {
-		return fmt.Errorf("download checksums.txt: %w", err)
-	}
-	expectedHex, err := parseChecksum(checksums, release.Binary.Name)
+	binary, err := c.fetchVerified(ctx, release)
 	if err != nil {
 		return err
-	}
-	expected, err := hex.DecodeString(expectedHex)
-	if err != nil {
-		return fmt.Errorf("invalid SHA-256 for %s: %w", release.Binary.Name, err)
-	}
-
-	binary, err := c.download(ctx, release.Binary.URL, maxBinaryBytes)
-	if err != nil {
-		return fmt.Errorf("download %s: %w", release.Binary.Name, err)
-	}
-	actual := sha256.Sum256(binary)
-	if !equalBytes(actual[:], expected) {
-		return fmt.Errorf("SHA-256 of the downloaded file does not match checksums.txt")
 	}
 
 	dir := filepath.Dir(destination)
@@ -70,6 +53,36 @@ func (c *Client) Install(ctx context.Context, release *Release, destination stri
 		return fmt.Errorf("install update: %w", err)
 	}
 	return nil
+}
+
+// fetchVerified downloads the release's file and returns it once its
+// SHA-256 matches the one checksums.txt lists for it.
+func (c *Client) fetchVerified(ctx context.Context, release *Release) ([]byte, error) {
+	if release == nil {
+		return nil, fmt.Errorf("no release given")
+	}
+	checksums, err := c.download(ctx, release.Checksums.URL, maxChecksumBytes)
+	if err != nil {
+		return nil, fmt.Errorf("download checksums.txt: %w", err)
+	}
+	expectedHex, err := parseChecksum(checksums, release.Binary.Name)
+	if err != nil {
+		return nil, err
+	}
+	expected, err := hex.DecodeString(expectedHex)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SHA-256 for %s: %w", release.Binary.Name, err)
+	}
+
+	binary, err := c.download(ctx, release.Binary.URL, maxBinaryBytes)
+	if err != nil {
+		return nil, fmt.Errorf("download %s: %w", release.Binary.Name, err)
+	}
+	actual := sha256.Sum256(binary)
+	if !equalBytes(actual[:], expected) {
+		return nil, fmt.Errorf("SHA-256 of the downloaded file does not match checksums.txt")
+	}
+	return binary, nil
 }
 
 func (c *Client) download(ctx context.Context, url string, maxBytes int64) ([]byte, error) {

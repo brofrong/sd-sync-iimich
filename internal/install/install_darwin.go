@@ -269,21 +269,6 @@ func agentProgram(plistPath string) (string, error) {
 	return "", nil
 }
 
-// samePath reports whether a and b name the same file, following
-// symlinks.
-func samePath(a, b string) bool {
-	if a == "" || b == "" {
-		return false
-	}
-	resolve := func(p string) string {
-		if r, err := filepath.EvalSymlinks(p); err == nil {
-			return r
-		}
-		return filepath.Clean(p)
-	}
-	return resolve(a) == resolve(b)
-}
-
 // Takeover is what TakeOverAgent found and did.
 type Takeover struct {
 	// Previous is the program the LaunchAgent ran, "" without an agent.

@@ -228,5 +228,6 @@
   "settings.cancel": "Отмена",
   "settings.installing": "Устанавливаем… Когда всё будет готово, приложение перезапустится.",
   "settings.install_failed": "Не удалось установить обновление: {detail}",
+  "settings.update_manual": "Обновите вручную: скачайте новую версию на GitHub.",
   "ui.load_failed": "Не удалось загрузить: {detail}"
 }

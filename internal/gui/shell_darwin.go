@@ -26,3 +26,7 @@ func trayAvailable() bool { return true }
 // trayClickOpensWindow is false: on macOS a click on the menu bar icon
 // opens its menu, as it always has.
 const trayClickOpensWindow = false
+
+// updateExitCode is the exit code after an update is installed: it tells
+// launchd (KeepAlive SuccessfulExit=false) to start the new version.
+const updateExitCode = 75

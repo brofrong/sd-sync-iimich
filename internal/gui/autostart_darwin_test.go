@@ -7,25 +7,9 @@ import (
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/install"
 )
 
-const translocatedExe = "/private/var/folders/ab/T/AppTranslocation/0F3B-11/d/SD Sync Immich.app/Contents/MacOS/sd-sync-immich"
+const bundledExe = "/Users/x/Applications/SD Sync Immich.app/Contents/MacOS/sd-sync-immich"
 
-// fakeAutostart replaces the LaunchAgent calls with ones that report
-// enabled and record SetAutostart.
-func fakeAutostart(t *testing.T, enabled bool) *[]bool {
-	t.Helper()
-	var calls []bool
-	origEnabled, origSet := autostartEnabled, setAutostart
-	autostartEnabled = func(string) bool { return enabled }
-	setAutostart = func(on bool, exe string) error {
-		calls = append(calls, on)
-		if on && install.Translocated(exe) {
-			return install.ErrTranslocated
-		}
-		return nil
-	}
-	t.Cleanup(func() { autostartEnabled, setAutostart = origEnabled, origSet })
-	return &calls
-}
+const translocatedExe = "/private/var/folders/ab/T/AppTranslocation/0F3B-11/d/SD Sync Immich.app/Contents/MacOS/sd-sync-immich"
 
 func TestAutostartState(t *testing.T) {
 	fakeAutostart(t, true)

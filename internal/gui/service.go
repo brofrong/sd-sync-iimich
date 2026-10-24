@@ -36,9 +36,6 @@ const (
 	updateCheckInterval  = 12 * time.Hour
 	updateCheckTimeout   = 2 * time.Minute
 	updateInstallTimeout = 10 * time.Minute
-	// exitCodeRestart tells launchd (KeepAlive SuccessfulExit=false) to
-	// start the freshly installed version.
-	exitCodeRestart = 75
 )
 
 // Service is bound to the frontend: its exported methods are what the
@@ -489,14 +486,21 @@ func (s *Service) SaveSettings(v SettingsView) error {
 	return nil
 }
 
-// autostartSettings fills in the autostart fields of v. Autostart runs the
-// bundle: outside one (a development build) there is none to run, and a
-// translocated bundle's path does not survive a restart.
+// autostartSettings fills in the autostart fields of v. Whether the app
+// can start at login is install.AutostartAvailable: on macOS it runs from
+// its bundle that is not translocated (whose path does not survive a
+// restart), on Windows always, on Linux from an AppImage.
 func (s *Service) autostartSettings(v SettingsView) SettingsView {
-	v.AutostartTranslocated = s.bundlePath != "" && install.Translocated(s.executable)
-	v.AutostartAvailable = s.bundlePath != "" && !v.AutostartTranslocated
+	v.AutostartTranslocated = s.autostartTranslocated()
+	v.AutostartAvailable = autostartAvailable(s.executable)
 	v.Autostart = v.AutostartAvailable && autostartEnabled(s.executable)
 	return v
+}
+
+// autostartTranslocated reports whether the app runs from a translocated
+// bundle (macOS), which can start at login once moved to Applications.
+func (s *Service) autostartTranslocated() bool {
+	return s.bundlePath != "" && install.Translocated(s.executable)
 }
 
 // errAutostartTranslocated is the message of the error SetAutostart
@@ -513,12 +517,12 @@ type codeError struct {
 func (e *codeError) Error() string { return e.code }
 func (e *codeError) Unwrap() error { return e.err }
 
-// SetAutostart turns starting the app at login on or off. It needs the app
-// to run from its bundle (SettingsView.AutostartAvailable); a translocated
-// app is refused with errAutostartTranslocated.
+// SetAutostart turns starting the app at login on or off. It needs
+// SettingsView.AutostartAvailable; a translocated app is refused with
+// errAutostartTranslocated.
 func (s *Service) SetAutostart(enabled bool) error {
-	if s.bundlePath == "" {
-		return fmt.Errorf("autostart is only available when the app runs from %s", bundle.Name)
+	if !autostartAvailable(s.executable) && !s.autostartTranslocated() {
+		return errors.New("starting at login is not available for this copy of the app")
 	}
 	if err := setAutostart(enabled, s.executable); err != nil {
 		logx.Error("failed to change autostart", "enabled", enabled, "err", err)
@@ -688,10 +692,16 @@ func (s *Service) checkForUpdates(ctx context.Context) (*update.Release, error) 
 	return rel, nil
 }
 
-// InstallUpdate downloads and installs the available update over the
-// running executable, re-signs the app bundle, then quits with
-// exitCodeRestart so launchd starts the new version (or, when launchd did
-// not start the app, reopens the bundle once this process has exited).
+// errUpdateManual is the message of the error InstallUpdate returns when
+// this copy of the app cannot update itself (update.ErrManualUpdate); the
+// window shows "settings.update_manual" for it.
+const errUpdateManual = "update_manual"
+
+// InstallUpdate installs the available update (update.Apply), then quits
+// with updateExitCode so the new version starts: launchd starts it on
+// macOS (or the bundle is reopened), the installer on Windows, and the
+// new AppImage on Linux once this process has exited. On an error the app
+// keeps running.
 func (s *Service) InstallUpdate() error {
 	if !s.installMu.TryLock() {
 		return errors.New("an update is already being installed")
@@ -702,53 +712,33 @@ func (s *Service) InstallUpdate() error {
 	if rel == nil {
 		return errors.New("no update available")
 	}
-	executable, err := currentExecutable()
-	if err != nil {
-		return err
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), updateInstallTimeout)
 	defer cancel()
-	if err := s.updater.Install(ctx, rel, executable); err != nil {
+	quit, err := applyUpdate(ctx, s.updater, rel)
+	if err != nil {
 		logx.Error("update installation failed", "version", rel.Version, "err", err)
+		if errors.Is(err, update.ErrManualUpdate) {
+			return &codeError{code: errUpdateManual, err: err}
+		}
 		return fmt.Errorf("install update %s: %w", rel.Version, err)
 	}
-	if err := prepareRestart(executable); err != nil {
-		logx.Error("update installed but the app cannot restart", "version", rel.Version, "err", err)
-		return fmt.Errorf("install update %s: %w", rel.Version, err)
+	if quit {
+		logx.Info("update installed, restarting", "version", rel.Version)
+		quitAfterUpdate(s.shell, updateExitCode)
 	}
-	logx.Info("update installed, restarting", "version", rel.Version, "path", executable)
-	s.shell.quit(exitCodeRestart)
 	return nil
 }
 
 // Seams for tests.
 var (
-	autostartEnabled = install.AutostartEnabled
-	setAutostart     = install.SetAutostart
-	resignBundle     = bundle.Resign
-	underLaunchd     = install.UnderLaunchd
-	openWhenExited   = install.OpenWhenExited
+	autostartAvailable = install.AutostartAvailable
+	autostartEnabled   = install.AutostartEnabled
+	setAutostart       = install.SetAutostart
+	underLaunchd       = install.UnderLaunchd
+	applyUpdate        = update.Apply
+	quitAfterUpdate    = (*shell).quit
 )
-
-// prepareRestart runs after an update replaced executable. Inside a bundle
-// it re-signs the bundle, whose signature the new executable broke; if
-// that fails the app must not quit, as the bundle would not launch again.
-// When launchd did not start the app it will not restart it either, so the
-// bundle is reopened once this process has exited.
-func prepareRestart(executable string) error {
-	bundlePath, ok := bundle.Containing(executable)
-	if !ok {
-		return nil
-	}
-	if err := resignBundle(bundlePath); err != nil {
-		return fmt.Errorf("re-sign %s: %w", bundlePath, err)
-	}
-	if underLaunchd() {
-		return nil
-	}
-	return openWhenExited(bundlePath)
-}
 
 // currentExecutable is the path of this program, with symlinks resolved.
 func currentExecutable() (string, error) {

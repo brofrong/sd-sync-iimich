@@ -228,5 +228,6 @@
   "settings.cancel": "取消",
   "settings.installing": "正在安装… 完成后应用将重新启动。",
   "settings.install_failed": "无法安装更新：{detail}",
+  "settings.update_manual": "请手动更新：从 GitHub 下载新版本。",
   "ui.load_failed": "无法加载：{detail}"
 }

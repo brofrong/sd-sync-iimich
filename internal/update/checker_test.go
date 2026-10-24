@@ -52,6 +52,8 @@ func TestCheckReturnsNewReleaseWithRequiredAssets(t *testing.T) {
 
 	client := NewClient("v1.1.0")
 	client.APIURL = server.URL
+	// The release has the Mac file.
+	client.goos = "darwin"
 
 	release, err := client.Check(context.Background())
 	if err != nil {
@@ -99,6 +101,8 @@ func TestCheckRejectsReleaseWithoutChecksums(t *testing.T) {
 
 	client := NewClient("v1.1.0")
 	client.APIURL = server.URL
+	// The release has the Mac file.
+	client.goos = "darwin"
 	if _, err := client.Check(context.Background()); err == nil {
 		t.Fatal("Check() accepted a release without checksums.txt")
 	}
@@ -118,6 +122,8 @@ func TestCheckRejectsAssetsFromUntrustedHost(t *testing.T) {
 
 	client := NewClient("v1.1.0")
 	client.APIURL = server.URL
+	// The release has the Mac file.
+	client.goos = "darwin"
 	if _, err := client.Check(context.Background()); err == nil {
 		t.Fatal("Check() accepted assets from an untrusted host")
 	}

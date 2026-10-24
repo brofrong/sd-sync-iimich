@@ -13,6 +13,8 @@
 //   ?lang=<tag>     UI language (default: the browser's language)
 //   ?section=<id>   open a section
 //   ?update=none    "Check for Updates" finds nothing (default: v0.5.0)
+//   ?update=manual  installing it fails with update_manual (Linux outside
+//                   an AppImage)
 //   ?history=none   no sync runs yet
 //   ?expand=<id>    expand the failed files of run <id> in History
 //
@@ -639,6 +641,7 @@ export function createMockTransport(): Transport {
     },
     InstallUpdate: async () => {
       await delay(1500, null);
+      if (query.get("update") === "manual") throw new Error("update_manual");
     },
   };
 

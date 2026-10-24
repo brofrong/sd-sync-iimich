@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -23,10 +24,11 @@ type Asset struct {
 }
 
 type Release struct {
-	Version   string
-	Name      string
-	Notes     string
-	HTMLURL   string
+	Version string
+	Name    string
+	Notes   string
+	HTMLURL string
+	// Binary is this system's update file (see AssetName).
 	Binary    Asset
 	Checksums Asset
 }
@@ -37,6 +39,8 @@ type Client struct {
 	HTTPClient     *http.Client
 
 	allowLocalDownloads bool
+	// goos overrides runtime.GOOS in tests: Check picks its asset.
+	goos string
 }
 
 func NewClient(currentVersion string) *Client {
@@ -108,6 +112,14 @@ func (c *Client) Check(ctx context.Context) (*Release, error) {
 		return nil, nil
 	}
 
+	assetName := AssetName(c.goos)
+	if c.goos == "" {
+		assetName = AssetName(runtime.GOOS)
+	}
+	if assetName == "" {
+		return nil, fmt.Errorf("there are no updates for this system")
+	}
+
 	release := &Release{
 		Version: payload.TagName,
 		Name:    payload.Name,
@@ -116,14 +128,14 @@ func (c *Client) Check(ctx context.Context) (*Release, error) {
 	}
 	for _, asset := range payload.Assets {
 		switch asset.Name {
-		case "sd-sync-immich":
+		case assetName:
 			release.Binary = Asset{Name: asset.Name, URL: asset.URL}
 		case "checksums.txt":
 			release.Checksums = Asset{Name: asset.Name, URL: asset.URL}
 		}
 	}
 	if release.Binary.URL == "" || release.Checksums.URL == "" {
-		return nil, fmt.Errorf("release %s does not contain sd-sync-immich and checksums.txt", release.Version)
+		return nil, fmt.Errorf("release %s does not contain %s and checksums.txt", release.Version, assetName)
 	}
 	if err := validateDownloadURL(release.Binary.URL, c.allowLocalDownloads); err != nil {
 		return nil, fmt.Errorf("binary URL: %w", err)

@@ -228,5 +228,6 @@
   "settings.cancel": "Abbrechen",
   "settings.installing": "Wird installiert … Danach startet die App neu.",
   "settings.install_failed": "Das Update konnte nicht installiert werden: {detail}",
+  "settings.update_manual": "Aktualisiere manuell: Lade die neue Version von GitHub herunter.",
   "ui.load_failed": "Konnte nicht geladen werden: {detail}"
 }

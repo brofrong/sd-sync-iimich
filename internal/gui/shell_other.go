@@ -25,3 +25,8 @@ func (sh *shell) hideWindow() {
 // (traycheck_windows.go, traycheck_linux.go): Windows always has a tray;
 // Linux may not.
 const trayClickOpensWindow = true
+
+// updateExitCode is the exit code after an update is under way: the
+// Windows installer and the Linux relaunch wait for this process to exit
+// and start the new version themselves.
+const updateExitCode = 0

@@ -228,5 +228,6 @@
   "settings.cancel": "Cancelar",
   "settings.installing": "Instalando… O app será reiniciado quando terminar.",
   "settings.install_failed": "Não foi possível instalar a atualização: {detail}",
+  "settings.update_manual": "Atualize manualmente: baixe a nova versão no GitHub.",
   "ui.load_failed": "Não foi possível carregar: {detail}"
 }
