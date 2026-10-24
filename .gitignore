@@ -44,5 +44,10 @@ frontend/dist/*
 frontend/node_modules/
 frontend/bindings/
 
-# Release builds (scripts/build-app.sh <version> dist)
+# Release builds (scripts/build-app.sh <version> dist and the Linux and
+# Windows scripts)
 /dist/
+
+# Windows resources (icon, manifest, version info) that
+# scripts/build-windows.ps1 writes next to main.go for the build only
+/cmd/sd-sync-immich/*.syso

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SD Sync Immich
+Comment=Uploads photos and videos from an SD card to Immich
+Exec=sd-sync-immich
+Icon=sd-sync-immich
+Terminal=false
+Categories=Graphics;Photography;
+StartupWMClass=sd-sync-immich

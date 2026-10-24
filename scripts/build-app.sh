@@ -9,7 +9,10 @@
 #   sd-sync-immich-darwin-amd64   Intel only
 #   SD Sync Immich.app            the bundle (not uploaded; zipped below)
 #   SD-Sync-Immich.zip            the bundle for manual installation
-#   checksums.txt                 SHA-256 of the four files above
+#   checksums.txt                 SHA-256 of the four files above, for a
+#                                 local build: a release gets one
+#                                 checksums.txt for every system's files,
+#                                 which .github/workflows/release.yml writes
 #
 # Usage: scripts/build-app.sh <version> <outdir>
 # The version (e.g. v0.4.0) is embedded with -ldflags. Set WAILS3 to use an
