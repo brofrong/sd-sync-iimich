@@ -246,3 +246,32 @@ func TestLinuxRefreshAutostart(t *testing.T) {
 		t.Fatalf("RefreshAutostart() of another AppImage's entry = %v, %v", rewritten, err)
 	}
 }
+
+// TestLinuxRefreshAutostartKeepsUserEdits: only Exec is brought up to
+// date; whatever else the user (or a settings app) put in the entry stays.
+func TestLinuxRefreshAutostartKeepsUserEdits(t *testing.T) {
+	home := testenv.Home(t)
+	appimage := filepath.Join(home, "app.AppImage")
+	runFromAppImage(t, appimage)
+	path := filepath.Join(home, ".config", "autostart", "sd-sync-immich.desktop")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	edited := "# started late on purpose\n[Desktop Entry]\nType=Application\nName=SD Sync Immich\n" +
+		"Exec=\"" + appimage + "\" run\nX-GNOME-Autostart-Delay=30\nComment[de]=Fotos\n"
+	if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rewritten, err := RefreshAutostart(""); err != nil || !rewritten {
+		t.Fatalf("RefreshAutostart() = %v, %v; want a rewrite", rewritten, err)
+	}
+	want := strings.Replace(edited, "\" run\n", "\" run --autostart\n", 1)
+	if got, _ := os.ReadFile(path); string(got) != want {
+		t.Fatalf("entry after refresh =\n%s\nwant\n%s", got, want)
+	}
+
+	// Exec is current: an entry that differs elsewhere is not touched.
+	if rewritten, err := RefreshAutostart(""); err != nil || rewritten {
+		t.Fatalf("RefreshAutostart() of a current Exec = %v, %v; want nothing to do", rewritten, err)
+	}
+}

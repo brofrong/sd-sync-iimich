@@ -98,23 +98,47 @@ func currentEntry() (file string, enabled bool) {
 	return string(data), !off
 }
 
-// RefreshAutostart rewrites the enabled autostart entry of this AppImage
-// when it differs from the one SetAutostart writes today (an earlier
-// version's, without --autostart), and reports whether it did. An entry
-// that is turned off or runs another AppImage is left alone.
+// RefreshAutostart brings the Exec line of the enabled autostart entry of
+// this AppImage up to date (an earlier version's had no --autostart) and
+// reports whether it changed it. Everything else in the entry (a delay or
+// keys the user or a settings app added) is kept. An entry that is turned
+// off or runs another AppImage is left alone.
 func RefreshAutostart(executable string) (rewritten bool, err error) {
 	file, enabled := currentEntry()
 	if !enabled {
 		return false, nil
 	}
-	want, err := desktopEntry(AppImage())
-	if err != nil || file == want {
+	want, err := execValue(AppImage())
+	if err != nil || desktopEntryKeys(file)["Exec"] == want {
 		return false, err
 	}
-	if err := SetAutostart(true, executable); err != nil {
+	path, err := desktopFile()
+	if err != nil {
+		return false, err
+	}
+	if err := writeEntry(path, replaceExec(file, want)); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// replaceExec replaces the value of the first Exec key of the [Desktop
+// Entry] group of file with exec, leaving every other line as it is.
+func replaceExec(file, exec string) string {
+	lines := strings.Split(file, "\n")
+	inEntry := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") {
+			inEntry = trimmed == "[Desktop Entry]"
+			continue
+		}
+		if key, _, ok := strings.Cut(trimmed, "="); inEntry && ok && strings.TrimSpace(key) == "Exec" {
+			lines[i] = "Exec=" + exec
+			break
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // SetAutostart writes (enabled) or removes the autostart entry that runs
@@ -138,6 +162,11 @@ func SetAutostart(enabled bool, executable string) error {
 	if err != nil {
 		return err
 	}
+	return writeEntry(path, entry)
+}
+
+// writeEntry atomically writes the autostart entry at path.
+func writeEntry(path, entry string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
 	}
@@ -155,15 +184,25 @@ func SetAutostart(enabled bool, executable string) error {
 
 // desktopEntry is the autostart entry that runs the AppImage at appimage.
 func desktopEntry(appimage string) (string, error) {
-	if !filepath.IsAbs(appimage) || strings.ContainsAny(appimage, "\x00\n\r") {
-		return "", fmt.Errorf("cannot start %q at login", appimage)
+	exec, err := execValue(appimage)
+	if err != nil {
+		return "", err
 	}
 	return "[Desktop Entry]\n" +
 		"Type=Application\n" +
 		"Name=SD Sync Immich\n" +
-		"Exec=" + escapeDesktopString(quoteExecArg(appimage)+" run --autostart") + "\n" +
+		"Exec=" + exec + "\n" +
 		"Terminal=false\n" +
 		"X-GNOME-Autostart-enabled=true\n", nil
+}
+
+// execValue is the Exec value, as written in the file, that starts the
+// AppImage at appimage at login: run --autostart.
+func execValue(appimage string) (string, error) {
+	if !filepath.IsAbs(appimage) || strings.ContainsAny(appimage, "\x00\n\r") {
+		return "", fmt.Errorf("cannot start %q at login", appimage)
+	}
+	return escapeDesktopString(quoteExecArg(appimage) + " run --autostart"), nil
 }
 
 // quoteExecArg quotes arg as one argument of an Exec key (Desktop Entry
