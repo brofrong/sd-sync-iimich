@@ -4,8 +4,58 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
+
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/app"
 )
+
+// fakeShowableWindow stands in for *application.WebviewWindow in
+// TestShowWindowNow: it tracks IsMinimised/UnMinimise/Show/Focus calls
+// instead of needing a real, running window.
+type fakeShowableWindow struct {
+	minimised        bool
+	unMinimiseCalled bool
+	shown, focused   bool
+}
+
+func (f *fakeShowableWindow) IsMinimised() bool { return f.minimised }
+
+func (f *fakeShowableWindow) UnMinimise() {
+	f.unMinimiseCalled = true
+	f.minimised = false
+}
+
+func (f *fakeShowableWindow) Show() application.Window {
+	f.shown = true
+	return nil
+}
+
+func (f *fakeShowableWindow) Focus() { f.focused = true }
+
+// TestShowWindowNow checks showWindowNow brings a minimised window back
+// before showing it: Show (SW_SHOW on Windows, gtk_widget_show_all on
+// Linux) and Focus alone do not un-minimise a window, so a tray/taskbar
+// click on an already-minimised window (minimised by the user, or by our
+// own no-tray close behaviour) must call UnMinimise first.
+func TestShowWindowNow(t *testing.T) {
+	minimised := &fakeShowableWindow{minimised: true}
+	showWindowNow(minimised)
+	if !minimised.unMinimiseCalled || minimised.minimised {
+		t.Fatalf("a minimised window was not un-minimised: %+v", minimised)
+	}
+	if !minimised.shown || !minimised.focused {
+		t.Fatalf("a minimised window was not shown/focused: %+v", minimised)
+	}
+
+	normal := &fakeShowableWindow{}
+	showWindowNow(normal)
+	if normal.unMinimiseCalled {
+		t.Fatalf("UnMinimise called on a window that wasn't minimised: %+v", normal)
+	}
+	if !normal.shown || !normal.focused {
+		t.Fatalf("a normal window was not shown/focused: %+v", normal)
+	}
+}
 
 func TestShowWindowAtStartup(t *testing.T) {
 	tests := []struct {

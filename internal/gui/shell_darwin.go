@@ -6,8 +6,7 @@ package gui
 func (sh *shell) showWindow() {
 	sh.visible.Store(true)
 	sh.dock.ShowAppIcon()
-	sh.window.Show()
-	sh.window.Focus()
+	showWindowNow(sh.window)
 	if sh.onShow != nil {
 		sh.onShow()
 	}

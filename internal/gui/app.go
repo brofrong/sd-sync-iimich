@@ -73,7 +73,31 @@ func (sh *shell) emit(name string, data any) {
 
 // showWindow and hideWindow are platform-specific (shell_darwin.go,
 // shell_other.go): on macOS they also show/hide the Dock icon; elsewhere
-// there is no Dock to touch.
+// there is no Dock to touch. Both call showWindowNow to actually show it.
+
+// showableWindow is the part of *application.WebviewWindow showWindowNow
+// needs, factored out so it can be tested with a fake window instead of a
+// real, running one.
+type showableWindow interface {
+	IsMinimised() bool
+	UnMinimise()
+	Show() application.Window
+	Focus()
+}
+
+// showWindowNow un-minimises w first if it is minimised, then shows and
+// focuses it. Show alone does not bring back a minimised window (Windows:
+// SW_SHOW; Linux: gtk_widget_show_all neither un-iconifies), so without
+// this a tray/taskbar click on a window minimised by the user, or by our
+// own no-tray close behaviour (decideWindowClose), would leave it
+// minimised.
+func showWindowNow(w showableWindow) {
+	if w.IsMinimised() {
+		w.UnMinimise()
+	}
+	w.Show()
+	w.Focus()
+}
 
 // windowCloseAction is what closing the window does.
 type windowCloseAction int
