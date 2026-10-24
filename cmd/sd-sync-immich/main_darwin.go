@@ -43,7 +43,7 @@ func platformCommand(name string) bool {
 
 func usage() {
 	fmt.Println(`Usage:
-  sd-sync-immich run          Run the menu bar app
+  sd-sync-immich [run]        Run the menu bar app (the default)
   sd-sync-immich install      Install SD Sync Immich.app into ~/Applications
                               and start it at login
   sd-sync-immich uninstall    Remove the app, its LaunchAgent and v0.3.0's binary

@@ -122,11 +122,12 @@ func decideWindowClose(trayAvailable bool) windowCloseAction {
 }
 
 // showWindowAtStartup reports whether the window opens when the app
-// starts: always when the user opened the app (not launchd at login), and
-// whenever setup is unfinished, as the window is where it is finished.
-// Started at login and set up, the app stays in the menu bar.
-func showWindowAtStartup(code app.Code, startedByLaunchd bool) bool {
-	return !startedByLaunchd || code == app.CodeNotConfigured || code == app.CodeNoCardSelected
+// starts: always when the user opened the app (it was not started at
+// login, see startedAtLogin), and whenever setup is unfinished, as the
+// window is where it is finished. Started at login and set up, the app
+// stays in the menu bar (the tray).
+func showWindowAtStartup(code app.Code, atLogin bool) bool {
+	return !atLogin || code == app.CodeNotConfigured || code == app.CodeNoCardSelected
 }
 
 // quit shuts the application down and exits the process with code.
@@ -135,11 +136,18 @@ func (sh *shell) quit(code int) {
 	sh.app.Quit()
 }
 
+// startedAtLogin reports whether the app was started at login: by the
+// LaunchAgent on macOS, by an autostart entry ("run --autostart") on
+// Windows and Linux.
+func startedAtLogin(autostart bool) bool {
+	return autostart || underLaunchd()
+}
+
 // Run starts the GUI and the sync engine and blocks until the application
-// quits. On macOS quitting ends the process from inside Run (with the exit
+// quits. autostart means an autostart entry started it at login. On macOS quitting ends the process from inside Run (with the exit
 // code set by the caller of quit: 0 for "Quit" and SIGINT/SIGTERM), so Run
 // only returns if the application fails to start.
-func Run(a *app.App, cfg *config.Store, st *state.DB, version string) error {
+func Run(a *app.App, cfg *config.Store, st *state.DB, version string, autostart bool) error {
 	assets, err := fs.Sub(frontend.Dist, "dist")
 	if err != nil {
 		return fmt.Errorf("frontend assets: %w", err)
@@ -225,8 +233,9 @@ func Run(a *app.App, cfg *config.Store, st *state.DB, version string) error {
 	sh.app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		logx.Info("gui started")
 		sh.tray.refresh()
-		if code := a.Status().Code; showWindowAtStartup(code, underLaunchd()) {
-			logx.Info("gui: showing the window at startup", "status", code, "launchd", underLaunchd())
+		atLogin := startedAtLogin(autostart)
+		if code := a.Status().Code; showWindowAtStartup(code, atLogin) {
+			logx.Info("gui: showing the window at startup", "status", code, "at_login", atLogin)
 			sh.showWindow()
 		}
 		svc.start(ctx)

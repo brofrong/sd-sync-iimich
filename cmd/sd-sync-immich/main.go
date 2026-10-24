@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/app"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
@@ -15,25 +17,46 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(1)
-	}
-
-	switch os.Args[1] {
+	cmd := parseCommand(os.Args[1:])
+	switch cmd.name {
 	case "run":
-		runApp(false)
+		runApp(false, cmd.autostart)
 	case "scan-test":
 		runScanTest()
 	default:
-		if !platformCommand(os.Args[1]) {
+		if !platformCommand(cmd.name) {
 			usage()
 			os.Exit(1)
 		}
 	}
 }
 
-func runApp(dryRun bool) {
+// command is what the arguments ask for.
+type command struct {
+	name string
+	args []string
+	// autostart: "run --autostart", the way the Windows and Linux
+	// autostart entries start the app at login.
+	autostart bool
+}
+
+// parseCommand reads the arguments after the program name. None means
+// "run": that is how Finder (macOS), a Start menu shortcut (Windows) and
+// an AppImage (Linux) start the app. So does a lone -psn_* argument, the
+// process serial number older macOS passes to an app opened from Finder.
+func parseCommand(args []string) command {
+	if len(args) == 0 || (len(args) == 1 && strings.HasPrefix(args[0], "-psn_")) {
+		return command{name: "run"}
+	}
+	cmd := command{name: args[0], args: args[1:]}
+	if cmd.name == "run" {
+		cmd.autostart = slices.Contains(cmd.args, "--autostart")
+	}
+	return cmd
+}
+
+// runApp runs the app; autostart means it was started at login.
+func runApp(dryRun, autostart bool) {
 	logPath, err := logx.Init()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "logging:", err)
@@ -73,7 +96,7 @@ func runApp(dryRun bool) {
 
 	// gui.Run handles SIGINT/SIGTERM (through Wails) and exits the process
 	// itself when the app quits; it only returns if the GUI fails to start.
-	if err := gui.Run(application, cfg, st, version.Current); err != nil {
+	if err := gui.Run(application, cfg, st, version.Current, autostart); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

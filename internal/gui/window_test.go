@@ -126,3 +126,22 @@ func TestWindowShownSendsLatestStatusAtOnce(t *testing.T) {
 		t.Fatalf("statuses = %d (last %+v), want the latest sent at once", len(got), got[len(got)-1].Progress)
 	}
 }
+
+func TestStartedAtLogin(t *testing.T) {
+	for _, tt := range []struct{ autostart, launchd, want bool }{
+		{false, false, false},
+		// Windows and Linux: the autostart entry passes --autostart.
+		{true, false, true},
+		// macOS: the LaunchAgent.
+		{false, true, true},
+		{true, true, true},
+	} {
+		orig := underLaunchd
+		underLaunchd = func() bool { return tt.launchd }
+		got := startedAtLogin(tt.autostart)
+		underLaunchd = orig
+		if got != tt.want {
+			t.Errorf("startedAtLogin(autostart=%v) with launchd=%v = %v, want %v", tt.autostart, tt.launchd, got, tt.want)
+		}
+	}
+}
