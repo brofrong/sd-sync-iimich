@@ -12,6 +12,11 @@ import (
 // Win32 calls behind seams so the logic above them can be tested without
 // touching real drives.
 var (
+	// setErrorModeFn is windows.SetErrorMode behind a seam so
+	// disableCriticalErrorDialogs's ordering and flag-preserving behavior
+	// can be asserted without touching real process state.
+	setErrorModeFn = windows.SetErrorMode
+
 	getLogicalDrivesFn = func() (uint32, error) {
 		return windows.GetLogicalDrives()
 	}
@@ -40,6 +45,25 @@ var (
 	}
 )
 
+// disableCriticalErrorDialogs sets SEM_FAILCRITICALERRORS for the process
+// so that querying a removable or optical drive with no media in it (a
+// GetVolumeInformation call below, on an empty card reader or CD/DVD tray)
+// returns an error instead of raising Windows' blocking "There is no disk
+// in the drive" dialog — which, with the watcher polling every
+// pollInterval, would otherwise freeze the whole process behind a modal box
+// no user asked for every couple of seconds. It preserves any error-mode
+// flags something else in the process already set, by ORing the flag into
+// whatever SetErrorMode reports as the previous mode, rather than
+// overwriting it outright. Called before every GetVolumeInformation call
+// (it's a single cheap syscall) rather than once via sync.Once, so it is
+// also simple to assert in a test without cross-test state to reset.
+func disableCriticalErrorDialogs() {
+	old := setErrorModeFn(windows.SEM_FAILCRITICALERRORS)
+	if full := old | windows.SEM_FAILCRITICALERRORS; full != windows.SEM_FAILCRITICALERRORS {
+		setErrorModeFn(full)
+	}
+}
+
 // formatSerial renders a volume serial number the way Windows Explorer
 // shows it: two groups of 4 uppercase hex digits, e.g. 0x1234ABCD ->
 // "1234-ABCD".
@@ -63,6 +87,8 @@ func normalizeRoot(mountPoint string) string {
 // or not. A drive letter with no media in it (e.g. an empty card reader) is
 // silently skipped: GetVolumeInformation fails for it.
 func listAllVolumes() ([]Info, error) {
+	disableCriticalErrorDialogs()
+
 	mask, err := getLogicalDrivesFn()
 	if err != nil {
 		return nil, fmt.Errorf("GetLogicalDrives: %w", err)
@@ -107,6 +133,7 @@ func ListRemovable() ([]Info, error) {
 // as "E:" or "E:\").
 func GetInfo(mountPoint string) (*Info, error) {
 	root := normalizeRoot(mountPoint)
+	disableCriticalErrorDialogs()
 	name, serial, err := getVolumeInformationFn(root)
 	if err != nil {
 		return nil, fmt.Errorf("GetVolumeInformation %s: %w", root, err)

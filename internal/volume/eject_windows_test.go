@@ -100,4 +100,10 @@ func TestEjectOpenFailureReportsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Eject() error = nil, want error when the volume can't be opened")
 	}
+	if !strings.Contains(err.Error(), `E:\`) || !strings.Contains(err.Error(), "open volume") {
+		t.Fatalf(`Eject() error = %q, want it to identify the volume (%q) and the open-volume step`, err.Error(), `E:\`)
+	}
+	if !errors.Is(err, windows.ERROR_FILE_NOT_FOUND) {
+		t.Fatalf("Eject() error = %v, want it to wrap the underlying CreateFile error", err)
+	}
 }

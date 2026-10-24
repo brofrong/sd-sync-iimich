@@ -26,10 +26,12 @@ func withVolumeSeams(t *testing.T) {
 	origDrives := getLogicalDrivesFn
 	origType := getDriveTypeFn
 	origInfo := getVolumeInformationFn
+	origErrorMode := setErrorModeFn
 	t.Cleanup(func() {
 		getLogicalDrivesFn = origDrives
 		getDriveTypeFn = origType
 		getVolumeInformationFn = origInfo
+		setErrorModeFn = origErrorMode
 	})
 }
 
@@ -72,6 +74,133 @@ func TestListRemovableFiltersFixed(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ListRemovable() = %+v, want %+v", got, want)
+	}
+}
+
+// TestDisableCriticalErrorDialogsPreservesExistingFlags checks that
+// disableCriticalErrorDialogs ORs SEM_FAILCRITICALERRORS into whatever
+// error-mode flags are already set, rather than overwriting them: a drive
+// with no media must stop raising "insert a disk" dialogs without turning
+// off some other flag (e.g. SEM_NOOPENFILEERRORBOX) that something else in
+// the process depends on.
+func TestDisableCriticalErrorDialogsPreservesExistingFlags(t *testing.T) {
+	withVolumeSeams(t)
+
+	var calls []uint32
+	setErrorModeFn = func(mode uint32) uint32 {
+		calls = append(calls, mode)
+		if len(calls) == 1 {
+			// Simulate some other flag already being set.
+			return windows.SEM_NOOPENFILEERRORBOX
+		}
+		return 0
+	}
+
+	disableCriticalErrorDialogs()
+
+	want := []uint32{
+		windows.SEM_FAILCRITICALERRORS,
+		windows.SEM_NOOPENFILEERRORBOX | windows.SEM_FAILCRITICALERRORS,
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("setErrorModeFn calls = %#v, want %#v", calls, want)
+	}
+}
+
+// TestDisableCriticalErrorDialogsSkipsRedundantCall checks that when the
+// previous mode already includes SEM_FAILCRITICALERRORS (or was already
+// exactly SEM_FAILCRITICALERRORS, as after a prior call), a second,
+// redundant SetErrorMode call isn't made.
+func TestDisableCriticalErrorDialogsSkipsRedundantCall(t *testing.T) {
+	withVolumeSeams(t)
+
+	var calls []uint32
+	setErrorModeFn = func(mode uint32) uint32 {
+		calls = append(calls, mode)
+		return windows.SEM_FAILCRITICALERRORS
+	}
+
+	disableCriticalErrorDialogs()
+
+	if len(calls) != 1 {
+		t.Fatalf("setErrorModeFn calls = %#v, want exactly one call", calls)
+	}
+}
+
+// TestListRemovableDisablesErrorDialogsBeforeQueryingVolumes checks that
+// ListRemovable applies the no-dialog error mode before it calls
+// GetVolumeInformation on any drive, not after or interleaved with the
+// loop: a removable/optical drive with no media must never get a chance to
+// raise Windows' blocking dialog.
+func TestListRemovableDisablesErrorDialogsBeforeQueryingVolumes(t *testing.T) {
+	withVolumeSeams(t)
+
+	var order []string
+	setErrorModeFn = func(mode uint32) uint32 {
+		order = append(order, "setErrorMode")
+		return windows.SEM_FAILCRITICALERRORS
+	}
+	getLogicalDrivesFn = func() (uint32, error) {
+		order = append(order, "getLogicalDrives")
+		return 1 << 4, nil // E only
+	}
+	getDriveTypeFn = func(root string) uint32 {
+		order = append(order, "getDriveType")
+		return windows.DRIVE_REMOVABLE
+	}
+	getVolumeInformationFn = func(root string) (string, uint32, error) {
+		order = append(order, "getVolumeInformation")
+		return "CARD", 0x1234ABCD, nil
+	}
+
+	if _, err := ListRemovable(); err != nil {
+		t.Fatalf("ListRemovable() error = %v", err)
+	}
+
+	if len(order) == 0 || order[0] != "setErrorMode" {
+		t.Fatalf("call order = %v, want setErrorMode first", order)
+	}
+	setIdx, volIdx := -1, -1
+	for i, name := range order {
+		if name == "setErrorMode" && setIdx == -1 {
+			setIdx = i
+		}
+		if name == "getVolumeInformation" && volIdx == -1 {
+			volIdx = i
+		}
+	}
+	if setIdx == -1 || volIdx == -1 || setIdx > volIdx {
+		t.Fatalf("call order = %v, want setErrorMode before getVolumeInformation", order)
+	}
+}
+
+// TestGetInfoDisablesErrorDialogsBeforeQueryingVolume is
+// TestListRemovableDisablesErrorDialogsBeforeQueryingVolumes's counterpart
+// for GetInfo, which queries a single drive directly rather than going
+// through listAllVolumes.
+func TestGetInfoDisablesErrorDialogsBeforeQueryingVolume(t *testing.T) {
+	withVolumeSeams(t)
+
+	var order []string
+	setErrorModeFn = func(mode uint32) uint32 {
+		order = append(order, "setErrorMode")
+		return windows.SEM_FAILCRITICALERRORS
+	}
+	getDriveTypeFn = func(root string) uint32 {
+		order = append(order, "getDriveType")
+		return windows.DRIVE_REMOVABLE
+	}
+	getVolumeInformationFn = func(root string) (string, uint32, error) {
+		order = append(order, "getVolumeInformation")
+		return "CARD", 0x1234ABCD, nil
+	}
+
+	if _, err := GetInfo(`E:\`); err != nil {
+		t.Fatalf("GetInfo() error = %v", err)
+	}
+
+	if len(order) < 2 || order[0] != "setErrorMode" || order[1] != "getVolumeInformation" {
+		t.Fatalf("call order = %v, want [setErrorMode, getVolumeInformation, ...]", order)
 	}
 }
 
