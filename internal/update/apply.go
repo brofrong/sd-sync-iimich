@@ -7,6 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
 )
 
 // ErrManualUpdate means this copy of the app cannot update itself (on
@@ -14,9 +17,18 @@ import (
 // changed, and the user has to get the new version from GitHub.
 var ErrManualUpdate = errors.New("this copy of the app cannot update itself; download the new version from GitHub")
 
-// startFunc starts a program detached from this process and does not wait
-// for it.
-type startFunc func(name string, args ...string) error
+// process is a program to start: name with args, in dir, with env (nil:
+// this process's environment).
+type process struct {
+	name string
+	args []string
+	env  []string
+	dir  string
+}
+
+// startFunc starts a process detached from this one and does not wait for
+// it.
+type startFunc func(p process) error
 
 // installerPattern names the installers runInstaller writes, so the ones
 // earlier updates left behind can be found and removed.
@@ -43,7 +55,7 @@ func (c *Client) runInstaller(ctx context.Context, rel *Release, dir string, sta
 	if err != nil {
 		return err
 	}
-	if err := start(path, "/S", "/RELAUNCH"); err != nil {
+	if err := start(process{name: path, args: []string{"/S", "/RELAUNCH"}, dir: dir}); err != nil {
 		_ = os.Remove(path)
 		return fmt.Errorf("start the installer: %w", err)
 	}
@@ -52,16 +64,33 @@ func (c *Client) runInstaller(ctx context.Context, rel *Release, dir string, sta
 
 // relaunchScript waits for process $1 (the app that is quitting) to exit,
 // then starts the AppImage $2: the new version must not sync alongside the
-// old one. Paths go in as positional parameters, never into the script.
-const relaunchScript = `while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; exec "$2" run`
+// old one. It checks $3 times, 0.2 s apart; if the old process is still
+// there, it gives up (the new version starts the next time the app is
+// opened) and logs that to the app log $4. Paths go in as positional
+// parameters, never into the script.
+const relaunchScript = `i=0
+while kill -0 "$1" 2>/dev/null; do
+	i=$((i + 1))
+	if [ "$i" -ge "$3" ]; then
+		[ -n "$4" ] && printf 'time=%s level=WARN msg="update: the previous version (pid %s) did not quit; not starting the new one"\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" "$1" >>"$4"
+		exit 1
+	fi
+	sleep 0.2
+done
+exec "$2" run`
+
+// relaunchTries is how many times relaunchScript checks for the old
+// process: about 60 seconds.
+const relaunchTries = 300
 
 // replaceAppImage replaces the AppImage the app runs from with the
 // release's, checked against checksums.txt, and starts the new one once
-// process pid (this one) has exited. Without an AppImage it returns
-// ErrManualUpdate and touches nothing. The old AppImage stays in place
+// process pid (this one) has exited. appdir is where the running AppImage
+// is mounted: environment variables that point into it are not passed on.
+// Without an AppImage it returns ErrManualUpdate and touches nothing. The old AppImage stays in place
 // unless the new one is complete and verified: it is written next to it
 // and renamed over it (the running app keeps the old file open).
-func (c *Client) replaceAppImage(ctx context.Context, rel *Release, appimage string, pid int, start startFunc) error {
+func (c *Client) replaceAppImage(ctx context.Context, rel *Release, appimage, appdir string, pid int, start startFunc) error {
 	if appimage == "" {
 		return fmt.Errorf("not running from an AppImage: %w", ErrManualUpdate)
 	}
@@ -76,12 +105,52 @@ func (c *Client) replaceAppImage(ctx context.Context, rel *Release, appimage str
 	if err := c.Install(ctx, rel, target); err != nil {
 		return err
 	}
-	if err := start("/bin/sh", "-c", relaunchScript, "sh", strconv.Itoa(pid), target); err != nil {
+	dir, err := os.UserHomeDir()
+	if err != nil || dir == "" {
+		dir = "/"
+	}
+	err = start(process{
+		name: "/bin/sh",
+		args: []string{"-c", relaunchScript, "sh", strconv.Itoa(pid), target, strconv.Itoa(relaunchTries), logx.LogPath()},
+		env:  relaunchEnv(os.Environ(), appdir),
+		dir:  dir,
+	})
+	if err != nil {
 		// The new version is installed; it starts the next time the app is
 		// opened. Quitting now would leave the user without the app.
 		return fmt.Errorf("the update is installed but cannot start; reopen the app: %w", err)
 	}
 	return nil
+}
+
+// relaunchEnv is environ without what the AppImage runtime and its AppRun
+// set for the old version: $APPIMAGE, $APPDIR, $ARGV0, $OWD, and every
+// path into appdir, the old mount, which goes away. A list of paths
+// (PATH, LD_LIBRARY_PATH, XDG_DATA_DIRS, ...) loses those entries; a
+// variable left empty, or a single path into appdir (a GTK or GIO module
+// file, say), is dropped. The new AppImage sets its own.
+func relaunchEnv(environ []string, appdir string) []string {
+	env := make([]string, 0, len(environ))
+	for _, kv := range environ {
+		name, value, _ := strings.Cut(kv, "=")
+		switch {
+		case name == "APPIMAGE" || name == "APPDIR" || name == "ARGV0" || name == "OWD":
+			continue
+		case appdir != "" && strings.Contains(value, appdir):
+			var kept []string
+			for _, entry := range strings.Split(value, ":") {
+				if !strings.Contains(entry, appdir) {
+					kept = append(kept, entry)
+				}
+			}
+			if len(kept) == 0 {
+				continue
+			}
+			kv = name + "=" + strings.Join(kept, ":")
+		}
+		env = append(env, kv)
+	}
+	return env
 }
 
 // writeTemp writes data to a new file in dir named after pattern (see

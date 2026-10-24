@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -47,14 +49,17 @@ func fakeRelease(t *testing.T, name string, content []byte, sum string) (*Client
 
 const badSum = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-// recordStart is a start seam that records what it was asked to run.
+// recordStart is a start seam that records what it was asked to run:
+// calls holds each program and its arguments, procs the whole process.
 type recordStart struct {
 	calls [][]string
+	procs []process
 	err   error
 }
 
-func (r *recordStart) start(name string, args ...string) error {
-	r.calls = append(r.calls, append([]string{name}, args...))
+func (r *recordStart) start(p process) error {
+	r.calls = append(r.calls, append([]string{p.name}, p.args...))
+	r.procs = append(r.procs, p)
 	return r.err
 }
 
@@ -79,6 +84,9 @@ func TestWindowsUpdateRunsInstallerSilently(t *testing.T) {
 	}
 	if filepath.Dir(call[0]) != dir || filepath.Ext(call[0]) != ".exe" {
 		t.Fatalf("installer path %q, want an .exe in %s", call[0], dir)
+	}
+	if rec.procs[0].dir != dir {
+		t.Fatalf("installer runs in %q, want %s", rec.procs[0].dir, dir)
 	}
 	got, err := os.ReadFile(call[0])
 	if err != nil {
@@ -156,7 +164,7 @@ func assertOnlyFile(t *testing.T, path, content string) {
 func TestLinuxUpdateWithoutAppImage(t *testing.T) {
 	client, rel, requests := fakeRelease(t, AssetName("linux"), []byte("new AppImage"), "")
 	var rec recordStart
-	err := client.replaceAppImage(context.Background(), rel, "", 42, rec.start)
+	err := client.replaceAppImage(context.Background(), rel, "", "", 42, rec.start)
 	if !errors.Is(err, ErrManualUpdate) {
 		t.Fatalf("replaceAppImage() error = %v, want ErrManualUpdate", err)
 	}
@@ -172,7 +180,7 @@ func TestLinuxUpdateWithMissingAppImage(t *testing.T) {
 	client, rel, requests := fakeRelease(t, AssetName("linux"), []byte("new AppImage"), "")
 	missing := filepath.Join(t.TempDir(), "gone.AppImage")
 	var rec recordStart
-	err := client.replaceAppImage(context.Background(), rel, missing, 42, rec.start)
+	err := client.replaceAppImage(context.Background(), rel, missing, "", 42, rec.start)
 	if !errors.Is(err, ErrManualUpdate) {
 		t.Fatalf("replaceAppImage() error = %v, want ErrManualUpdate", err)
 	}
@@ -189,7 +197,7 @@ func TestLinuxUpdateReplacesAppImage(t *testing.T) {
 	client, rel, _ := fakeRelease(t, AssetName("linux"), newImage, "")
 	appimage := oldAppImage(t)
 	var rec recordStart
-	if err := client.replaceAppImage(context.Background(), rel, appimage, 4242, rec.start); err != nil {
+	if err := client.replaceAppImage(context.Background(), rel, appimage, "", 4242, rec.start); err != nil {
 		t.Fatalf("replaceAppImage(): %v", err)
 	}
 	assertOnlyFile(t, appimage, string(newImage))
@@ -206,8 +214,101 @@ func TestLinuxUpdateReplacesAppImage(t *testing.T) {
 	// The new AppImage starts once this process (4242) has exited, so two
 	// copies never sync at once.
 	call := rec.calls[0]
-	if call[0] != "/bin/sh" || call[len(call)-2] != strconv.Itoa(4242) || call[len(call)-1] != appimage {
-		t.Fatalf("relaunch = %q, want /bin/sh ... <pid> <AppImage>", call)
+	if len(call) != 8 || call[0] != "/bin/sh" || call[2] != relaunchScript || call[4] != strconv.Itoa(4242) || call[5] != appimage {
+		t.Fatalf("relaunch = %q, want /bin/sh -c <script> sh <pid> <AppImage> <tries> <log>", call)
+	}
+	if call[6] != strconv.Itoa(relaunchTries) {
+		t.Fatalf("relaunch waits %s times, want %d", call[6], relaunchTries)
+	}
+}
+
+func TestLinuxUpdateRelaunchesWithCleanEnvironment(t *testing.T) {
+	client, rel, _ := fakeRelease(t, AssetName("linux"), []byte("new AppImage"), "")
+	appimage := oldAppImage(t)
+	appdir := "/tmp/.mount_SDSyncOld"
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows' home, as os.UserHomeDir reads it
+	t.Setenv("APPIMAGE", appimage)
+	t.Setenv("APPDIR", appdir)
+	t.Setenv("ARGV0", "SD-Sync-Immich-x86_64.AppImage")
+	t.Setenv("OWD", "/home/u")
+	t.Setenv("LD_LIBRARY_PATH", appdir+"/usr/lib:/usr/local/lib")
+	t.Setenv("GDK_PIXBUF_MODULE_FILE", appdir+"/usr/lib/gdk-pixbuf/loaders.cache")
+	t.Setenv("SD_SYNC_KEEP", "kept")
+	t.Setenv("PATH", appdir+"/usr/bin:/usr/bin:/bin")
+	var rec recordStart
+	if err := client.replaceAppImage(context.Background(), rel, appimage, appdir, 1, rec.start); err != nil {
+		t.Fatalf("replaceAppImage(): %v", err)
+	}
+	if len(rec.procs) != 1 {
+		t.Fatalf("started %q, want one relaunch", rec.calls)
+	}
+	p := rec.procs[0]
+	if p.dir != home {
+		t.Errorf("relaunch dir = %q, want $HOME %q", p.dir, home)
+	}
+	if p.env == nil {
+		t.Fatal("relaunch inherits the whole environment, want a cleaned copy")
+	}
+	kept, path := false, ""
+	for _, kv := range p.env {
+		if v, ok := strings.CutPrefix(kv, "PATH="); ok {
+			path = v
+		}
+		name, value, _ := strings.Cut(kv, "=")
+		switch {
+		case name == "APPIMAGE" || name == "APPDIR" || name == "ARGV0" || name == "OWD":
+			t.Errorf("relaunch environment keeps %s", kv)
+		case strings.Contains(value, appdir):
+			t.Errorf("relaunch environment keeps %s, which points into the old AppImage", kv)
+		case kv == "SD_SYNC_KEEP=kept":
+			kept = true
+		}
+	}
+	if !kept {
+		t.Error("relaunch environment dropped an unrelated variable")
+	}
+	// The relaunch script needs sleep and date from PATH.
+	if path != "/usr/bin:/bin" {
+		t.Errorf("relaunch PATH = %q, want the old one without the AppImage's entry", path)
+	}
+}
+
+func TestRelaunchScript(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no /bin/sh")
+	}
+	dir := t.TempDir()
+	started := filepath.Join(dir, "started")
+	fake := filepath.Join(dir, "fake.AppImage")
+	// A stand-in for the new AppImage: it records its arguments.
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho \"$@\" > \""+started+"\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(dir, "app.log")
+	// The script exits non-zero when it gives up; only its effects count.
+	run := func(pid int, tries int) {
+		_ = exec.Command("/bin/sh", "-c", relaunchScript, "sh", strconv.Itoa(pid), fake, strconv.Itoa(tries), logPath).Run()
+	}
+
+	// The old process never exits: give up, log it, start nothing.
+	run(os.Getpid(), 2)
+	if _, err := os.Stat(started); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("new version started while the old one still runs: %v", err)
+	}
+	if log, err := os.ReadFile(logPath); err != nil || !strings.Contains(string(log), "level=WARN") {
+		t.Fatalf("no warning logged on timeout: %q, %v", log, err)
+	}
+
+	// The old process is gone: the new version starts with "run".
+	sleeper := exec.Command("/bin/sh", "-c", "exit 0")
+	if err := sleeper.Run(); err != nil {
+		t.Fatal(err)
+	}
+	run(sleeper.Process.Pid, 2)
+	if got, err := os.ReadFile(started); err != nil || strings.TrimSpace(string(got)) != "run" {
+		t.Fatalf("new version started with %q, %v; want \"run\"", got, err)
 	}
 }
 
@@ -223,7 +324,7 @@ func TestLinuxUpdateFollowsSymlinkToAppImage(t *testing.T) {
 		t.Skip("symlinks unavailable:", err)
 	}
 	var rec recordStart
-	if err := client.replaceAppImage(context.Background(), rel, link, 1, rec.start); err != nil {
+	if err := client.replaceAppImage(context.Background(), rel, link, "", 1, rec.start); err != nil {
 		t.Fatalf("replaceAppImage(): %v", err)
 	}
 	if target, err := os.Readlink(link); err != nil || target != appimage {
@@ -236,7 +337,7 @@ func TestLinuxUpdateKeepsAppImageOnChecksumMismatch(t *testing.T) {
 	client, rel, _ := fakeRelease(t, AssetName("linux"), []byte("tampered"), badSum)
 	appimage := oldAppImage(t)
 	var rec recordStart
-	if err := client.replaceAppImage(context.Background(), rel, appimage, 1, rec.start); err == nil {
+	if err := client.replaceAppImage(context.Background(), rel, appimage, "", 1, rec.start); err == nil {
 		t.Fatal("replaceAppImage() accepted a checksum mismatch")
 	}
 	assertOnlyFile(t, appimage, "old AppImage")
@@ -257,7 +358,7 @@ func TestLinuxUpdateKeepsAppImageInReadOnlyDirectory(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
 	var rec recordStart
-	if err := client.replaceAppImage(context.Background(), rel, appimage, 1, rec.start); err == nil {
+	if err := client.replaceAppImage(context.Background(), rel, appimage, "", 1, rec.start); err == nil {
 		t.Fatal("replaceAppImage() succeeded in a read-only directory")
 	}
 	assertOnlyFile(t, appimage, "old AppImage")
