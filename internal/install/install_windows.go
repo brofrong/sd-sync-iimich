@@ -78,10 +78,10 @@ func notExist(err error) error {
 	return err
 }
 
-// runCommand is the Run value that starts executable: its quoted path
-// and the "run" command.
+// runCommand is the Run value that starts executable at login: its quoted
+// path and "run --autostart" (so the window stays closed).
 func runCommand(executable string) string {
-	return `"` + executable + `" run`
+	return `"` + executable + `" run --autostart`
 }
 
 // runProgram is the program a Run value starts: the quoted path at its
@@ -131,6 +131,27 @@ func SetAutostart(enabled bool, executable string) error {
 		return fmt.Errorf("write the autostart registry value: %w", err)
 	}
 	return nil
+}
+
+// RefreshAutostart rewrites the Run value when it starts executable with
+// another command than SetAutostart writes today (an earlier version's, or
+// the installer's), and reports whether it did. A value that starts
+// another program is left alone, and so is a missing one.
+func RefreshAutostart(executable string) (rewritten bool, err error) {
+	value, err := runValues.get(runValueName)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !sameWindowsPath(runProgram(value), executable) || value == runCommand(executable) {
+		return false, nil
+	}
+	if err := SetAutostart(true, executable); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // UnderLaunchd reports whether launchd started this process: never

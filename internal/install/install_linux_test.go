@@ -9,6 +9,21 @@ import (
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/testenv"
 )
 
+// runFromAppImage makes this test process look like it runs from the
+// AppImage at appimage: $APPDIR holds its executable.
+func runFromAppImage(t *testing.T, appimage string) {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	t.Setenv("APPIMAGE", appimage)
+	t.Setenv("APPDIR", filepath.Dir(exe))
+}
+
 func readDesktop(t *testing.T, path string) map[string]string {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -33,7 +48,7 @@ func readDesktop(t *testing.T, path string) map[string]string {
 func TestLinuxAutostartDesktopFile(t *testing.T) {
 	home := testenv.Home(t)
 	appimage := filepath.Join(home, "Apps", "SD-Sync-Immich-x86_64.AppImage")
-	t.Setenv("APPIMAGE", appimage)
+	runFromAppImage(t, appimage)
 	// The executable inside the mounted AppImage changes on every launch.
 	exe := "/tmp/.mount_SDSyncX1/usr/bin/sd-sync-immich"
 
@@ -51,7 +66,7 @@ func TestLinuxAutostartDesktopFile(t *testing.T) {
 	want := map[string]string{
 		"Type":                      "Application",
 		"Name":                      "SD Sync Immich",
-		"Exec":                      `"` + appimage + `" run`,
+		"Exec":                      `"` + appimage + `" run --autostart`,
 		"Terminal":                  "false",
 		"X-GNOME-Autostart-enabled": "true",
 	}
@@ -86,7 +101,7 @@ func TestLinuxAutostartRespectsXDGConfigHome(t *testing.T) {
 	home := testenv.Home(t)
 	config := filepath.Join(home, "xdg")
 	t.Setenv("XDG_CONFIG_HOME", config)
-	t.Setenv("APPIMAGE", filepath.Join(home, "app.AppImage"))
+	runFromAppImage(t, filepath.Join(home, "app.AppImage"))
 	if err := SetAutostart(true, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -114,13 +129,13 @@ func TestLinuxAutostartQuotesExec(t *testing.T) {
 	// Characters the Desktop Entry spec reserves inside a quoted argument,
 	// a field-code % and a key-file backslash.
 	appimage := filepath.Join(home, `My "Apps" $HOME 100% back\slash`, "x.AppImage")
-	t.Setenv("APPIMAGE", appimage)
+	runFromAppImage(t, appimage)
 	if err := SetAutostart(true, ""); err != nil {
 		t.Fatal(err)
 	}
 	keys := readDesktop(t, filepath.Join(home, ".config", "autostart", "sd-sync-immich.desktop"))
 	wantDir := home + `/My \\"Apps\\" \\$HOME 100%% back\\\\slash`
-	if want := `"` + wantDir + `/x.AppImage" run`; keys["Exec"] != want {
+	if want := `"` + wantDir + `/x.AppImage" run --autostart`; keys["Exec"] != want {
 		t.Fatalf("Exec = %q, want %q", keys["Exec"], want)
 	}
 	if !AutostartEnabled("") {
@@ -130,8 +145,104 @@ func TestLinuxAutostartQuotesExec(t *testing.T) {
 
 func TestLinuxAutostartRejectsNewlineInPath(t *testing.T) {
 	home := testenv.Home(t)
-	t.Setenv("APPIMAGE", filepath.Join(home, "a\nExec=evil", "x.AppImage"))
+	runFromAppImage(t, filepath.Join(home, "a\nExec=evil", "x.AppImage"))
 	if err := SetAutostart(true, ""); err == nil {
 		t.Fatal("SetAutostart(true) accepted a path with a newline")
+	}
+}
+
+// TestLinuxAutostartDistrustsAppImageOfAnotherProcess: $APPIMAGE leaks
+// into processes an AppImage starts; it counts only when this process
+// runs from $APPDIR.
+func TestLinuxAutostartDistrustsAppImageOfAnotherProcess(t *testing.T) {
+	for name, appdir := range map[string]string{"no APPDIR": "", "executable outside APPDIR": t.TempDir()} {
+		t.Run(name, func(t *testing.T) {
+			home := testenv.Home(t)
+			t.Setenv("APPIMAGE", filepath.Join(home, "app.AppImage"))
+			t.Setenv("APPDIR", appdir)
+			if AutostartAvailable("") {
+				t.Fatal("AutostartAvailable() = true")
+			}
+			if err := SetAutostart(true, ""); err == nil {
+				t.Fatal("SetAutostart(true) succeeded")
+			}
+			if AppImage() != "" {
+				t.Fatalf("AppImage() = %q, want \"\"", AppImage())
+			}
+		})
+	}
+}
+
+func TestLinuxAutostartDisabledByDesktopKeys(t *testing.T) {
+	for _, key := range []string{"Hidden=true", "X-GNOME-Autostart-enabled=false", "X-MATE-Autostart-enabled=false"} {
+		t.Run(key, func(t *testing.T) {
+			home := testenv.Home(t)
+			appimage := filepath.Join(home, "app.AppImage")
+			runFromAppImage(t, appimage)
+			path := filepath.Join(home, ".config", "autostart", "sd-sync-immich.desktop")
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			// As a session's settings app leaves it after "turn off".
+			entry := "[Desktop Entry]\nType=Application\nName=SD Sync Immich\nExec=\"" + appimage + "\" run\n" + key + "\n"
+			if err := os.WriteFile(path, []byte(entry), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if AutostartEnabled("") {
+				t.Fatal("AutostartEnabled() = true for a disabled entry")
+			}
+			// An entry turned off elsewhere stays off.
+			if rewritten, err := RefreshAutostart(""); err != nil || rewritten {
+				t.Fatalf("RefreshAutostart() = %v, %v; want no rewrite", rewritten, err)
+			}
+			if got, _ := os.ReadFile(path); string(got) != entry {
+				t.Fatalf("disabled entry rewritten to %q", got)
+			}
+			// Turning it on again enables it.
+			if err := SetAutostart(true, ""); err != nil || !AutostartEnabled("") {
+				t.Fatalf("SetAutostart(true): %v, enabled %v", err, AutostartEnabled(""))
+			}
+		})
+	}
+}
+
+func TestLinuxRefreshAutostart(t *testing.T) {
+	home := testenv.Home(t)
+	appimage := filepath.Join(home, "app.AppImage")
+	runFromAppImage(t, appimage)
+	path := filepath.Join(home, ".config", "autostart", "sd-sync-immich.desktop")
+
+	if rewritten, err := RefreshAutostart(""); err != nil || rewritten {
+		t.Fatalf("RefreshAutostart() without an entry = %v, %v", rewritten, err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("RefreshAutostart() created an entry: %v", err)
+	}
+
+	// An entry from an earlier version, without --autostart.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := "[Desktop Entry]\nType=Application\nName=SD Sync Immich\nExec=\"" + appimage + "\" run\nX-GNOME-Autostart-enabled=true\n"
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rewritten, err := RefreshAutostart(""); err != nil || !rewritten {
+		t.Fatalf("RefreshAutostart() = %v, %v; want a rewrite", rewritten, err)
+	}
+	if exec := readDesktop(t, path)["Exec"]; exec != `"`+appimage+`" run --autostart` {
+		t.Fatalf("Exec = %q after the rewrite", exec)
+	}
+	if rewritten, err := RefreshAutostart(""); err != nil || rewritten {
+		t.Fatalf("second RefreshAutostart() = %v, %v; want nothing to do", rewritten, err)
+	}
+
+	// Another AppImage's entry is left alone.
+	other := strings.ReplaceAll(old, appimage, filepath.Join(home, "other.AppImage"))
+	if err := os.WriteFile(path, []byte(other), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rewritten, err := RefreshAutostart(""); err != nil || rewritten {
+		t.Fatalf("RefreshAutostart() of another AppImage's entry = %v, %v", rewritten, err)
 	}
 }

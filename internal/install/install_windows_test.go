@@ -40,7 +40,7 @@ func TestWindowsAutostartRunValue(t *testing.T) {
 	if err := SetAutostart(true, windowsExe); err != nil {
 		t.Fatal(err)
 	}
-	want := `"` + windowsExe + `" run`
+	want := `"` + windowsExe + `" run --autostart`
 	if got := run["SD Sync Immich"]; got != want {
 		t.Fatalf("Run value = %q, want %q", got, want)
 	}
@@ -75,5 +75,35 @@ func TestWindowsAutostartAcceptsValueWithoutArguments(t *testing.T) {
 	run["SD Sync Immich"] = `"` + windowsExe + `"`
 	if !AutostartEnabled(windowsExe) {
 		t.Fatal("AutostartEnabled() = false for a quoted path without arguments")
+	}
+}
+
+func TestWindowsRefreshAutostart(t *testing.T) {
+	current := `"` + windowsExe + `" run --autostart`
+	tests := []struct {
+		name, value string // "" = no value
+		rewritten   bool
+		want        string
+	}{
+		{"none", "", false, ""},
+		{"current", current, false, current},
+		{"older command", `"` + windowsExe + `" run`, true, current},
+		{"bare path", `"` + windowsExe + `"`, true, current},
+		{"other copy", `"C:\Other\sd-sync-immich.exe" run`, false, `"C:\Other\sd-sync-immich.exe" run`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			run := useFakeRun(t)
+			if tt.value != "" {
+				run["SD Sync Immich"] = tt.value
+			}
+			rewritten, err := RefreshAutostart(windowsExe)
+			if err != nil || rewritten != tt.rewritten {
+				t.Fatalf("RefreshAutostart() = %v, %v; want %v", rewritten, err, tt.rewritten)
+			}
+			if got := run["SD Sync Immich"]; got != tt.want {
+				t.Fatalf("Run value = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
