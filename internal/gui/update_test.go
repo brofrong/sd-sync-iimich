@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"testing"
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/update"
@@ -63,5 +64,18 @@ func TestInstallUpdateManualIsACode(t *testing.T) {
 	}
 	if len(*codes) != 0 {
 		t.Fatalf("quit with %v", *codes)
+	}
+}
+
+// TestUpdateExitCode: launchd restarts the app after exit code 75 on
+// macOS; on Windows and Linux the installer or the relaunch script starts
+// the new version, and the app exits with 0.
+func TestUpdateExitCode(t *testing.T) {
+	want := 0
+	if runtime.GOOS == "darwin" {
+		want = 75
+	}
+	if updateExitCode != want {
+		t.Fatalf("updateExitCode = %d on %s, want %d", updateExitCode, runtime.GOOS, want)
 	}
 }

@@ -57,27 +57,34 @@ func TestShowWindowNow(t *testing.T) {
 	}
 }
 
-func TestShowWindowAtStartup(t *testing.T) {
+func TestStartupWindow(t *testing.T) {
 	tests := []struct {
 		code    app.Code
-		launchd bool
-		want    bool
+		atLogin bool
+		hasTray bool
+		want    startupWindow
 	}{
 		// Opened by the user (Finder, Spotlight, a terminal): show it.
-		{app.CodeWaitingForCard, false, true},
-		{app.CodeScanning, false, true},
-		// Started at login and set up: menu bar only.
-		{app.CodeWaitingForCard, true, false},
-		{app.CodeDone, true, false},
-		{app.CodeScanning, true, false},
+		{app.CodeWaitingForCard, false, true, startupShown},
+		{app.CodeScanning, false, true, startupShown},
+		{app.CodeWaitingForCard, false, false, startupShown},
+		// Started at login and set up: tray only.
+		{app.CodeWaitingForCard, true, true, startupHidden},
+		{app.CodeDone, true, true, startupHidden},
+		{app.CodeScanning, true, true, startupHidden},
+		// At login without a tray (GNOME without AppIndicator): hidden would
+		// leave no way back to the app, so it starts minimised.
+		{app.CodeWaitingForCard, true, false, startupMinimised},
+		{app.CodeDone, true, false, startupMinimised},
 		// Setup is not finished: the window is the way to finish it.
-		{app.CodeNotConfigured, true, true},
-		{app.CodeNoCardSelected, true, true},
-		{app.CodeNotConfigured, false, true},
+		{app.CodeNotConfigured, true, true, startupShown},
+		{app.CodeNoCardSelected, true, true, startupShown},
+		{app.CodeNotConfigured, true, false, startupShown},
+		{app.CodeNotConfigured, false, true, startupShown},
 	}
 	for _, tt := range tests {
-		if got := showWindowAtStartup(tt.code, tt.launchd); got != tt.want {
-			t.Errorf("showWindowAtStartup(%s, launchd=%v) = %v, want %v", tt.code, tt.launchd, got, tt.want)
+		if got := decideStartupWindow(tt.code, tt.atLogin, tt.hasTray); got != tt.want {
+			t.Errorf("decideStartupWindow(%s, atLogin=%v, hasTray=%v) = %v, want %v", tt.code, tt.atLogin, tt.hasTray, got, tt.want)
 		}
 	}
 }
@@ -143,5 +150,30 @@ func TestStartedAtLogin(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("startedAtLogin(autostart=%v) with launchd=%v = %v, want %v", tt.autostart, tt.launchd, got, tt.want)
 		}
+	}
+}
+
+func TestSingleInstanceOptions(t *testing.T) {
+	shown := 0
+	opts := singleInstanceOptions(func() { shown++ })
+	if opts.UniqueID != "com.sd-sync-immich" {
+		t.Errorf("UniqueID = %q, want com.sd-sync-immich", opts.UniqueID)
+	}
+	if opts.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0 (a second copy is not an error, and launchd must not restart it)", opts.ExitCode)
+	}
+	if opts.OnSecondInstanceLaunch == nil {
+		t.Fatal("no OnSecondInstanceLaunch")
+	}
+	// The user opened the app again: show the running one's window.
+	opts.OnSecondInstanceLaunch(application.SecondInstanceData{Args: []string{"/x/sd-sync-immich"}})
+	opts.OnSecondInstanceLaunch(application.SecondInstanceData{Args: []string{"/x/sd-sync-immich", "run"}})
+	if shown != 2 {
+		t.Fatalf("window shown %d times, want 2", shown)
+	}
+	// An autostart entry fired while the app runs: keep it in the tray.
+	opts.OnSecondInstanceLaunch(application.SecondInstanceData{Args: []string{"/x/sd-sync-immich", "run", "--autostart"}})
+	if shown != 2 {
+		t.Fatalf("window shown for a second instance started at login")
 	}
 }

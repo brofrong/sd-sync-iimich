@@ -1,7 +1,8 @@
 // Package gui runs the Wails application: the tray icon and menu, the main
 // window (with a Dock icon only while it is shown, macOS only; hidden at
-// startup when launchd starts a set-up app at login, see
-// showWindowAtStartup) and the Service bound to the frontend.
+// startup when a set-up app starts at login, see decideStartupWindow) and
+// the Service bound to the frontend. Only one copy runs at a time (see
+// singleInstanceOptions).
 package gui
 
 import (
@@ -10,6 +11,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -20,6 +22,7 @@ import (
 
 	"github.com/dmitiigorshkov/sd-sync-immich/frontend"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/app"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/bundle"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/notify"
@@ -121,13 +124,55 @@ func decideWindowClose(trayAvailable bool) windowCloseAction {
 	return closeActionMinimise
 }
 
-// showWindowAtStartup reports whether the window opens when the app
-// starts: always when the user opened the app (it was not started at
-// login, see startedAtLogin), and whenever setup is unfinished, as the
-// window is where it is finished. Started at login and set up, the app
-// stays in the menu bar (the tray).
-func showWindowAtStartup(code app.Code, atLogin bool) bool {
-	return !atLogin || code == app.CodeNotConfigured || code == app.CodeNoCardSelected
+// startupWindow is what happens to the window when the app starts.
+type startupWindow int
+
+const (
+	// startupHidden keeps the window closed: the app is in the tray.
+	startupHidden startupWindow = iota
+	// startupShown opens the window.
+	startupShown
+	// startupMinimised opens the window minimised (taskbar or dock).
+	startupMinimised
+)
+
+func (w startupWindow) String() string {
+	return [...]string{"hidden", "shown", "minimised"}[w]
+}
+
+// decideStartupWindow decides what the window does when the app starts.
+// It opens when the user opened the app (it was not started at login, see
+// startedAtLogin), and whenever setup is unfinished, as the window is where
+// it is finished. Started at login and set up, the app stays in the tray;
+// without a tray (GNOME without AppIndicator) a hidden window could not be
+// reopened, so it starts minimised instead.
+func decideStartupWindow(code app.Code, atLogin, hasTray bool) startupWindow {
+	switch {
+	case !atLogin || code == app.CodeNotConfigured || code == app.CodeNoCardSelected:
+		return startupShown
+	case !hasTray:
+		return startupMinimised
+	}
+	return startupHidden
+}
+
+// singleInstanceOptions makes a second copy of the app exit with code 0
+// before it starts syncing (inside application.New), after asking the
+// running copy to call show: the user opened the app again, so its window
+// comes up. A second copy started by an autostart entry (--autostart)
+// leaves the running one in the tray.
+func singleInstanceOptions(show func()) *application.SingleInstanceOptions {
+	return &application.SingleInstanceOptions{
+		UniqueID: bundle.ID,
+		ExitCode: 0,
+		OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
+			logx.Info("gui: the app was opened again", "args", data.Args)
+			if slices.Contains(data.Args, "--autostart") {
+				return
+			}
+			show()
+		},
+	}
 }
 
 // quit shuts the application down and exits the process with code.
@@ -192,6 +237,15 @@ func Run(a *app.App, cfg *config.Store, st *state.DB, version string, autostart 
 		PostShutdown: func() {
 			os.Exit(int(sh.exitCode.Load()))
 		},
+		// A second copy exits here, before the sync engine starts.
+		SingleInstance: singleInstanceOptions(func() {
+			// Called off the main thread, where Wails wants windows shown.
+			application.InvokeAsync(func() {
+				if sh.window != nil {
+					sh.showWindow()
+				}
+			})
+		}),
 	})
 
 	sh.window = sh.app.Window.NewWithOptions(application.WebviewWindowOptions{
@@ -234,9 +288,14 @@ func Run(a *app.App, cfg *config.Store, st *state.DB, version string, autostart 
 		logx.Info("gui started")
 		sh.tray.refresh()
 		atLogin := startedAtLogin(autostart)
-		if code := a.Status().Code; showWindowAtStartup(code, atLogin) {
-			logx.Info("gui: showing the window at startup", "status", code, "at_login", atLogin)
+		code := a.Status().Code
+		switch w := decideStartupWindow(code, atLogin, sh.hasTray); w {
+		case startupShown, startupMinimised:
+			logx.Info("gui: opening the window at startup", "window", w, "status", code, "at_login", atLogin, "tray", sh.hasTray)
 			sh.showWindow()
+			if w == startupMinimised {
+				sh.window.Minimise()
+			}
 		}
 		svc.start(ctx)
 	})
