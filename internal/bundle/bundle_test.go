@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -50,7 +51,8 @@ func TestCreateLaysOutBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("executable: %v", err)
 	}
-	if info.Mode().Perm() != 0o755 {
+	// Windows has no executable bit.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o755 {
 		t.Fatalf("executable mode = %v, want 0755", info.Mode().Perm())
 	}
 	if got, _ := os.ReadFile(exe); string(got) != "binary contents" {
@@ -204,7 +206,8 @@ func TestContaining(t *testing.T) {
 	}
 	for _, tt := range tests {
 		got, ok := Containing(tt.executable)
-		if got != tt.want || ok != tt.ok {
+		// Windows cleans the path with "\".
+		if got = filepath.ToSlash(got); got != tt.want || ok != tt.ok {
 			t.Errorf("Containing(%q) = %q, %v; want %q, %v", tt.executable, got, ok, tt.want, tt.ok)
 		}
 	}

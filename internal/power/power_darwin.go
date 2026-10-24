@@ -1,7 +1,8 @@
 //go:build darwin
 
-// Package power keeps macOS from sleeping while a sync is in progress, by
-// running `caffeinate -i -w <pid>` tied to this process's lifetime.
+// On macOS the system is kept awake by running `caffeinate -i -w <pid>`
+// tied to this process's lifetime.
+
 package power
 
 import (

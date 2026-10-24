@@ -1,8 +1,6 @@
 package gui
 
 import (
-	"syscall"
-
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/app"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/update"
 )
@@ -103,14 +101,4 @@ func updateView(r *update.Release) *UpdateView {
 		return nil
 	}
 	return &UpdateView{Version: r.Version, Notes: r.Notes, URL: r.HTMLURL}
-}
-
-// volumeSize returns the total size of the file system mounted at
-// mountPoint, or 0 if it cannot be determined.
-func volumeSize(mountPoint string) int64 {
-	var fs syscall.Statfs_t
-	if err := syscall.Statfs(mountPoint, &fs); err != nil {
-		return 0
-	}
-	return int64(fs.Blocks) * int64(fs.Bsize)
 }

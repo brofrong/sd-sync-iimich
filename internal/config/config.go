@@ -9,10 +9,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	DefaultConfigDir  = ".config/sd-sync-immich"
-	DefaultConfigName = "config.yaml"
-)
+// DefaultConfigName is the config file's name inside Dir().
+const DefaultConfigName = "config.yaml"
+
+// appDirName names the app's directories under the system's per-user ones.
+const appDirName = "sd-sync-immich"
+
+// defaultDBName is the database's name inside Dir() when db_path is empty.
+const defaultDBName = "state.db"
 
 type Config struct {
 	Immich        ImmichConfig `yaml:"immich"`
@@ -48,6 +52,10 @@ type UploadConfig struct {
 }
 
 type StateConfig struct {
+	// DBPath is the database file; "~/" starts it at the user's home.
+	// Empty (the default) means state.db in Dir(). Installs made before
+	// that store "~/.config/sd-sync-immich/state.db", the same file on
+	// macOS.
 	DBPath string `yaml:"db_path"`
 }
 
@@ -95,7 +103,7 @@ func Default() Config {
 			CheckpointInterval: 0,
 		},
 		State: StateConfig{
-			DBPath: "~/.config/sd-sync-immich/state.db",
+			DBPath: "",
 		},
 		UI: UIConfig{
 			Language: "",
@@ -115,12 +123,13 @@ func Default() Config {
 	}
 }
 
+// ConfigPath is the config file, config.yaml in Dir().
 func ConfigPath() (string, error) {
-	home, err := os.UserHomeDir()
+	dir, err := Dir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, DefaultConfigDir, DefaultConfigName), nil
+	return filepath.Join(dir, DefaultConfigName), nil
 }
 
 func Load() (*Store, error) {
@@ -162,9 +171,6 @@ func (s *Store) applyDefaults() {
 	}
 	if len(s.cfg.Scan.ExcludePatterns) == 0 {
 		s.cfg.Scan.ExcludePatterns = def.Scan.ExcludePatterns
-	}
-	if s.cfg.State.DBPath == "" {
-		s.cfg.State.DBPath = def.State.DBPath
 	}
 }
 
@@ -256,12 +262,24 @@ func (c Config) ServerConfigured() bool {
 	return strings.TrimSpace(c.Immich.URL) != "" && strings.TrimSpace(c.Immich.APIKey) != ""
 }
 
+// ResolvedDBPath is the database file: db_path with "~" expanded, or
+// state.db in Dir() when db_path is empty.
 func (s *Store) ResolvedDBPath() (string, error) {
-	return ExpandPath(s.Get().State.DBPath)
+	p := s.Get().State.DBPath
+	if p == "" {
+		dir, err := Dir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(dir, defaultDBName), nil
+	}
+	return ExpandPath(p)
 }
 
+// ExpandPath replaces a leading "~/" (or "~\" on Windows) with the user's
+// home directory (os.UserHomeDir: $HOME, or the profile on Windows).
 func ExpandPath(p string) (string, error) {
-	if strings.HasPrefix(p, "~/") {
+	if strings.HasPrefix(p, "~/") || strings.HasPrefix(p, "~"+string(filepath.Separator)) {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", err

@@ -91,6 +91,22 @@ func TestScanVolumeAttachesXMPSidecars(t *testing.T) {
 	}
 }
 
+// TestScanRelativePathsUseSlash checks that relative paths, which the
+// database and history store, use "/" on every system, though Windows
+// walks the card with "\".
+func TestScanRelativePathsUseSlash(t *testing.T) {
+	mount := t.TempDir()
+	writeTestFile(t, mount, "DCIM/100X/A.JPG")
+
+	files, err := ScanVolume(mount, config.Default())
+	if err != nil {
+		t.Fatalf("ScanVolume() error = %v", err)
+	}
+	if len(files) != 1 || files[0].RelativePath != "DCIM/100X/A.JPG" {
+		t.Fatalf("ScanVolume() returned %#v, want one file at \"DCIM/100X/A.JPG\"", files)
+	}
+}
+
 func writeTestFile(t *testing.T, root, relativePath string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(relativePath))

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/app"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/bundle"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/desktop"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/i18n"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/install"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
@@ -612,13 +612,13 @@ func tailLines(path string, n int) (string, error) {
 	return string(bytes.Join(lines, []byte{'\n'})), nil
 }
 
-// RevealLog shows app.log in Finder.
+// RevealLog shows app.log in the file manager.
 func (s *Service) RevealLog() error {
 	path := logx.LogPath()
 	if _, err := os.Stat(path); err != nil {
 		return err
 	}
-	return exec.Command("open", "-R", path).Run()
+	return desktop.Reveal(path)
 }
 
 // OpenImmich opens the configured Immich server in the browser.
@@ -627,7 +627,7 @@ func (s *Service) OpenImmich() error {
 	if err != nil {
 		return err
 	}
-	return exec.Command("open", u).Run()
+	return desktop.OpenURL(u)
 }
 
 // CheckForUpdates checks GitHub for a newer release. It returns nil when

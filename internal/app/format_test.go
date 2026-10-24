@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -1216,6 +1217,9 @@ func TestFormatSuppressionKeptOnOwnEject(t *testing.T) {
 // "Couldn't format the card:", so it must not claim the card was
 // formatted.
 func TestFormatSelectFailedDetail(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no Unix permission bits for chmod to remove")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root ignores file permissions")
 	}

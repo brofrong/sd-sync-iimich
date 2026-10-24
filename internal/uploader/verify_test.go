@@ -11,11 +11,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 	"testing"
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/state"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/testenv"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/volume"
 )
 
@@ -31,7 +33,7 @@ func sha1Hex(content []byte) string {
 // the fake card's mount point.
 func newVerifyService(t *testing.T) (*Service, *config.Store, string) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	testenv.Home(t)
 	cfgStore, err := config.Load()
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
@@ -411,6 +413,9 @@ func TestVerifyCardExcludedMediaBlocks(t *testing.T) {
 // fails the whole verification closed, rather than silently treating the
 // files inside it as nonexistent.
 func TestVerifyCardUnreadableDirFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no Unix permission bits for chmod to remove")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root ignores directory permissions")
 	}
@@ -530,6 +535,9 @@ func TestVerifyCardDuplicateIDWorstWins(t *testing.T) {
 // unreadable after being listed (so hashing fails) still counts toward
 // Media, but as not confirmed rather than being silently dropped.
 func TestVerifyCardHashFailureIsMissing(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no Unix permission bits for chmod to remove")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root ignores file permissions")
 	}
@@ -820,6 +828,9 @@ func TestVerifyCardCancelledMidWalk(t *testing.T) {
 // (macOS often creates it unreadable) is skipped without being read, so it
 // neither fails verification nor hides anything the gate must check.
 func TestVerifyCardUnreadableRootTrashesSkipped(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no Unix permission bits for chmod to remove")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root ignores directory permissions")
 	}

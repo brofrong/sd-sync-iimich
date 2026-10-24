@@ -16,6 +16,13 @@ func TestResolve(t *testing.T) {
 	}{
 		{"system russian preferred over english", "", []string{"ru-RU", "en"}, "ru"},
 		{"chinese simplified region variant", "", []string{"zh-Hans-CN"}, "zh-Hans"},
+		// Windows and Linux name Chinese by region, without a script.
+		{"chinese china region means simplified", "", []string{"zh-CN"}, "zh-Hans"},
+		{"chinese singapore region means simplified", "", []string{"zh-SG"}, "zh-Hans"},
+		{"bare chinese means simplified", "", []string{"zh"}, "zh-Hans"},
+		{"chinese taiwan region is traditional", "", []string{"zh-TW"}, "en"},
+		{"chinese hong kong region is traditional", "", []string{"zh-HK"}, "en"},
+		{"chinese traditional script", "", []string{"zh-Hant-TW"}, "en"},
 		{"portuguese portugal maps to brazilian catalog", "", []string{"pt-PT"}, "pt-BR"},
 		{"portuguese brazil matches directly", "", []string{"pt-BR"}, "pt-BR"},
 		{"unsupported system language falls back to english", "", []string{"ko-KR"}, "en"},

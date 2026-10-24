@@ -5,12 +5,14 @@ go 1.26.4
 require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/wailsapp/wails/v3 v3.0.0-beta.34
+	golang.org/x/sys v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
 	howett.net/plist v1.0.2-0.20250314012144-ee69052608d9
 	modernc.org/sqlite v1.53.0
 )
 
 require (
+	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
 	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -22,7 +24,6 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	golang.org/x/image v0.41.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	modernc.org/libc v1.73.4 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

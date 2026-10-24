@@ -2,12 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: ["**"]
   pull_request:
-    branches: [main, master]
 
 jobs:
-  build:
+  macos:
+    name: macOS
     runs-on: macos-latest
     env:
       CGO_ENABLED: "1"
@@ -55,3 +55,78 @@ jobs:
 
       - name: Test
         run: go test -race ./...
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      # Git on Windows checks out with CRLF, which breaks the bash scripts.
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # The script runs the Wails CLI pinned in it through `go run`.
+      - name: Build frontend
+        shell: bash
+        run: scripts/build-frontend.sh
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+  linux:
+    name: Linux
+    runs-on: ubuntu-22.04
+    env:
+      # Wails builds against GTK 4 and WebKitGTK 6 unless the gtk3 tag
+      # selects GTK 3 and WebKitGTK 4.1, the only WebKitGTK ubuntu-22.04
+      # has (see scripts/test-linux.sh).
+      GOFLAGS: -tags=gtk3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install GTK and WebKitGTK
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # The script runs the Wails CLI pinned in it through `go run`.
+      - name: Build frontend
+        run: scripts/build-frontend.sh
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...

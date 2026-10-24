@@ -17,6 +17,7 @@ import (
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/immich"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/scanner"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/state"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/testenv"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/volume"
 )
 
@@ -139,7 +140,7 @@ func TestSyncOnlyUploadsListedFiles(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("HOME", t.TempDir())
+	testenv.Home(t)
 	cfgStore, err := config.Load()
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
@@ -224,7 +225,7 @@ func onlySyncCard(t *testing.T) (*Service, *state.DB, volume.Info) {
 	}))
 	t.Cleanup(srv.Close)
 
-	t.Setenv("HOME", t.TempDir())
+	testenv.Home(t)
 	cfgStore, err := config.Load()
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)

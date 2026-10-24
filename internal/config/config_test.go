@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/testenv"
 )
 
 func TestDefaultEnablesAutomaticCameraMediaDiscovery(t *testing.T) {
@@ -148,7 +150,7 @@ func TestEffectiveConcurrencyDefaultsToFourIndependentOfCPUCount(t *testing.T) {
 }
 
 func TestLoadOldConfigGetsCardDefaults(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testenv.Home(t)
 
 	path, err := ConfigPath()
 	if err != nil {
@@ -241,5 +243,80 @@ func TestAutoConcurrencyIsTheDefault(t *testing.T) {
 	cfg.Upload.Concurrency = 6
 	if cfg.AutoConcurrency() {
 		t.Fatal("AutoConcurrency() = true with an explicit 6, want false")
+	}
+}
+
+func TestResolvedDBPathDefaultsToDir(t *testing.T) {
+	testenv.Home(t)
+
+	store, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := store.Get().State.DBPath; got != "" {
+		t.Errorf("new config db_path = %q, want \"\" (the default location)", got)
+	}
+	dir, err := Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.ResolvedDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dir, "state.db"); got != want {
+		t.Fatalf("ResolvedDBPath() = %q, want %q", got, want)
+	}
+}
+
+// TestResolvedDBPathKeepsStoredPath checks that the db_path existing
+// installs saved (the old default) still points at the same file.
+func TestResolvedDBPathKeepsStoredPath(t *testing.T) {
+	home := testenv.Home(t)
+
+	path, err := ConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte("state:\n  db_path: ~/.config/sd-sync-immich/state.db\n")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got, err := store.ResolvedDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(home, ".config", "sd-sync-immich", "state.db"); got != want {
+		t.Fatalf("ResolvedDBPath() = %q, want %q", got, want)
+	}
+	// Saving keeps the stored path.
+	if err := store.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.Get().State.DBPath; got != "~/.config/sd-sync-immich/state.db" {
+		t.Fatalf("db_path after Save = %q, want the stored path", got)
+	}
+}
+
+func TestConfigPathIsInDir(t *testing.T) {
+	testenv.Home(t)
+
+	dir, err := Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := ConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dir, "config.yaml"); path != want {
+		t.Fatalf("ConfigPath() = %q, want %q", path, want)
 	}
 }

@@ -3,7 +3,6 @@
 package volume
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -13,12 +12,6 @@ import (
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
 )
-
-// ErrErasedNotRemounted indicates `diskutil eraseVolume` succeeded but the
-// freshly formatted partition never reappeared with a new identity within
-// eraseRemountTimeout. Callers must treat this as "the card WAS erased"
-// even though Erase could not confirm it or return the new volume's Info.
-var ErrErasedNotRemounted = errors.New("card erased but its new volume was not found")
 
 // erasePollInterval and eraseRemountTimeout control how Erase polls for the
 // freshly erased partition to remount. They are variables so tests can

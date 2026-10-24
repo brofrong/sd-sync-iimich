@@ -8,6 +8,7 @@ import (
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/immich"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/testenv"
 )
 
 func TestNormalizeServer(t *testing.T) {
@@ -146,7 +147,7 @@ func TestKeyForServer(t *testing.T) {
 // url and key saved.
 func savedServer(t *testing.T, url, key string) *Service {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	testenv.Home(t)
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatal(err)

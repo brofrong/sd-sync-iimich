@@ -10,21 +10,32 @@ import (
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/state"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/testenv"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/uploader"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/volume"
 )
 
 // testConfigStore returns a config.Store usable in tests. config.Load reads
-// and writes under $HOME/.config/sd-sync-immich, so HOME is redirected to a
-// temp dir for the duration of the test.
+// and writes under the user's config directory, so the home directory is
+// redirected to a temp dir for the duration of the test.
 func testConfigStore(t *testing.T) *config.Store {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	testenv.Home(t)
 	store, err := config.Load()
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}
 	return store
+}
+
+// requireVolumeSupport skips a test that uses the real volume package
+// (expecting no card on the test machine) on a system whose volume support
+// has not landed yet.
+func requireVolumeSupport(t *testing.T) {
+	t.Helper()
+	if _, err := volume.ListRemovable(); errors.Is(err, volume.ErrUnsupported) {
+		t.Skip("volume support is not implemented on this system yet")
+	}
 }
 
 // TestSyncNowRecordsRun checks that SyncNow records a sync_runs row (via
@@ -103,6 +114,7 @@ func TestSyncNowRecordsRun(t *testing.T) {
 // machine, this exercises the "no run history" fallback instead) New()
 // must not leave Status zero-valued.
 func TestNewUsesLastFinishedRunAsStartupStatus(t *testing.T) {
+	requireVolumeSupport(t)
 	cfgStore := testConfigStore(t)
 	if err := cfgStore.Update(func(c *config.Config) {
 		c.Immich = config.ImmichConfig{URL: "https://immich.example", APIKey: "key"}
@@ -322,6 +334,7 @@ func TestEjectCardWithoutMountedCardFails(t *testing.T) {
 }
 
 func TestSelectCardPersistsSelection(t *testing.T) {
+	requireVolumeSupport(t)
 	a := testApp(t)
 
 	// The new card isn't mounted on the test machine.

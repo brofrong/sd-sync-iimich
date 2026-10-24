@@ -1,8 +1,9 @@
 //go:build darwin
 
-// Package install installs the app bundle into ~/Applications, manages the
-// LaunchAgent that starts it at login, and migrates v0.3.0 installs (a bare
-// binary at ~/Applications/sd-sync-immich) to the bundle.
+// On macOS the package installs the app bundle into ~/Applications, manages
+// the LaunchAgent that starts it at login, and migrates v0.3.0 installs (a
+// bare binary at ~/Applications/sd-sync-immich) to the bundle.
+
 package install
 
 import (
@@ -360,14 +361,17 @@ func TakeOverAgent(executable string) (Takeover, error) {
 	return res, nil
 }
 
-// ErrTranslocated means the app runs from App Translocation (a quarantined
-// download opened in place), whose path changes on every launch: it must
-// be moved to an Applications folder before it can start at login.
-var ErrTranslocated = errors.New("the app runs from App Translocation; move it to the Applications folder first")
-
 // Translocated reports whether path is inside App Translocation.
 func Translocated(path string) bool {
 	return strings.Contains(path, "/AppTranslocation/")
+}
+
+// AutostartAvailable reports whether the app can start at login: when it
+// runs from its bundle (the LaunchAgent runs the bundle), and the bundle
+// is not translocated, whose path does not survive a restart.
+func AutostartAvailable(executable string) bool {
+	_, ok := bundle.Containing(executable)
+	return ok && !Translocated(executable)
 }
 
 // AutostartEnabled reports whether the LaunchAgent is installed and runs

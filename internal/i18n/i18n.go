@@ -44,6 +44,8 @@ func matchSystemTag(sys string) (string, bool) {
 	switch {
 	case hasPrefixFold(sys, "zh-Hans"):
 		return "zh-Hans", true
+	case simplifiedChineseByRegion(sys):
+		return "zh-Hans", true
 	case hasPrefixFold(sys, "pt"):
 		return "pt-BR", true
 	default:
@@ -53,6 +55,18 @@ func matchSystemTag(sys string) (string, bool) {
 		}
 		return supportedTag(base)
 	}
+}
+
+// simplifiedChineseByRegion reports whether sys is Chinese named without a
+// script, as Windows and Linux do, in a region that writes simplified
+// Chinese: "zh", "zh-CN", "zh-SG" (macOS always names the script).
+func simplifiedChineseByRegion(sys string) bool {
+	for _, tag := range []string{"zh", "zh-CN", "zh-SG"} {
+		if strings.EqualFold(sys, tag) {
+			return true
+		}
+	}
+	return false
 }
 
 func hasPrefixFold(s, prefix string) bool {

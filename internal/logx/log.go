@@ -1,36 +1,42 @@
 package logx
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
+
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/desktop"
 )
 
 var (
-	mu     sync.RWMutex
-	logger *slog.Logger
+	mu      sync.RWMutex
+	logger  *slog.Logger
 	logFile *os.File
 )
 
+// appDirName names the app's log directory under the system's one.
+const appDirName = "sd-sync-immich"
+
+// LogPath is the log file, app.log in LogDir(); "" when the user's
+// directories are unknown.
 func LogPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
+	dir := LogDir()
+	if dir == "" {
 		return ""
 	}
-	return filepath.Join(home, "Library", "Logs", "sd-sync-immich", "app.log")
-}
-
-func LogDir() string {
-	return filepath.Dir(LogPath())
+	return filepath.Join(dir, "app.log")
 }
 
 // Init configures file logging. Returns the log file path.
 func Init() (string, error) {
 	path := LogPath()
+	if path == "" {
+		return "", errors.New("no log directory: the user's home is unknown")
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
 	}
@@ -80,13 +86,13 @@ func log(level slog.Level, msg string, args ...any) {
 	slog.Log(nil, level, msg, args...)
 }
 
-// OpenLog opens the log file in the default macOS text editor.
+// OpenLog opens the log file in the default text editor.
 func OpenLog() error {
 	path := LogPath()
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return fmt.Errorf("log file not found: %s", path)
 	}
-	return exec.Command("open", path).Run()
+	return desktop.Open(path)
 }
 
 func Close() error {

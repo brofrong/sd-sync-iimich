@@ -10,23 +10,8 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-type EventType int
-
-const (
-	EventMounted EventType = iota
-	EventUnmounted
-)
-
-type Event struct {
-	Type EventType
-	Info Info
-}
-
-type Watcher struct {
-	events chan Event
-	done   chan struct{}
-}
-
+// NewWatcher starts watching /Volumes for volumes being mounted and
+// unmounted.
 func NewWatcher() (*Watcher, error) {
 	w := &Watcher{
 		events: make(chan Event, 16),
@@ -34,14 +19,6 @@ func NewWatcher() (*Watcher, error) {
 	}
 	go w.run()
 	return w, nil
-}
-
-func (w *Watcher) Events() <-chan Event {
-	return w.events
-}
-
-func (w *Watcher) Close() {
-	close(w.done)
 }
 
 func (w *Watcher) run() {

@@ -15,13 +15,6 @@ import (
 
 const volumesRoot = "/Volumes"
 
-type Info struct {
-	Name       string
-	MountPoint string
-	UUID       string
-	Removable  bool
-}
-
 func ListMounted() ([]Info, error) {
 	entries, err := os.ReadDir(volumesRoot)
 	if err != nil {
