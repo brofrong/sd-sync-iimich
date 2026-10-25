@@ -123,6 +123,8 @@ func TestOpenURLAllowlist(t *testing.T) {
 		"http://github.com/brofrong/sd-sync-iimich",
 		"https://GitHub.com/brofrong/sd-sync-iimich",
 		"https://github.com.evil.example/brofrong/sd-sync-iimich",
+		"https://github.com/brofrong/sd-sync-iimich.evil.com",
+		"https://github.com/brofrong/sd-sync-iimich/issues/new.evil",
 		"https://evil@github.com/brofrong/sd-sync-iimich",
 		"https://github.com:8443/brofrong/sd-sync-iimich",
 		"file:///etc/passwd",

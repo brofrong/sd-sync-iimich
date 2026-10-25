@@ -5,12 +5,10 @@
   // holds the version (with a "Beta" badge on Windows and Linux), links
   // to the GitHub repository and to a new issue, and a Quit button (the
   // way out when there is no tray).
-  import { onMount } from "svelte";
-  import type { AppInfoView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
   import { t } from "../lib/i18n";
   import { icons } from "../lib/icons";
   import { sections, toneFor } from "../lib/stores";
-  import { appState, backend, status } from "../lib/backend";
+  import { appInfo, appState, backend, status } from "../lib/backend";
 
   interface Props {
     current: string;
@@ -36,13 +34,7 @@
     buttons[next]?.focus();
   }
 
-  let info = $state<AppInfoView | null>(null);
-  onMount(() => {
-    backend.AppInfo().then(
-      (i) => (info = i),
-      (err) => console.error("AppInfo failed", err),
-    );
-  });
+  const info = $derived($appInfo);
 
   function open(url: string | undefined): void {
     if (!url) return;

@@ -655,11 +655,14 @@ export function createMockTransport(): Transport {
     RevealLog: async () => console.info("[mock] RevealLog"),
     OpenImmich: async () => console.info("[mock] OpenImmich", SERVER_URL),
     AppInfo: async () => appInfo((query.get("os") ?? "macos").toLowerCase(), state.version),
-    // As Go: only the repository and a new issue.
+    // Only the repository and a new issue, like Go (whose check is
+    // stricter: a new issue may only carry a canonically encoded body).
     OpenURL: async (u) => {
-      if (u !== REPO_URL && u !== NEW_ISSUE_URL && !u.startsWith(NEW_ISSUE_URL + "?body=")) {
-        throw new Error("only the project's GitHub pages can be opened");
-      }
+      const q = u.indexOf("?");
+      const page = q < 0 ? u : u.slice(0, q);
+      const query = q < 0 ? "" : u.slice(q + 1);
+      const ok = (page === REPO_URL && q < 0) || (page === NEW_ISSUE_URL && (q < 0 || query.startsWith("body=")));
+      if (!ok || u.includes("#")) throw new Error("only the project's GitHub pages can be opened");
       console.info("[mock] OpenURL", u);
     },
     Quit: async () => console.info("[mock] Quit"),

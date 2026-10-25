@@ -1,18 +1,27 @@
 <script lang="ts">
   // The Logs section: the end of app.log in a monospace view, scrolled to
   // the newest line, with Refresh, Copy (to attach the log to an issue)
-  // and Show in Finder. Warning and error lines are tinted.
+  // and Show in Finder (File Explorer on Windows; on Linux the file
+  // manager opens the log's folder). Warning and error lines are tinted.
   import { onDestroy, onMount, tick } from "svelte";
   import { fade } from "svelte/transition";
   import Button from "../components/Button.svelte";
   import GlassCard from "../components/GlassCard.svelte";
-  import { backend } from "../lib/backend";
+  import { appInfo, backend } from "../lib/backend";
   import { formatNumber, t } from "../lib/i18n";
   import { icons } from "../lib/icons";
   import { reducedMotion } from "../lib/stores";
 
   const LINES = 300;
   const ms = (n: number) => ($reducedMotion ? 0 : n);
+
+  const revealLabel = $derived(
+    $appInfo?.os === "macOS"
+      ? t("logs.reveal_mac")
+      : $appInfo?.os === "Windows"
+        ? t("logs.reveal_windows")
+        : t("logs.reveal"),
+  );
 
   let text = $state<string | null>(null);
   let loadError = $state("");
@@ -107,7 +116,7 @@
         </span>
         <Button onclick={load}>{t("logs.refresh")}</Button>
         <Button disabled={!text} onclick={copy}>{t("logs.copy")}</Button>
-        <Button onclick={reveal}>{t("logs.reveal")}</Button>
+        <Button onclick={reveal}>{revealLabel}</Button>
       </div>
     </div>
 

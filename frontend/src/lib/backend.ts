@@ -8,7 +8,7 @@
 // in the shipped app would hide a broken bridge.
 import { writable, type Readable } from "svelte/store";
 import { Events } from "@wailsio/runtime";
-import { Service, StateView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
+import { AppInfoView, Service, StateView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
 import { Status } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/app";
 import { lang } from "./i18n";
 import { navigate } from "./stores";
@@ -81,6 +81,14 @@ export const status: Readable<Status> = { subscribe: statusStore.subscribe };
 /** The latest full state (server, card, settings, language, …). */
 export const appState: Readable<StateView> = { subscribe: stateStore.subscribe };
 
+const appInfoStore = writable<AppInfoView | null>(null);
+
+/**
+ * This copy of the app (Service.AppInfo): its system, whether it is a
+ * beta, the GitHub links. null until it has loaded; it does not change.
+ */
+export const appInfo: Readable<AppInfoView | null> = { subscribe: appInfoStore.subscribe };
+
 let lastStatusAt = 0;
 
 /** parseTime parses a Go time (RFC 3339 with up to nanoseconds); 0 if invalid. */
@@ -121,6 +129,10 @@ export function connect(): () => void {
       tr.on("navigate", navigate),
     ];
     tr.backend.State().then(setState, (err) => console.error("State failed", err));
+    tr.backend.AppInfo().then(
+      (info) => appInfoStore.set(info),
+      (err) => console.error("AppInfo failed", err),
+    );
   });
   return () => {
     closed = true;

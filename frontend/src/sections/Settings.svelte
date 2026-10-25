@@ -15,7 +15,7 @@
   import Button from "../components/Button.svelte";
   import GlassCard from "../components/GlassCard.svelte";
   import Switch from "../components/Switch.svelte";
-  import { appState, backend } from "../lib/backend";
+  import { appInfo, appState, backend } from "../lib/backend";
   import { formatNumber, languageNames, supported, t } from "../lib/i18n";
   import { icons } from "../lib/icons";
   import { reducedMotion } from "../lib/stores";
@@ -25,6 +25,25 @@
   const MAX_CONCURRENCY = 16;
 
   const ms = (n: number) => ($reducedMotion ? 0 : n);
+
+  // Where the app's icon lives differs by system: the macOS menu bar, the
+  // Windows notification area; a Linux desktop may have no tray at all,
+  // so it (and the window before AppInfo loads) gets neutral wording.
+  const os = $derived($appInfo?.os ?? "");
+  const autostartHint = $derived(
+    os === "macOS"
+      ? t("settings.autostart_hint_mac")
+      : os === "Windows"
+        ? t("settings.autostart_hint_windows")
+        : t("settings.autostart_hint"),
+  );
+  const notifyHint = $derived(
+    os === "macOS"
+      ? t("settings.notify_enabled_hint_mac")
+      : os === "Windows"
+        ? t("settings.notify_enabled_hint_windows")
+        : t("settings.notify_enabled_hint"),
+  );
 
   function message(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
@@ -320,7 +339,7 @@
           {#if $appState.settings.autostartTranslocated}
             {t("settings.autostart_translocated")}
           {:else if $appState.settings.autostartAvailable}
-            {t("settings.autostart_hint")}
+            {autostartHint}
           {:else}
             {t("settings.autostart_unavailable")}
           {/if}
@@ -380,9 +399,19 @@
               describedby="set-auto-format-confirm"
               onclick={enableAutoFormat}
             >
-              {confirmWait > 0
-                ? t("settings.auto_format_enable_countdown", { seconds: formatNumber(confirmWait) })
-                : t("settings.auto_format_enable")}
+              <!-- The widest label (the countdown's start) reserves the
+                   button's width, so it does not jump as the count ends. -->
+              <span class="reserve">
+                <span class="slot" aria-hidden="true">
+                  {t("settings.auto_format_enable_countdown", { seconds: formatNumber(CONFIRM_SECONDS) })}
+                </span>
+                <span class="slot" aria-hidden="true">{t("settings.auto_format_enable")}</span>
+                <span>
+                  {confirmWait > 0
+                    ? t("settings.auto_format_enable_countdown", { seconds: formatNumber(confirmWait) })
+                    : t("settings.auto_format_enable")}
+                </span>
+              </span>
             </Button>
           </div>
         </div>
@@ -398,7 +427,7 @@
     <div class="row">
       <div class="text">
         <label for="set-notify">{t("settings.notify_enabled")}</label>
-        <p class="hint" id="set-notify-hint">{t("settings.notify_enabled_hint")}</p>
+        <p class="hint" id="set-notify-hint">{notifyHint}</p>
       </div>
       <Switch
         id="set-notify"
@@ -622,6 +651,17 @@
   .confirm-row .buttons {
     margin: 0;
     margin-left: auto;
+  }
+  .reserve {
+    display: inline-grid;
+    justify-items: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .reserve > span {
+    grid-area: 1 / 1;
+  }
+  .reserve .slot {
+    visibility: hidden;
   }
 
   /* ---- Notification kinds ---- */

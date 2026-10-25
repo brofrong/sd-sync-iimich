@@ -77,11 +77,13 @@
   .btn:active:not(:disabled) {
     transform: scale(0.96);
   }
+  /* Clearly unavailable: dimmed, with a "not allowed" pointer. */
   .btn:disabled {
-    cursor: default;
-    opacity: 0.6;
+    cursor: not-allowed;
+    opacity: 0.45;
   }
   .btn.busy {
+    cursor: progress;
     opacity: 0.85;
   }
 
@@ -94,9 +96,11 @@
     background: var(--accent);
     box-shadow: var(--glow-strong), inset 0 1px 0 rgba(255, 255, 255, 0.28);
   }
-  /* Glow marks what can be clicked now; a disabled primary has none. */
+  /* Glow marks what can be clicked now; a disabled primary has none and
+     loses most of its colour. */
   .primary:disabled:not(.busy) {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    filter: saturate(0.35);
   }
 
   .spinner {
