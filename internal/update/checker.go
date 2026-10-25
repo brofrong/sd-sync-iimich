@@ -39,8 +39,9 @@ type Client struct {
 	HTTPClient     *http.Client
 
 	allowLocalDownloads bool
-	// goos overrides runtime.GOOS in tests: Check picks its asset.
-	goos string
+	// goos and goarch override runtime.GOOS and runtime.GOARCH in tests:
+	// Check picks their asset.
+	goos, goarch string
 }
 
 // Timeouts, variables for tests. The client has no overall timeout: a
@@ -127,10 +128,14 @@ func (c *Client) Check(ctx context.Context) (*Release, error) {
 		return nil, nil
 	}
 
-	assetName := AssetName(c.goos)
-	if c.goos == "" {
-		assetName = AssetName(runtime.GOOS)
+	goos, goarch := c.goos, c.goarch
+	if goos == "" {
+		goos = runtime.GOOS
 	}
+	if goarch == "" {
+		goarch = runtime.GOARCH
+	}
+	assetName := AssetName(goos, goarch)
 	if assetName == "" {
 		return nil, fmt.Errorf("there are no updates for this system")
 	}

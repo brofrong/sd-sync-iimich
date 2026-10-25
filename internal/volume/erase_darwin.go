@@ -24,6 +24,13 @@ var eraseRemountTimeout = 60 * time.Second
 // Erase refuses to format an entire disk instead of a single partition.
 var partitionIdentifier = regexp.MustCompile(`^disk[0-9]+s[0-9]+$`)
 
+// EraseNeedsAdmin reports whether Erase would refuse every card for lack
+// of administrator rights: never on macOS, where diskutil erases a
+// removable card without them.
+func EraseNeedsAdmin() bool {
+	return false
+}
+
 // Erase reformats the volume mounted at mountPoint in place, keeping its
 // filesystem type (exFAT or FAT32/FAT16) and volume name.
 //

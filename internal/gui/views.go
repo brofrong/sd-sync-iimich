@@ -54,6 +54,11 @@ type CardView struct {
 // (AutostartTranslocated: opened in place from a quarantined download, so
 // it must be moved to Applications first): the switch is then disabled.
 // Autostart is true only when the LaunchAgent runs this very executable.
+//
+// AutoFormatNeedsAdmin (read only, ignored by SaveSettings) is true when
+// the system would only format a card with administrator rights (Windows
+// without elevation, see volume.EraseNeedsAdmin): auto-format then never
+// formats, and the window says so under its switch.
 type SettingsView struct {
 	Language              string `json:"language"`
 	Concurrency           int    `json:"concurrency"`
@@ -62,9 +67,10 @@ type SettingsView struct {
 	AutostartAvailable    bool   `json:"autostartAvailable"`
 	AutostartTranslocated bool   `json:"autostartTranslocated"`
 
-	AutoEject     bool              `json:"autoEject"`
-	AutoFormat    bool              `json:"autoFormat"`
-	Notifications NotificationsView `json:"notifications"`
+	AutoEject            bool              `json:"autoEject"`
+	AutoFormat           bool              `json:"autoFormat"`
+	AutoFormatNeedsAdmin bool              `json:"autoFormatNeedsAdmin"`
+	Notifications        NotificationsView `json:"notifications"`
 }
 
 // NotificationsView holds the notification switches: Enabled turns all of

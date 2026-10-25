@@ -12,7 +12,7 @@ import (
 )
 
 func TestApplyStartsInstallerFromTemp(t *testing.T) {
-	client, rel, _ := fakeRelease(t, AssetName("windows"), []byte("MZ installer"), "")
+	client, rel, _ := fakeRelease(t, AssetName("windows", "amd64"), []byte("MZ installer"), "")
 	temp := t.TempDir()
 	t.Setenv("TMP", temp)
 	t.Setenv("TEMP", temp)

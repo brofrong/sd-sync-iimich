@@ -2,6 +2,7 @@ package gui
 
 import (
 	"errors"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -490,6 +491,65 @@ func TestNotificationTextsExist(t *testing.T) {
 				t.Errorf("%s: no %q", lang, key)
 			}
 		}
+	}
+}
+
+// TestEjectFailedBodyPerSystem: the failed-eject notification names Finder
+// on macOS only; Windows, Linux and any other system get the OS-neutral
+// text, in every language. Codes without an OS wording keep their body.
+func TestEjectFailedBodyPerSystem(t *testing.T) {
+	tests := []struct{ goos, want string }{
+		{"darwin", "notify.eject_failed.body_mac"},
+		{"windows", "notify.eject_failed.body"},
+		{"linux", "notify.eject_failed.body"},
+		{"freebsd", "notify.eject_failed.body"},
+	}
+	for _, lang := range i18n.Supported {
+		c, err := i18n.Load(lang)
+		if err != nil {
+			t.Fatalf("load %s: %v", lang, err)
+		}
+		for _, tt := range tests {
+			if got := bodyKey(c, string(app.NoticeEjectFailed), tt.goos); got != tt.want {
+				t.Errorf("%s: bodyKey(eject_failed, %s) = %q, want %q", lang, tt.goos, got, tt.want)
+			}
+			if got := bodyKey(c, "done", tt.goos); got != "notify.done.body" {
+				t.Errorf("%s: bodyKey(done, %s) = %q, want notify.done.body", lang, tt.goos, got)
+			}
+		}
+		mac, neutral := c.T("notify.eject_failed.body_mac", nil), c.T("notify.eject_failed.body", nil)
+		if mac == neutral {
+			t.Errorf("%s: the macOS and the neutral eject_failed bodies are the same %q", lang, mac)
+		}
+	}
+	// English: Finder on the Mac, nowhere else.
+	c := englishCatalog(t)
+	if body := c.T(bodyKey(c, "eject_failed", "darwin"), nil); !strings.Contains(body, "Finder") {
+		t.Errorf("macOS body %q, want it to name Finder", body)
+	}
+	for _, goos := range []string{"windows", "linux"} {
+		if body := c.T(bodyKey(c, "eject_failed", goos), nil); strings.Contains(body, "Finder") {
+			t.Errorf("%s body %q names Finder", goos, body)
+		}
+	}
+}
+
+// TestEjectFailedNotificationBody: the notifier sends this system's
+// wording of the failed-eject body.
+func TestEjectFailedNotificationBody(t *testing.T) {
+	c := englishCatalog(t)
+	f := &fakeSender{}
+	params := map[string]string{"name": "CARD", "detail": "busy"}
+	newNotifier(f).notice(app.Notice{Kind: app.NoticeEjectFailed, Params: params}, notifyConfig(nil), c)
+	msgs := f.messages()
+	if len(msgs) != 1 {
+		t.Fatalf("sent %d notifications, want 1", len(msgs))
+	}
+	if want := c.T(bodyKey(c, "eject_failed", runtime.GOOS), params); msgs[0].Body != want {
+		t.Errorf("body = %q, want %q", msgs[0].Body, want)
+	}
+	if hasFinder := strings.Contains(msgs[0].Body, "Finder"); hasFinder != (runtime.GOOS == "darwin") {
+		t.Errorf("on %s the body %q names Finder: %v", runtime.GOOS, msgs[0].Body, hasFinder)
 	}
 }
 

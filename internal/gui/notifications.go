@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"runtime"
 	"sync"
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/app"
@@ -192,7 +193,7 @@ func (n *notifier) status(st app.Status, cfg config.Config, c *i18n.Catalog) {
 	m := notify.Message{
 		ID:    notifyID + code,
 		Title: c.T("notify."+code+".title", st.Params),
-		Body:  c.T("notify."+code+".body", st.Params),
+		Body:  c.T(bodyKey(c, code, runtime.GOOS), st.Params),
 		Data:  map[string]string{"code": code},
 	}
 	if a, ok := codeActions[st.Code]; ok {
@@ -208,6 +209,31 @@ func (n *notifier) status(st app.Status, cfg config.Config, c *i18n.Catalog) {
 		n.countdownShown = true
 		n.mu.Unlock()
 	}
+}
+
+// osKeySuffix is the suffix of the locale keys worded for system goos
+// alone, as the frontend names them (logs.reveal_mac,
+// settings.autostart_hint_windows): "" when goos has none.
+func osKeySuffix(goos string) string {
+	switch goos {
+	case "darwin":
+		return "_mac"
+	case "windows":
+		return "_windows"
+	}
+	return ""
+}
+
+// bodyKey is the locale key of the body of the notification texts on
+// system goos: "notify.<texts>.body_mac" on macOS ("…_windows" on Windows)
+// when c has such a wording, so it can name Finder, and the OS-neutral
+// "notify.<texts>.body" otherwise.
+func bodyKey(c *i18n.Catalog, texts, goos string) string {
+	key := "notify." + texts + ".body"
+	if sfx := osKeySuffix(goos); sfx != "" && c.Has(key+sfx) {
+		return key + sfx
+	}
+	return key
 }
 
 // endCountdown removes the format_pending notification once the countdown
@@ -247,7 +273,7 @@ func (n *notifier) notice(no app.Notice, cfg config.Config, c *i18n.Catalog) {
 	n.out.Send(notify.Message{
 		ID:    notifyID + texts,
 		Title: c.T("notify."+texts+".title", no.Params),
-		Body:  c.T("notify."+texts+".body", no.Params),
+		Body:  c.T(bodyKey(c, texts, runtime.GOOS), no.Params),
 		Data:  map[string]string{"notice": k},
 	})
 }

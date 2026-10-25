@@ -55,6 +55,28 @@ func TestSettingsViewRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSettingsViewAutoFormatNeedsAdmin: the window learns whether
+// formatting needs administrator rights here (volume.EraseNeedsAdmin); it
+// is not a setting, so saving leaves the card settings as they were.
+func TestSettingsViewAutoFormatNeedsAdmin(t *testing.T) {
+	orig := eraseNeedsAdmin
+	t.Cleanup(func() { eraseNeedsAdmin = orig })
+	for _, needs := range []bool{false, true} {
+		eraseNeedsAdmin = func() bool { return needs }
+		c := config.Default()
+		c.Card = config.CardConfig{AutoEject: true, AutoFormat: true}
+		v := settingsView(c)
+		if v.AutoFormatNeedsAdmin != needs {
+			t.Errorf("needs admin %v: AutoFormatNeedsAdmin = %v", needs, v.AutoFormatNeedsAdmin)
+		}
+		got := config.Default()
+		applySettings(&got, v)
+		if got.Card != c.Card {
+			t.Errorf("needs admin %v: saved Card = %+v, want %+v", needs, got.Card, c.Card)
+		}
+	}
+}
+
 func TestRetryError(t *testing.T) {
 	if err := retryError(nil); err != nil {
 		t.Fatalf("retryError(nil) = %v, want nil", err)

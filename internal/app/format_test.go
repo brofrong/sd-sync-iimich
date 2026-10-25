@@ -927,6 +927,163 @@ func TestFormatNeedsAdmin(t *testing.T) {
 	}
 }
 
+// TestFormatNeedsAdminUpFront: when the system would only erase the card
+// with administrator rights (Windows without elevation), the card is not
+// verified, there is no countdown and nothing is erased: format_needs_admin
+// is published and the card is still ejected, its ejected status saying
+// why it was not formatted.
+func TestFormatNeedsAdminUpFront(t *testing.T) {
+	a, v, e, _ := formatApp(t)
+	a.eraseNeedsAdmin = func() bool { return true }
+	useFakeImmich(t, a)
+	putPhotos(t, a, "A.JPG")
+	card := *a.MountedTarget()
+	ej := fakeEject(a, nil)
+	notices := recordNotices(a)
+	statuses := recordFullStatuses(a)
+
+	a.SyncNow()
+	waitFor(t, "ejected", func() bool { return statuses.has(CodeEjected) })
+	waitSyncFinished(t, a)
+
+	got := squash(statuses.after(CodeSyncing))
+	want := []Code{CodeDone, CodeFormatNeedsAdmin, CodeEjected}
+	if !slices.Equal(got, want) {
+		t.Fatalf("statuses = %v, want %v", got, want)
+	}
+	if v.count() != 0 {
+		t.Errorf("verify calls = %d, want none", v.count())
+	}
+	if got := e.all(); len(got) != 0 {
+		t.Errorf("erase calls = %v, want none", got)
+	}
+	if st, _ := statuses.last(CodeFormatNeedsAdmin); !maps.Equal(st.Params, map[string]string{"name": card.Name}) {
+		t.Errorf("format_needs_admin params = %v, want only the card name %q", st.Params, card.Name)
+	}
+	if got := ej.all(); len(got) != 1 || got[0] != card.MountPoint {
+		t.Errorf("eject calls = %v, want the card at %s", got, card.MountPoint)
+	}
+	st, _ := statuses.last(CodeEjected)
+	if want := map[string]string{"uploaded": "1", "format": "needs_admin", "name": card.Name}; !maps.Equal(st.Params, want) {
+		t.Errorf("ejected params = %v, want %v", st.Params, want)
+	}
+	if got := a.Config.Get().Watch.VolumeUUID; got != "VOL-UUID" {
+		t.Errorf("selected = %q, want VOL-UUID kept", got)
+	}
+	if got := rememberedUUIDs(t, a); !slices.Contains(got, "VOL-UUID") {
+		t.Errorf("remembered = %v, want VOL-UUID kept (not erased)", got)
+	}
+	if got := syncDoneNotices(notices.all()); len(got) != 1 || got[0].Params["ejected"] != "true" {
+		t.Errorf("sync_done notices = %+v, want one, ejected", got)
+	}
+
+	// The user puts the ejected card back in: a new insertion, told again.
+	a.handleVolumeEvent(volume.Event{Type: volume.EventMounted, Info: card})
+	waitFor(t, "the second sync", func() bool {
+		runs, err := a.State.RecentRuns(10)
+		return err == nil && len(runs) == 2 && runs[0].FinishedAt != nil
+	})
+	waitSyncFinished(t, a)
+	if n := countCode(statuses.codes(), CodeFormatNeedsAdmin); n != 2 {
+		t.Errorf("format_needs_admin published %d times, want twice (once per insertion): %v", n, statuses.codes())
+	}
+	if v.count() != 0 || len(e.all()) != 0 {
+		t.Errorf("verify %d, erase %v; want none", v.count(), e.all())
+	}
+}
+
+func countCode(codes []Code, code Code) int {
+	n := 0
+	for _, c := range codes {
+		if c == code {
+			n++
+		}
+	}
+	return n
+}
+
+// TestFormatNeedsAdminUpFrontOncePerInsertion: with auto-eject off the card
+// stays in, and later syncs during the same insertion do not report
+// format_needs_admin again.
+func TestFormatNeedsAdminUpFrontOncePerInsertion(t *testing.T) {
+	a, v, e, _ := formatApp(t)
+	a.eraseNeedsAdmin = func() bool { return true }
+	if err := a.Config.Update(func(c *config.Config) { c.Card.AutoEject = false }); err != nil {
+		t.Fatal(err)
+	}
+	useFakeImmich(t, a)
+	putPhotos(t, a, "A.JPG")
+	ej := fakeEject(a, nil)
+	statuses := recordFullStatuses(a)
+
+	a.SyncNow()
+	waitFor(t, "format_needs_admin", func() bool { return statuses.has(CodeFormatNeedsAdmin) })
+	waitSyncFinished(t, a)
+	if got := a.Status().Code; got != CodeFormatNeedsAdmin {
+		t.Errorf("Status().Code = %q, want format_needs_admin", got)
+	}
+
+	putPhotos(t, a, "B.JPG")
+	a.SyncNow()
+	waitFor(t, "the second sync", func() bool {
+		runs, err := a.State.RecentRuns(10)
+		return err == nil && len(runs) == 2 && runs[0].FinishedAt != nil
+	})
+	waitSyncFinished(t, a)
+
+	if n := countCode(statuses.codes(), CodeFormatNeedsAdmin); n != 1 {
+		t.Errorf("format_needs_admin published %d times, want once: %v", n, statuses.codes())
+	}
+	if v.count() != 0 || len(e.all()) != 0 || len(ej.all()) != 0 {
+		t.Errorf("verify %d, erase %v, eject %v; want none", v.count(), e.all(), ej.all())
+	}
+
+	// Pulled out and put back in: told again.
+	card := *a.MountedTarget()
+	a.handleVolumeEvent(volume.Event{Type: volume.EventUnmounted, Info: card})
+	a.handleVolumeEvent(volume.Event{Type: volume.EventMounted, Info: card})
+	waitFor(t, "the third sync", func() bool {
+		runs, err := a.State.RecentRuns(10)
+		return err == nil && len(runs) == 3 && runs[0].FinishedAt != nil
+	})
+	waitSyncFinished(t, a)
+	if n := countCode(statuses.codes(), CodeFormatNeedsAdmin); n != 2 {
+		t.Errorf("format_needs_admin published %d times, want twice after a new insertion: %v", n, statuses.codes())
+	}
+}
+
+// TestFormatFlowUnchangedWithoutNeedsAdmin: when erasing does not need
+// administrator rights (macOS, Linux, an elevated Windows app) the card is
+// verified, counted down, erased and ejected as before.
+func TestFormatFlowUnchangedWithoutNeedsAdmin(t *testing.T) {
+	a, v, e, newCard := formatApp(t)
+	asked := 0
+	a.eraseNeedsAdmin = func() bool { asked++; return false }
+	useFakeImmich(t, a)
+	putPhotos(t, a, "A.JPG")
+	ej := fakeEject(a, nil)
+	statuses := recordFullStatuses(a)
+
+	a.SyncNow()
+	waitFor(t, "ejected", func() bool { return statuses.has(CodeEjected) })
+	waitSyncFinished(t, a)
+
+	got := squash(statuses.after(CodeSyncing))
+	want := []Code{CodeDone, CodeVerifying, CodeFormatPending, CodeFormatting, CodeFormatted, CodeEjected}
+	if !slices.Equal(got, want) {
+		t.Fatalf("statuses = %v, want %v", got, want)
+	}
+	if asked != 1 || v.count() != 1 || len(e.all()) != 1 {
+		t.Errorf("needs-admin asked %d, verify %d, erase %v; want one each", asked, v.count(), e.all())
+	}
+	if got := ej.all(); len(got) != 1 || got[0] != newCard.MountPoint {
+		t.Errorf("eject calls = %v, want the new card", got)
+	}
+	if st, _ := statuses.last(CodeEjected); st.Params["format"] != "formatted" {
+		t.Errorf("ejected params = %v, want format=formatted", st.Params)
+	}
+}
+
 // TestVolumeEventsIgnoredWhileErasing: the card's unmount and the blank
 // card's mount while diskutil erases it neither cancel the phase nor
 // change the status.

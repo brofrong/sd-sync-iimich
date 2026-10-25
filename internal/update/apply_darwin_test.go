@@ -72,7 +72,7 @@ func TestPrepareRestartOutsideBundleDoesNothing(t *testing.T) {
 
 func TestDarwinApplyReplacesExecutableAndRestarts(t *testing.T) {
 	newBinary := []byte("new executable")
-	client, rel, _ := fakeRelease(t, AssetName("darwin"), newBinary, "")
+	client, rel, _ := fakeRelease(t, AssetName("darwin", "arm64"), newBinary, "")
 	exe := filepath.Join(t.TempDir(), "SD Sync Immich.app", "Contents", "MacOS", "sd-sync-immich")
 	if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
 		t.Fatal(err)
@@ -98,7 +98,7 @@ func TestDarwinApplyReplacesExecutableAndRestarts(t *testing.T) {
 }
 
 func TestDarwinApplyDoesNotQuitWhenResignFails(t *testing.T) {
-	client, rel, _ := fakeRelease(t, AssetName("darwin"), []byte("new executable"), "")
+	client, rel, _ := fakeRelease(t, AssetName("darwin", "arm64"), []byte("new executable"), "")
 	exe := filepath.Join(t.TempDir(), "SD Sync Immich.app", "Contents", "MacOS", "sd-sync-immich")
 	if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
 		t.Fatal(err)

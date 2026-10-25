@@ -65,7 +65,7 @@ func (r *recordStart) start(p process) error {
 
 func TestWindowsUpdateRunsInstallerSilently(t *testing.T) {
 	setup := []byte("MZ new installer")
-	client, rel, _ := fakeRelease(t, AssetName("windows"), setup, "")
+	client, rel, _ := fakeRelease(t, AssetName("windows", "amd64"), setup, "")
 	dir := t.TempDir()
 	stale := filepath.Join(dir, "SD-Sync-Immich-Setup-123.exe")
 	if err := os.WriteFile(stale, []byte("old installer"), 0o644); err != nil {
@@ -101,7 +101,7 @@ func TestWindowsUpdateRunsInstallerSilently(t *testing.T) {
 }
 
 func TestWindowsUpdateNeverStartsInstallerWithBadChecksum(t *testing.T) {
-	client, rel, _ := fakeRelease(t, AssetName("windows"), []byte("MZ tampered"), badSum)
+	client, rel, _ := fakeRelease(t, AssetName("windows", "amd64"), []byte("MZ tampered"), badSum)
 	dir := t.TempDir()
 	var rec recordStart
 	if err := client.runInstaller(context.Background(), rel, dir, rec.start); err == nil {
@@ -116,7 +116,7 @@ func TestWindowsUpdateNeverStartsInstallerWithBadChecksum(t *testing.T) {
 }
 
 func TestWindowsUpdateRemovesInstallerThatDidNotStart(t *testing.T) {
-	client, rel, _ := fakeRelease(t, AssetName("windows"), []byte("MZ installer"), "")
+	client, rel, _ := fakeRelease(t, AssetName("windows", "amd64"), []byte("MZ installer"), "")
 	dir := t.TempDir()
 	rec := recordStart{err: errors.New("access denied")}
 	if err := client.runInstaller(context.Background(), rel, dir, rec.start); err == nil {
@@ -162,7 +162,7 @@ func assertOnlyFile(t *testing.T, path, content string) {
 }
 
 func TestLinuxUpdateWithoutAppImage(t *testing.T) {
-	client, rel, requests := fakeRelease(t, AssetName("linux"), []byte("new AppImage"), "")
+	client, rel, requests := fakeRelease(t, AssetName("linux", "amd64"), []byte("new AppImage"), "")
 	var rec recordStart
 	err := client.replaceAppImage(context.Background(), rel, "", "", 42, rec.start)
 	if !errors.Is(err, ErrManualUpdate) {
@@ -177,7 +177,7 @@ func TestLinuxUpdateWithoutAppImage(t *testing.T) {
 }
 
 func TestLinuxUpdateWithMissingAppImage(t *testing.T) {
-	client, rel, requests := fakeRelease(t, AssetName("linux"), []byte("new AppImage"), "")
+	client, rel, requests := fakeRelease(t, AssetName("linux", "amd64"), []byte("new AppImage"), "")
 	missing := filepath.Join(t.TempDir(), "gone.AppImage")
 	var rec recordStart
 	err := client.replaceAppImage(context.Background(), rel, missing, "", 42, rec.start)
@@ -194,7 +194,7 @@ func TestLinuxUpdateWithMissingAppImage(t *testing.T) {
 
 func TestLinuxUpdateReplacesAppImage(t *testing.T) {
 	newImage := []byte("new AppImage")
-	client, rel, _ := fakeRelease(t, AssetName("linux"), newImage, "")
+	client, rel, _ := fakeRelease(t, AssetName("linux", "amd64"), newImage, "")
 	appimage := oldAppImage(t)
 	var rec recordStart
 	if err := client.replaceAppImage(context.Background(), rel, appimage, "", 4242, rec.start); err != nil {
@@ -223,7 +223,7 @@ func TestLinuxUpdateReplacesAppImage(t *testing.T) {
 }
 
 func TestLinuxUpdateRelaunchesWithCleanEnvironment(t *testing.T) {
-	client, rel, _ := fakeRelease(t, AssetName("linux"), []byte("new AppImage"), "")
+	client, rel, _ := fakeRelease(t, AssetName("linux", "amd64"), []byte("new AppImage"), "")
 	appimage := oldAppImage(t)
 	appdir := "/tmp/.mount_SDSyncOld"
 	home := t.TempDir()
@@ -317,7 +317,7 @@ func TestLinuxUpdateFollowsSymlinkToAppImage(t *testing.T) {
 		t.Skip("AppImages and their symlinks are Linux-only")
 	}
 	newImage := []byte("new AppImage")
-	client, rel, _ := fakeRelease(t, AssetName("linux"), newImage, "")
+	client, rel, _ := fakeRelease(t, AssetName("linux", "amd64"), newImage, "")
 	appimage := oldAppImage(t)
 	link := filepath.Join(t.TempDir(), "sd-sync-immich")
 	if err := os.Symlink(appimage, link); err != nil {
@@ -334,7 +334,7 @@ func TestLinuxUpdateFollowsSymlinkToAppImage(t *testing.T) {
 }
 
 func TestLinuxUpdateKeepsAppImageOnChecksumMismatch(t *testing.T) {
-	client, rel, _ := fakeRelease(t, AssetName("linux"), []byte("tampered"), badSum)
+	client, rel, _ := fakeRelease(t, AssetName("linux", "amd64"), []byte("tampered"), badSum)
 	appimage := oldAppImage(t)
 	var rec recordStart
 	if err := client.replaceAppImage(context.Background(), rel, appimage, "", 1, rec.start); err == nil {
@@ -350,7 +350,7 @@ func TestLinuxUpdateKeepsAppImageInReadOnlyDirectory(t *testing.T) {
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("directory permissions do not apply")
 	}
-	client, rel, _ := fakeRelease(t, AssetName("linux"), []byte("new AppImage"), "")
+	client, rel, _ := fakeRelease(t, AssetName("linux", "amd64"), []byte("new AppImage"), "")
 	appimage := oldAppImage(t)
 	dir := filepath.Dir(appimage)
 	if err := os.Chmod(dir, 0o555); err != nil {

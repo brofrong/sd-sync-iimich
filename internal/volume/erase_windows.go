@@ -121,6 +121,14 @@ var (
 	runFormatFn = runFormatCom
 )
 
+// EraseNeedsAdmin reports whether Erase would refuse every card for lack
+// of administrator rights: format.com needs them, and the app (installed
+// for the current user) normally runs without them. Then the app does not
+// even try to format a card (see app.autoFormat).
+func EraseNeedsAdmin() bool {
+	return !isElevatedFn()
+}
+
 // Erase reformats the removable volume at the drive letter mountPoint ("E:\")
 // in place, keeping its filesystem (exFAT or FAT32) and label. format.com is
 // pointed at the volume GUID path read with the identity check, not at the

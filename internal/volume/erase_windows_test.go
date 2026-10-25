@@ -459,3 +459,15 @@ func TestWindowsEraseNewVolumeMustBeSameDevice(t *testing.T) {
 		})
 	}
 }
+
+// TestWindowsEraseNeedsAdminFollowsElevation: without administrator rights
+// every Erase is refused, so the app is told up front.
+func TestWindowsEraseNeedsAdminFollowsElevation(t *testing.T) {
+	withWindowsEraseSeams(t)
+	for _, elevated := range []bool{false, true} {
+		isElevatedFn = func() bool { return elevated }
+		if got := EraseNeedsAdmin(); got != !elevated {
+			t.Errorf("elevated %v: EraseNeedsAdmin() = %v, want %v", elevated, got, !elevated)
+		}
+	}
+}

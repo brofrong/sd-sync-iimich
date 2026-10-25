@@ -1,6 +1,9 @@
 package gui
 
 import (
+	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -175,5 +178,67 @@ func TestSingleInstanceOptions(t *testing.T) {
 	opts.OnSecondInstanceLaunch(application.SecondInstanceData{Args: []string{"/x/sd-sync-immich", "run", "--autostart"}})
 	if shown != 2 {
 		t.Fatalf("window shown for a second instance started at login")
+	}
+}
+
+// TestShowGateHoldsRequestsUntilStarted: a second copy opened before the
+// application has started (on Linux its request arrives during
+// application.New, before Run) must not reach application.InvokeAsync,
+// which would panic then; start reports it, so the window is shown once
+// the app has started. Requests after start are dispatched at once, and
+// one pending request is reported once.
+func TestShowGateHoldsRequestsUntilStarted(t *testing.T) {
+	var calls []string
+	g := &showGate{dispatch: func() { calls = append(calls, "dispatch") }}
+	opts := singleInstanceOptions(g.request)
+	open := func() {
+		opts.OnSecondInstanceLaunch(application.SecondInstanceData{Args: []string{"/x/sd-sync-immich"}})
+	}
+
+	open()
+	open()
+	if len(calls) != 0 {
+		t.Fatalf("calls before start = %v, want none (InvokeAsync panics before Run)", calls)
+	}
+	if !g.start() {
+		t.Fatal("start() = false, want true: the window was asked for during startup")
+	}
+	open()
+	if want := []string{"dispatch"}; !slices.Equal(calls, want) {
+		t.Fatalf("calls after start = %v, want %v", calls, want)
+	}
+	if g.start() {
+		t.Error("start() again = true, want false: the pending request was already reported")
+	}
+}
+
+// TestShowGateNothingPending: without a request during startup, start
+// shows nothing.
+func TestShowGateNothingPending(t *testing.T) {
+	g := &showGate{dispatch: func() { t.Error("dispatch called without a request") }}
+	if g.start() {
+		t.Error("start() = true without a request, want false")
+	}
+}
+
+// TestShowGateConcurrent: requests racing with start are each either
+// dispatched or reported by start, never lost (run with -race).
+func TestShowGateConcurrent(t *testing.T) {
+	var dispatched atomic.Int32
+	g := &showGate{dispatch: func() { dispatched.Add(1) }}
+	var wg sync.WaitGroup
+	for range 50 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			g.request()
+		}()
+	}
+	pending := g.start()
+	wg.Wait()
+	// A request before start is reported by it; without one, all 50 came
+	// after start and were dispatched.
+	if n := dispatched.Load(); !pending && n != 50 {
+		t.Errorf("%d of 50 requests dispatched and none reported pending", n)
 	}
 }

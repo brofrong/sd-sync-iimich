@@ -72,6 +72,14 @@ var connectUDisksEraseFn = func() (udisksEraseConn, func(), error) {
 	return &realUDisksConn{conn: conn}, func() { conn.Close() }, nil
 }
 
+// EraseNeedsAdmin reports whether Erase would refuse every card for lack
+// of administrator rights: not known in advance on Linux, where UDisks2
+// erases a removable card in the desktop session without them; a polkit
+// refusal still comes back from Erase as ErrNeedsAdmin.
+func EraseNeedsAdmin() bool {
+	return false
+}
+
 // Erase reformats the removable filesystem mounted at mountPoint in place,
 // keeping its type (exFAT, or FAT32 as vfat) and label, through
 // UDisks2 and without user interaction: no password prompt, no root.

@@ -56,6 +56,3 @@ var ErrErasedNotRemounted = errors.New("card erased but its new volume was not f
 // administrator rights (or a password prompt), which the app never asks
 // for.
 var ErrNeedsAdmin = errors.New("formatting the card needs administrator rights")
-
-// ErrUnsupported means the operation is not available on this system yet.
-var ErrUnsupported = errors.New("not supported on this system yet")

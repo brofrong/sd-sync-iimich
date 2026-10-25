@@ -73,6 +73,11 @@ type App struct {
 	// failed during their current insertion (guarded by mu): they are not
 	// formatted again until pulled out.
 	formatFailures map[string]bool
+	// needsAdminReported holds the lower-case UUIDs of cards told during
+	// their current insertion that formatting needs administrator rights
+	// (guarded by mu; see autoFormat). It is forgotten when the card is
+	// mounted again or pulled out.
+	needsAdminReported map[string]bool
 
 	// Seams set by New; tests replace them so they never touch the Mac.
 	keepAwake     func() (release func())
@@ -81,6 +86,9 @@ type App struct {
 	listRemovable func() ([]volume.Info, error)
 	verify        func(ctx context.Context, vol volume.Info, onProgress func(done, total int)) (uploader.VerifyResult, error)
 	erase         func(mountPoint, wantUUID string) (volume.Info, error)
+	// eraseNeedsAdmin reports whether erase would refuse every card for
+	// lack of administrator rights (see volume.EraseNeedsAdmin).
+	eraseNeedsAdmin func() bool
 }
 
 // defaultRevertAfter is how long a status like CodeDone stays on screen
@@ -107,6 +115,8 @@ func New(cfg *config.Store, st *state.DB, dryRun bool) (*App, error) {
 		isCameraCard:  isCameraCardDir,
 		listRemovable: volume.ListRemovable,
 		erase:         volume.Erase,
+
+		eraseNeedsAdmin: volume.EraseNeedsAdmin,
 	}
 	a.verify = a.Uploader.VerifyCard
 	a.setStatus(a.startupStatus())
@@ -236,6 +246,8 @@ func (a *App) handleVolumeEvent(ev volume.Event) {
 		if strings.EqualFold(ev.Info.UUID, watchUUID) {
 			a.mu.Lock()
 			a.setMountedTargetLocked(&ev.Info)
+			// A new insertion (also after the app ejected the card).
+			delete(a.needsAdminReported, strings.ToLower(ev.Info.UUID))
 			a.mu.Unlock()
 			a.updateIdleStatus()
 			if a.Config.IsConfigured() {

@@ -416,7 +416,8 @@ func validConcurrency(n int) bool {
 }
 
 // settingsView is the editable settings of cfg, without the autostart
-// fields (see autostartSettings).
+// fields (see autostartSettings), and whether formatting needs
+// administrator rights here.
 func settingsView(cfg config.Config) SettingsView {
 	n := cfg.Notifications
 	return SettingsView{
@@ -425,6 +426,8 @@ func settingsView(cfg config.Config) SettingsView {
 		AutoPaths:   cfg.Scan.AutoPaths,
 		AutoEject:   cfg.Card.AutoEject,
 		AutoFormat:  cfg.Card.AutoFormat,
+
+		AutoFormatNeedsAdmin: eraseNeedsAdmin(),
 		Notifications: NotificationsView{
 			Enabled:   n.Enabled,
 			Done:      n.Done,
@@ -738,6 +741,7 @@ var (
 	underLaunchd       = install.UnderLaunchd
 	applyUpdate        = update.Apply
 	quitAfterUpdate    = (*shell).quit
+	eraseNeedsAdmin    = volume.EraseNeedsAdmin
 )
 
 // currentExecutable is the path of this program, with symlinks resolved.

@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -175,6 +176,47 @@ func singleInstanceOptions(show func()) *application.SingleInstanceOptions {
 	}
 }
 
+// showGate holds back the requests to show the window that arrive before
+// the application has started. On Linux the single-instance lock is a
+// D-Bus name taken inside application.New, so a second copy opened right
+// then (a double double-click, or autostart and a click at login) asks to
+// be shown on a D-Bus goroutine before Run: application.InvokeAsync would
+// then panic (Wails sets up its main thread only in Run), killing this
+// copy. Requests before start are remembered and the window is shown once
+// the application has started; later ones are dispatched at once.
+type showGate struct {
+	mu      sync.Mutex
+	started bool
+	pending bool
+	// dispatch shows the window from any goroutine; only called after
+	// start.
+	dispatch func()
+}
+
+// request asks for the window: dispatched now if the application has
+// started, else remembered for start.
+func (g *showGate) request() {
+	g.mu.Lock()
+	if !g.started {
+		g.pending = true
+		g.mu.Unlock()
+		logx.Info("gui: the window will be shown once the app has started")
+		return
+	}
+	g.mu.Unlock()
+	g.dispatch()
+}
+
+// start records that the application has started (on its main thread) and
+// reports whether the window was asked for before: the caller shows it.
+func (g *showGate) start() (pending bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.started = true
+	pending, g.pending = g.pending, false
+	return pending
+}
+
 // quit shuts the application down and exits the process with code.
 func (sh *shell) quit(code int) {
 	sh.exitCode.Store(int32(code))
@@ -209,6 +251,16 @@ func Run(a *app.App, cfg *config.Store, st *state.DB, version string, autostart 
 	})
 	svc = newService(a, cfg, st, version, sh, notes)
 
+	// The window is shown on the main thread, where Wails wants it; a
+	// request before ApplicationStarted waits for it (see showGate).
+	reopen := &showGate{dispatch: func() {
+		application.InvokeAsync(func() {
+			if sh.window != nil {
+				sh.showWindow()
+			}
+		})
+	}}
+
 	sh.app = application.New(application.Options{
 		Name:        appName,
 		Description: "Uploads photos and videos from camera SD cards to Immich",
@@ -237,15 +289,10 @@ func Run(a *app.App, cfg *config.Store, st *state.DB, version string, autostart 
 		PostShutdown: func() {
 			os.Exit(int(sh.exitCode.Load()))
 		},
-		// A second copy exits here, before the sync engine starts.
-		SingleInstance: singleInstanceOptions(func() {
-			// Called off the main thread, where Wails wants windows shown.
-			application.InvokeAsync(func() {
-				if sh.window != nil {
-					sh.showWindow()
-				}
-			})
-		}),
+		// A second copy exits here, before the sync engine starts. Its
+		// request reaches this copy off the main thread, on Linux possibly
+		// before Run.
+		SingleInstance: singleInstanceOptions(reopen.request),
 	})
 
 	sh.window = sh.app.Window.NewWithOptions(application.WebviewWindowOptions{
@@ -296,6 +343,12 @@ func Run(a *app.App, cfg *config.Store, st *state.DB, version string, autostart 
 			if w == startupMinimised {
 				sh.window.Minimise()
 			}
+		}
+		// The app was opened again while it was starting: that wins over
+		// starting hidden (or minimised) at login.
+		if reopen.start() {
+			logx.Info("gui: showing the window asked for during startup")
+			sh.showWindow()
 		}
 		svc.start(ctx)
 	})

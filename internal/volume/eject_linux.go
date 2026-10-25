@@ -17,11 +17,13 @@ import (
 // (see udisks_linux.go for the real implementation, and
 // eject_linux_test.go for the fake).
 type udisksConn interface {
+	// blockState reads the block device at path (one GetAll of its Block
+	// properties, as Erase reads it): its device node, system-device hint
+	// and Drive, the drive object that controls ejecting/powering off its
+	// hardware.
+	blockState(path dbus.ObjectPath) (udisksBlockState, error)
 	// unmount calls Filesystem.Unmount on the block device at path.
 	unmount(path dbus.ObjectPath) error
-	// drivePath reads the block device's Drive property: the path of the
-	// drive object that controls ejecting/powering off its hardware.
-	drivePath(path dbus.ObjectPath) (dbus.ObjectPath, error)
 	// canPowerOff reads the drive's CanPowerOff property.
 	canPowerOff(drive dbus.ObjectPath) (bool, error)
 	// powerOff calls Drive.PowerOff.
@@ -34,6 +36,12 @@ type udisksConn interface {
 // if that's not supported, ejects) the removable drive behind it, via
 // UDisks2 — the same action as a desktop file manager's "Eject" button —
 // without requiring root.
+//
+// Like Erase, it first refuses — without unmounting anything — a block
+// UDisks2 hints is a system device (or does not say), one it reports for
+// another device node, and one without a drive: an internal partition the
+// user opened in the file manager is mounted under /media/<user> like a
+// card, but is never unmounted or powered off.
 func Eject(mountPoint string) error {
 	device, err := deviceForMountPoint(mountPoint)
 	if err != nil {
@@ -49,22 +57,33 @@ func Eject(mountPoint string) error {
 	return ejectDevice(conn, mountPoint, device)
 }
 
-// ejectDevice implements Eject's UDisks2 sequence against conn: unmount the
-// filesystem, then power off the drive if it supports that, falling back
-// to a plain eject when it doesn't (or when PowerOff itself fails).
+// ejectDevice implements Eject's UDisks2 sequence against conn: check that
+// the block is a removable card's (see Eject), unmount the filesystem, then
+// power off the drive if it supports that, falling back to a plain eject
+// when it doesn't (or when PowerOff itself fails).
 func ejectDevice(conn udisksConn, mountPoint, device string) error {
 	blockPath := blockObjectPath(device)
+
+	st, err := conn.blockState(blockPath)
+	if err != nil {
+		return fmt.Errorf("eject %s: read UDisks2 block %s: %w", mountPoint, blockPath, err)
+	}
+	if st.HintSystem {
+		return fmt.Errorf("eject %s: refusing to eject a system device", mountPoint)
+	}
+	if st.Device != device {
+		return fmt.Errorf("eject %s: refusing to eject: UDisks2 block %s is %q, want %q", mountPoint, blockPath, st.Device, device)
+	}
+	drive := st.Drive
+	if drive == "" || drive == "/" {
+		return fmt.Errorf("eject %s: refusing to eject a block without a drive", mountPoint)
+	}
 
 	if err := conn.unmount(blockPath); err != nil {
 		if isDeviceBusyErr(err) {
 			return fmt.Errorf("eject %s: card is in use: %w", mountPoint, err)
 		}
 		return fmt.Errorf("eject %s: unmount failed: %w", mountPoint, err)
-	}
-
-	drive, err := conn.drivePath(blockPath)
-	if err != nil {
-		return fmt.Errorf("eject %s: find drive: %w", mountPoint, err)
 	}
 
 	canPowerOff, cpoErr := conn.canPowerOff(drive)

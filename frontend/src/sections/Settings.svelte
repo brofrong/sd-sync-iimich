@@ -380,11 +380,18 @@
       <div class="text">
         <label for="set-auto-format">{t("settings.auto_format")}</label>
         <p class="hint" id="set-auto-format-hint">{t("settings.auto_format_hint")}</p>
+        {#if $appState.settings.autoFormatNeedsAdmin}
+          <!-- Windows without administrator rights: the card is never
+               formatted, only ejected (if that is on). -->
+          <p class="hint" id="set-auto-format-admin-hint">{t("settings.auto_format_needs_admin_hint")}</p>
+        {/if}
       </div>
       <Switch
         id="set-auto-format"
         checked={autoFormat}
-        describedby="set-auto-format-hint"
+        describedby={$appState.settings.autoFormatNeedsAdmin
+          ? "set-auto-format-hint set-auto-format-admin-hint"
+          : "set-auto-format-hint"}
         onchange={setAutoFormat}
       />
       {#if confirmFormat}

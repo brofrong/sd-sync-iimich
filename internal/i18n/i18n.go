@@ -135,6 +135,15 @@ func (c *Catalog) Lang() string {
 	return c.lang
 }
 
+// Has reports whether key is in this catalog or its English fallback.
+func (c *Catalog) Has(key string) bool {
+	if _, ok := c.messages[key]; ok {
+		return true
+	}
+	_, ok := c.fallback[key]
+	return ok
+}
+
 // T translates key, substituting "{name}" placeholders with the matching
 // entries from params. A key missing from this catalog falls back to the
 // English catalog, then to the key itself.

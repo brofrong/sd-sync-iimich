@@ -569,3 +569,11 @@ func TestEraseNewVolumeSameUUIDFails(t *testing.T) {
 		t.Fatalf("Erase() error = %v, want it to wrap ErrErasedNotRemounted", err)
 	}
 }
+
+// TestEraseNeedsAdminDarwin: diskutil never needs administrator rights to
+// erase a card, so the auto-format flow on macOS is unchanged.
+func TestEraseNeedsAdminDarwin(t *testing.T) {
+	if EraseNeedsAdmin() {
+		t.Error("EraseNeedsAdmin() = true on macOS, want false")
+	}
+}

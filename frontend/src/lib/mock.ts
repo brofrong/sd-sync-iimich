@@ -142,6 +142,7 @@ const formatOutcomes: Record<string, Record<string, string>> = {
   formatted: { format: "formatted", name: mainCard.name },
   skipped_missing: { format: "skipped_missing", count: "3" },
   skipped_unsupported: { format: "skipped_unsupported", files: "12 × .HIF" },
+  needs_admin: { format: "needs_admin", name: mainCard.name },
 };
 
 function makeStatus(code: string, progress: Progress | null = null, p?: Record<string, string>): Status {
@@ -334,7 +335,8 @@ export function createMockTransport(): Transport {
 
   // ?bundle=none mimics a development build, where autostart is
   // unavailable; ?bundle=translocated an app opened from a quarantined
-  // download in place.
+  // download in place. ?format_admin=needed mimics Windows without
+  // administrator rights, where formatting never happens.
   const translocated = query.get("bundle") === "translocated";
   const inBundle = query.get("bundle") !== "none" && !translocated;
   const settings = new SettingsView({
@@ -346,6 +348,7 @@ export function createMockTransport(): Transport {
     autostartTranslocated: translocated,
     autoEject: true,
     autoFormat: query.get("format_setting") === "on",
+    autoFormatNeedsAdmin: query.get("format_admin") === "needed",
     notifications: new NotificationsView({ enabled: true, done: true, errors: true, otherCard: true, server: true, card: true }),
   });
   const state = new StateView({
@@ -605,6 +608,7 @@ export function createMockTransport(): Transport {
         autostart: state.settings.autostart,
         autostartAvailable: state.settings.autostartAvailable,
         autostartTranslocated: state.settings.autostartTranslocated,
+        autoFormatNeedsAdmin: state.settings.autoFormatNeedsAdmin,
       });
       state.language = resolveLanguage(v.language, navigator.languages);
       pushState();

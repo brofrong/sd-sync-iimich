@@ -28,16 +28,6 @@ func testConfigStore(t *testing.T) *config.Store {
 	return store
 }
 
-// requireVolumeSupport skips a test that uses the real volume package
-// (expecting no card on the test machine) on a system whose volume support
-// has not landed yet.
-func requireVolumeSupport(t *testing.T) {
-	t.Helper()
-	if _, err := volume.ListRemovable(); errors.Is(err, volume.ErrUnsupported) {
-		t.Skip("volume support is not implemented on this system yet")
-	}
-}
-
 // TestSyncNowRecordsRun checks that SyncNow records a sync_runs row (via
 // state.StartRun/FinishRun) with the outcome of the attempt, end to end.
 // The watched volume's mount point is an empty directory with no DCIM
@@ -114,7 +104,6 @@ func TestSyncNowRecordsRun(t *testing.T) {
 // machine, this exercises the "no run history" fallback instead) New()
 // must not leave Status zero-valued.
 func TestNewUsesLastFinishedRunAsStartupStatus(t *testing.T) {
-	requireVolumeSupport(t)
 	cfgStore := testConfigStore(t)
 	if err := cfgStore.Update(func(c *config.Config) {
 		c.Immich = config.ImmichConfig{URL: "https://immich.example", APIKey: "key"}
@@ -334,7 +323,6 @@ func TestEjectCardWithoutMountedCardFails(t *testing.T) {
 }
 
 func TestSelectCardPersistsSelection(t *testing.T) {
-	requireVolumeSupport(t)
 	a := testApp(t)
 
 	// The new card isn't mounted on the test machine.

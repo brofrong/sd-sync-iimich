@@ -72,18 +72,6 @@ func (c *realUDisksConn) unmount(path dbus.ObjectPath) error {
 	return c.object(path).CallWithContext(ctx, udisksFilesystemIface+".Unmount", 0, noInteractionOptions()).Err
 }
 
-func (c *realUDisksConn) drivePath(path dbus.ObjectPath) (dbus.ObjectPath, error) {
-	v, err := c.object(path).GetProperty(udisksBlockIface + ".Drive")
-	if err != nil {
-		return "", err
-	}
-	drive, ok := v.Value().(dbus.ObjectPath)
-	if !ok {
-		return "", fmt.Errorf("unexpected type for Drive property: %T", v.Value())
-	}
-	return drive, nil
-}
-
 func (c *realUDisksConn) canPowerOff(drive dbus.ObjectPath) (bool, error) {
 	v, err := c.object(drive).GetProperty(udisksDriveIface + ".CanPowerOff")
 	if err != nil {

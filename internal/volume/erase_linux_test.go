@@ -652,3 +652,11 @@ func TestLinuxEraseMountRefusedNotRepeated(t *testing.T) {
 		}
 	})
 }
+
+// TestEraseNeedsAdminLinux: Linux does not know in advance (polkit decides
+// per call), so the auto-format flow is unchanged.
+func TestEraseNeedsAdminLinux(t *testing.T) {
+	if EraseNeedsAdmin() {
+		t.Error("EraseNeedsAdmin() = true on Linux, want false")
+	}
+}

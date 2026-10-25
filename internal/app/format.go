@@ -74,12 +74,31 @@ func (a *App) suppressFormat(uuid string) {
 }
 
 // clearFormatSuppressionLocked forgets a failed format of the card uuid:
-// the user pulled it out, so its next insertion may format it again. Call
-// with a.mu held.
+// the user pulled it out, so its next insertion may format it again (or be
+// told again that formatting needs administrator rights). Call with a.mu
+// held.
 func (a *App) clearFormatSuppressionLocked(uuid string) {
 	if uuid != "" {
 		delete(a.formatFailures, strings.ToLower(uuid))
+		delete(a.needsAdminReported, strings.ToLower(uuid))
 	}
+}
+
+// reportNeedsAdmin reports whether the card uuid is still to be told
+// during this insertion that formatting needs administrator rights, and
+// marks it told.
+func (a *App) reportNeedsAdmin(uuid string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	key := strings.ToLower(uuid)
+	if a.needsAdminReported[key] {
+		return false
+	}
+	if a.needsAdminReported == nil {
+		a.needsAdminReported = map[string]bool{}
+	}
+	a.needsAdminReported[key] = true
+	return true
 }
 
 // autoFormat verifies that everything on vol is in Immich, counts down and
@@ -88,8 +107,25 @@ func (a *App) clearFormatSuppressionLocked(uuid string) {
 // Stopping the sync, pulling the card out or the card no longer being the
 // selected, mounted one end the phase silently; nothing is erased unless
 // every check passed right before the erase.
+//
+// When the system would only erase the card with administrator rights
+// (Windows without elevation, see volume.EraseNeedsAdmin), nothing is
+// verified or counted down: CodeFormatNeedsAdmin is published, once per
+// insertion of the card (see reportNeedsAdmin), and the phase ends without
+// failing, so auto-eject still runs.
 func (a *App) autoFormat(ctx context.Context, vol volume.Info, st Status) formatOutcome {
 	keep := formatOutcome{status: st, vol: vol}
+
+	if a.needsAdminToErase() {
+		if !a.reportNeedsAdmin(vol.UUID) {
+			logx.Info("not formatting: erasing the card needs administrator rights (already reported for this insertion)", "name", vol.Name)
+			return keep
+		}
+		logx.Info("not formatting: erasing the card needs administrator rights", "name", vol.Name, "uuid", vol.UUID)
+		keep.status = newStatus(CodeFormatNeedsAdmin, map[string]string{"name": vol.Name})
+		a.setStatus(keep.status)
+		return keep
+	}
 
 	logx.Info("verifying card before format", "name", vol.Name, "uuid", vol.UUID)
 	gen := a.setStatus(verifyingStatus(0, 0))
@@ -367,6 +403,10 @@ func formatOutcomeParams(st Status) map[string]string {
 		outcome, key = "skipped_missing", "count"
 	case CodeFormatSkippedUnsupported:
 		outcome, key = "skipped_unsupported", "files"
+	case CodeFormatNeedsAdmin:
+		// Only reached when the format was not even tried (see
+		// autoFormat): a failed erase never ejects the card.
+		outcome, key = "needs_admin", "name"
 	default:
 		return nil
 	}
@@ -457,6 +497,10 @@ func (a *App) verifyCard(ctx context.Context, vol volume.Info, onProgress func(d
 		return a.Uploader.VerifyCard(ctx, vol, onProgress)
 	}
 	return a.verify(ctx, vol, onProgress)
+}
+
+func (a *App) needsAdminToErase() bool {
+	return a.eraseNeedsAdmin != nil && a.eraseNeedsAdmin()
 }
 
 func (a *App) eraseVolume(mountPoint, wantUUID string) (volume.Info, error) {

@@ -35,7 +35,7 @@ func runFromAppImage(t *testing.T, appimage string) {
 }
 
 func TestApplyWithoutAppImageEnv(t *testing.T) {
-	client, rel, requests := fakeRelease(t, AssetName("linux"), []byte("new AppImage"), "")
+	client, rel, requests := fakeRelease(t, AssetName("linux", "amd64"), []byte("new AppImage"), "")
 	rec := fakeStart(t)
 	t.Setenv("APPIMAGE", "")
 	quit, err := Apply(context.Background(), client, rel)
@@ -56,7 +56,7 @@ func TestApplyDistrustsAppImageOfAnotherProcess(t *testing.T) {
 		"executable outside APPDIR": t.TempDir(),
 	} {
 		t.Run(name, func(t *testing.T) {
-			client, rel, requests := fakeRelease(t, AssetName("linux"), []byte("new AppImage"), "")
+			client, rel, requests := fakeRelease(t, AssetName("linux", "amd64"), []byte("new AppImage"), "")
 			rec := fakeStart(t)
 			appimage := oldAppImage(t)
 			t.Setenv("APPIMAGE", appimage)
@@ -74,7 +74,7 @@ func TestApplyDistrustsAppImageOfAnotherProcess(t *testing.T) {
 }
 
 func TestApplyReplacesAppImageFromEnv(t *testing.T) {
-	client, rel, _ := fakeRelease(t, AssetName("linux"), []byte("new AppImage"), "")
+	client, rel, _ := fakeRelease(t, AssetName("linux", "amd64"), []byte("new AppImage"), "")
 	rec := fakeStart(t)
 	appimage := oldAppImage(t)
 	runFromAppImage(t, appimage)

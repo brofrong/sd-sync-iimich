@@ -75,6 +75,15 @@ func TestTFallsBackToEnglishThenKey(t *testing.T) {
 	}
 }
 
+func TestHas(t *testing.T) {
+	cat := newCatalog("xx", map[string]string{"own": "x"}, map[string]string{"english": "y"})
+	for key, want := range map[string]bool{"own": true, "english": true, "missing": false} {
+		if got := cat.Has(key); got != want {
+			t.Errorf("Has(%q) = %v, want %v", key, got, want)
+		}
+	}
+}
+
 func TestLocalesHaveAllEnglishKeys(t *testing.T) {
 	en, err := loadLocale("en")
 	if err != nil {

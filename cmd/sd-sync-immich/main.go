@@ -56,6 +56,14 @@ func parseCommand(args []string) command {
 }
 
 // runApp runs the app; autostart means it was started at login.
+//
+// A second copy of the app (opened while one is running) only finds out
+// inside gui.Run, which hands over to the running copy and exits: it runs
+// everything before gui.Run first (beforeRun, config.Load, state.Open,
+// app.New, which starts the volume watcher). All of it must stay safe to
+// run, and then abandon, while the first copy is running: idempotent, with
+// nothing (no state.Open migration, no write the first copy does not
+// expect) that a second copy may not do.
 func runApp(dryRun, autostart bool) {
 	logPath, err := logx.Init()
 	if err != nil {
