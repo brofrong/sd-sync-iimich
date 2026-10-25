@@ -102,3 +102,18 @@ func updateView(r *update.Release) *UpdateView {
 	}
 	return &UpdateView{Version: r.Version, Notes: r.Notes, URL: r.HTMLURL}
 }
+
+// AppInfoView describes this copy of the app for the sidebar footer (see
+// Service.AppInfo). OS is "macOS", "Windows" or "Linux"; OSVersion is its
+// version ("" if unknown): the macOS version, the Windows version and
+// build, or the Linux distribution's name. Beta is true on Windows and
+// Linux. RepoURL and IssueURL (a new issue filled in with these versions)
+// are the links Service.OpenURL opens.
+type AppInfoView struct {
+	Version   string `json:"version"`
+	OS        string `json:"os"`
+	OSVersion string `json:"osVersion"`
+	Beta      bool   `json:"beta"`
+	RepoURL   string `json:"repoURL"`
+	IssueURL  string `json:"issueURL"`
+}

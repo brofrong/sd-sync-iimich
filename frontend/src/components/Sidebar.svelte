@@ -1,11 +1,16 @@
 <script lang="ts">
   // The plain dark sidebar. A glowing pill slides with a spring to the
   // selected section; the Status item carries a dot coloured by the
-  // current status so a problem is visible from any section.
+  // current status so a problem is visible from any section. Its footer
+  // holds the version (with a "Beta" badge on Windows and Linux), links
+  // to the GitHub repository and to a new issue, and a Quit button (the
+  // way out when there is no tray).
+  import { onMount } from "svelte";
+  import type { AppInfoView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
   import { t } from "../lib/i18n";
   import { icons } from "../lib/icons";
   import { sections, toneFor } from "../lib/stores";
-  import { appState, status } from "../lib/backend";
+  import { appState, backend, status } from "../lib/backend";
 
   interface Props {
     current: string;
@@ -29,6 +34,23 @@
     e.preventDefault();
     onSelect(sections[next]);
     buttons[next]?.focus();
+  }
+
+  let info = $state<AppInfoView | null>(null);
+  onMount(() => {
+    backend.AppInfo().then(
+      (i) => (info = i),
+      (err) => console.error("AppInfo failed", err),
+    );
+  });
+
+  function open(url: string | undefined): void {
+    if (!url) return;
+    backend.OpenURL(url).catch((err) => console.error("OpenURL failed", err));
+  }
+
+  function quit(): void {
+    backend.Quit().catch((err) => console.error("Quit failed", err));
   }
 </script>
 
@@ -55,9 +77,42 @@
       </button>
     {/each}
   </nav>
-  {#if $appState.version}
-    <div class="version">{$appState.version}</div>
-  {/if}
+  <footer class="footer">
+    <div class="about">
+      {#if $appState.version}
+        <span class="version">{$appState.version}</span>
+      {/if}
+      {#if info?.beta}
+        <span class="beta" title={t("sidebar.beta_hint")}>{t("sidebar.beta")}</span>
+      {/if}
+    </div>
+    <div class="actions">
+      <button
+        type="button"
+        class="icon-btn"
+        title={t("sidebar.github")}
+        aria-label={t("sidebar.github")}
+        disabled={!info}
+        onclick={() => open(info?.repoURL)}
+      >
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d={icons.github} /></svg>
+      </button>
+      <button
+        type="button"
+        class="icon-btn"
+        title={t("sidebar.report_issue")}
+        aria-label={t("sidebar.report_issue")}
+        disabled={!info}
+        onclick={() => open(info?.issueURL)}
+      >
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d={icons.bug} /></svg>
+      </button>
+      <button type="button" class="quit" title={t("sidebar.quit_hint")} onclick={quit}>
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d={icons.power} /></svg>
+        <span>{t("sidebar.quit")}</span>
+      </button>
+    </div>
+  </footer>
 </aside>
 
 <style>
@@ -172,11 +227,83 @@
     }
   }
 
-  .version {
+  .footer {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
     margin-top: auto;
+  }
+  .about {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 16px;
     padding: 0 10px;
+  }
+  .version {
     color: var(--text-3);
     font-size: 11px;
     font-variant-numeric: tabular-nums;
+  }
+  .beta {
+    padding: 1px 6px;
+    border: 1px solid rgba(140, 110, 255, 0.45);
+    border-radius: 999px;
+    background: rgba(140, 110, 255, 0.14);
+    color: var(--text-2);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: default;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 4px;
+  }
+  .icon-btn,
+  .quit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 28px;
+    border: 0;
+    border-radius: var(--radius-m);
+    background: transparent;
+    color: var(--text-3);
+    font-size: 12px;
+    cursor: pointer;
+    transition: color 0.2s, background-color 0.2s;
+  }
+  .icon-btn {
+    width: 28px;
+    padding: 0;
+  }
+  .quit {
+    min-width: 0;
+    margin-left: auto;
+    padding: 0 8px;
+  }
+  .quit span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .icon-btn:hover:not(:disabled),
+  .quit:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text);
+  }
+  .icon-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .icon-btn .icon,
+  .quit .icon {
+    width: 15px;
+    height: 15px;
   }
 </style>

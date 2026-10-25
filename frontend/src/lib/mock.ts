@@ -17,12 +17,15 @@
 //                   an AppImage)
 //   ?history=none   no sync runs yet
 //   ?expand=<id>    expand the failed files of run <id> in History
+//   ?os=<system>    the system AppInfo reports: macos (default), windows or
+//                   linux; Windows and Linux are betas (the sidebar badge)
 //
 // "Retry failed files" works for a run of the selected, mounted card (the
 // scenario syncs again) and answers retry_unavailable otherwise, as Go.
 // In the Server section a URL containing "bad" is unreachable, the API key
 // "bad" is rejected, and a URL containing "readonly" fails to save.
 import {
+  AppInfoView,
   CardView,
   NotificationsView,
   ServerCheckView,
@@ -39,6 +42,30 @@ import { resolveLanguage } from "./i18n";
 
 const SERVER_URL = "https://immich.brofrong.ru";
 const HOST = "immich.brofrong.ru";
+// As Go's repoURL and newIssueURL.
+const REPO_URL = "https://github.com/brofrong/sd-sync-iimich";
+const NEW_ISSUE_URL = REPO_URL + "/issues/new";
+
+const systems: Record<string, { os: string; osVersion: string }> = {
+  macos: { os: "macOS", osVersion: "15.1.1" },
+  windows: { os: "Windows", osVersion: "11 (10.0.22631)" },
+  linux: { os: "Linux", osVersion: "Ubuntu 24.04.1 LTS" },
+};
+
+/** As Go's appInfo and issueURL. */
+function appInfo(system: string, version: string): AppInfoView {
+  const { os, osVersion } = systems[system] ?? systems.macos;
+  const name = `${os} ${osVersion}`.trim();
+  const body = `**Version:** ${version}\n**OS:** ${name}\n\n` + "**What happened:**\n\n**Steps to reproduce:**\n";
+  return new AppInfoView({
+    version,
+    os,
+    osVersion,
+    beta: os !== "macOS",
+    repoURL: REPO_URL,
+    issueURL: `${NEW_ISSUE_URL}?${new URLSearchParams({ body })}`,
+  });
+}
 
 const mainCard = new CardView({
   uuid: "5F2C81AB-1D3E-4C2A-9B7F-0E6D2A1C9F11",
@@ -585,7 +612,7 @@ export function createMockTransport(): Transport {
     SetAutostart: async (enabled) => {
       if (enabled && state.settings.autostartTranslocated) throw new Error("autostart_translocated");
       if (!state.settings.autostartAvailable) {
-        throw new Error("autostart is only available when the app runs from SD Sync Immich.app");
+        throw new Error("starting at login is not available for this copy of the app");
       }
       await delay(150, null);
       state.settings = new SettingsView({ ...state.settings, autostart: enabled });
@@ -627,6 +654,15 @@ export function createMockTransport(): Transport {
     LogTail: async (lines) => delay(150, sampleLog(lines)),
     RevealLog: async () => console.info("[mock] RevealLog"),
     OpenImmich: async () => console.info("[mock] OpenImmich", SERVER_URL),
+    AppInfo: async () => appInfo((query.get("os") ?? "macos").toLowerCase(), state.version),
+    // As Go: only the repository and a new issue.
+    OpenURL: async (u) => {
+      if (u !== REPO_URL && u !== NEW_ISSUE_URL && !u.startsWith(NEW_ISSUE_URL + "?body=")) {
+        throw new Error("only the project's GitHub pages can be opened");
+      }
+      console.info("[mock] OpenURL", u);
+    },
+    Quit: async () => console.info("[mock] Quit"),
     CheckForUpdates: async () => {
       await delay(900, null);
       if (query.get("update") === "none") return null;

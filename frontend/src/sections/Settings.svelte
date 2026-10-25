@@ -3,7 +3,8 @@
   // paths and autostart (each saved as soon as it changes; Go answers with
   // a "state" event, which also switches the UI language; autostart is
   // disabled when the app does not run from its bundle), what happens to
-  // the card after a sync (turning auto-format on asks first, in the row),
+  // the card after a sync (turning auto-format on asks first, in the row,
+  // and its button only works after a countdown),
   // the notification switches (the kinds are disabled while notifications
   // are off), then updates: the
   // running version, a manual check, and the available update's notes
@@ -38,8 +39,13 @@
   let autostart = $state(false);
   let autoEject = $state(true);
   let autoFormat = $state(false);
-  // Turning auto-format on waits for this confirmation.
+  // Turning auto-format on waits for this confirmation, whose button only
+  // works once confirmWait has counted down to 0 (from CONFIRM_SECONDS,
+  // each time the confirmation opens): erasing the card cannot be undone.
+  const CONFIRM_SECONDS = 10;
   let confirmFormat = $state(false);
+  let confirmWait = $state(0);
+  let confirmTimer: ReturnType<typeof setInterval> | undefined;
   let notifications = $state(new NotificationsView({ enabled: true, done: true, errors: true, otherCard: true, server: true, card: true }));
 
   // The notification kinds, in the order of the spec.
@@ -119,19 +125,41 @@
     showSaved();
   }
 
+  function openConfirm(): void {
+    confirmFormat = true;
+    confirmWait = CONFIRM_SECONDS;
+    clearInterval(confirmTimer);
+    confirmTimer = setInterval(() => {
+      confirmWait--;
+      if (confirmWait <= 0) {
+        confirmWait = 0;
+        clearInterval(confirmTimer);
+        confirmTimer = undefined;
+      }
+    }, 1000);
+  }
+
+  function closeConfirm(): void {
+    confirmFormat = false;
+    confirmWait = 0;
+    clearInterval(confirmTimer);
+    confirmTimer = undefined;
+  }
+
   function setAutoFormat(enabled: boolean): void {
     if (enabled) {
       // The switch stays off until the user confirms.
-      confirmFormat = true;
+      openConfirm();
       return;
     }
-    confirmFormat = false;
+    closeConfirm();
     autoFormat = false;
     save("card");
   }
 
   function enableAutoFormat(): void {
-    confirmFormat = false;
+    if (confirmWait > 0) return;
+    closeConfirm();
     autoFormat = true;
     save("card");
   }
@@ -184,7 +212,10 @@
     }
   }
 
-  onDestroy(() => clearTimeout(savedTimer));
+  onDestroy(() => {
+    clearTimeout(savedTimer);
+    clearInterval(confirmTimer);
+  });
 </script>
 
 {#snippet feedback(g: Group)}
@@ -342,9 +373,16 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.warning} /></svg>
           <p id="set-auto-format-confirm">{t("settings.auto_format_confirm")}</p>
           <div class="buttons">
-            <Button onclick={() => (confirmFormat = false)}>{t("settings.cancel")}</Button>
-            <Button variant="primary" describedby="set-auto-format-confirm" onclick={enableAutoFormat}>
-              {t("settings.auto_format_enable")}
+            <Button onclick={closeConfirm}>{t("settings.cancel")}</Button>
+            <Button
+              variant="primary"
+              disabled={confirmWait > 0}
+              describedby="set-auto-format-confirm"
+              onclick={enableAutoFormat}
+            >
+              {confirmWait > 0
+                ? t("settings.auto_format_enable_countdown", { seconds: formatNumber(confirmWait) })
+                : t("settings.auto_format_enable")}
             </Button>
           </div>
         </div>
