@@ -29,7 +29,8 @@ show_tab_view = False
 show_toolbar = False
 show_pathbar = False
 show_sidebar = False
-window_rect = ((200, 140), (660, 400))
+# The bounds include the 32-point title bar above the 660 × 400 background.
+window_rect = ((200, 140), (660, 432))
 
 icon_size = 128
 text_size = 13

@@ -57,6 +57,17 @@
     border-radius: 50%;
     background: radial-gradient(circle, rgba(255, 255, 255, 0.08), transparent 70%);
   }
+  /* Finder draws the icon names in black (light appearance) or white
+     (dark): a mid-grey chip under each keeps both readable. */
+  .chip {
+    position: absolute;
+    top: 283px;
+    width: 136px;
+    height: 22px;
+    margin: -11px 0 0 -68px;
+    border-radius: 11px;
+    background: #737378;
+  }
   svg.arrow {
     position: absolute;
     left: 248px;
@@ -82,6 +93,8 @@
 
   <div class="spot" style="left: 165px"></div>
   <div class="spot" style="left: 495px"></div>
+  <div class="chip" style="left: 165px"></div>
+  <div class="chip" style="left: 495px"></div>
 
   <svg class="arrow" width="164" height="64" viewBox="0 0 164 64" aria-hidden="true">
     <defs>
