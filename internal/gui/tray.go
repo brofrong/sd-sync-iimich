@@ -13,7 +13,7 @@ import (
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/i18n"
 )
 
-// spinnerFrameInterval is how often the tray spinner advances.
+// spinnerFrameInterval is how often the ring on the tray icon turns a frame.
 const spinnerFrameInterval = 100 * time.Millisecond
 
 // trayLineInterval limits progress updates of the tray's status line to
@@ -185,7 +185,7 @@ func isRunning(code app.Code) bool {
 	return false
 }
 
-// setAnimating starts or stops the spinner on the tray icon.
+// setAnimating starts or stops turning the ring on the tray icon.
 func (t *trayMenu) setAnimating(on bool) {
 	t.animMu.Lock()
 	defer t.animMu.Unlock()
@@ -200,7 +200,7 @@ func (t *trayMenu) setAnimating(on bool) {
 	}
 }
 
-// animate cycles the spinner frames until ctx is cancelled, then restores
+// animate cycles the icon frames until ctx is cancelled, then restores
 // the idle icon. It must not hold any lock while setting the icon: that
 // call waits for the main thread.
 func (t *trayMenu) animate(ctx context.Context) {

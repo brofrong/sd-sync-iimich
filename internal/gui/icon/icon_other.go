@@ -2,17 +2,12 @@
 
 package icon
 
-import (
-	"image"
-	"image/draw"
-)
+import "embed"
 
-// Template is false: the icon is the colored logo, shown as is.
+// Template is false: the icon is the colored app icon, shown as is.
 const Template = false
 
-// prepare keeps the colored logo as it is.
-func prepare(src image.Image) image.Image {
-	out := image.NewRGBA(src.Bounds())
-	draw.Draw(out, out.Bounds(), src, src.Bounds().Min, draw.Src)
-	return out
-}
+//go:embed tray/color-*.png
+var frameFS embed.FS
+
+const framePrefix = "color"

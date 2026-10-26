@@ -36,15 +36,8 @@ var displayName = strings.TrimSuffix(Name, ".app")
 //go:embed Info.plist.tmpl
 var infoPlistTemplate string
 
-// icons is Contents/Resources/icons.icns. It was generated once from the
-// tray icon:
-//
-//	src=internal/gui/icon/immich.png; set=$(mktemp -d)/icons.iconset; mkdir "$set"
-//	for s in 16 32 128 256 512; do
-//	  sips -z $s $s "$src" --out "$set/icon_${s}x${s}.png"
-//	  sips -z $((s*2)) $((s*2)) "$src" --out "$set/icon_${s}x${s}@2x.png"
-//	done
-//	iconutil -c icns -o internal/bundle/icons.icns "$set"
+// icons is Contents/Resources/icons.icns, rendered from build/icon/app.svg
+// by scripts/icons.sh.
 //
 //go:embed icons.icns
 var icons []byte
