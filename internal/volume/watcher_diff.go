@@ -16,10 +16,10 @@ func volumeKey(info Info) string {
 // from prev mounted. Events are ordered by key (unmounted before mounted)
 // so the result is deterministic regardless of map iteration order.
 //
-// This is shared (no build tag) by every platform whose watcher polls
-// ListRemovable on an interval rather than subscribing to OS mount events
-// (currently Windows and Linux; darwin watches /Volumes with fsnotify
-// instead and does not use this helper).
+// This is shared (no build tag) by every platform's watcher: each polls
+// the mounted volumes on an interval rather than subscribing to OS mount
+// events (Windows and Linux list the removable volumes, darwin everything
+// in /Volumes).
 func diffVolumes(prev, cur []Info) []Event {
 	prevByKey := make(map[string]Info, len(prev))
 	for _, v := range prev {

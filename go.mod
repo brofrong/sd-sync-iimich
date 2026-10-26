@@ -3,7 +3,6 @@ module github.com/dmitiigorshkov/sd-sync-immich
 go 1.26.4
 
 require (
-	github.com/fsnotify/fsnotify v1.10.1
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/wailsapp/wails/v3 v3.0.0-beta.34
 	golang.org/x/sys v0.48.0
