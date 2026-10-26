@@ -431,8 +431,9 @@ func (a *App) formatFailed(keep formatOutcome, err error) formatOutcome {
 
 // ignoreFormatEvent reports whether the volume event ev belongs to the
 // auto-format and must not be handled: anything at the mount point being
-// erased, and the mount echo of the card the app just formatted and
-// adopted (the watcher reports it seconds later).
+// erased, and the echo of the format at the card the app just formatted
+// and adopted (the watcher reports it seconds later): the erased volume
+// unmounting and the blank card mounting.
 func (a *App) ignoreFormatEvent(ev volume.Event) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -444,8 +445,14 @@ func (a *App) ignoreFormatEvent(ev volume.Event) bool {
 	if a.adopted == "" || mount != a.adopted {
 		return false
 	}
-	a.adopted = ""
 	mt := a.mountedTarget
+	if ev.Type == volume.EventUnmounted && mt != nil && mt.MountPoint == mount && !strings.EqualFold(mt.UUID, ev.Info.UUID) {
+		// The erased volume's unmount, reported only now: the adopted
+		// card is still there, and its mount echo may follow.
+		logx.Info("erased volume unmounted", "name", ev.Info.Name, "path", mount)
+		return true
+	}
+	a.adopted = ""
 	if ev.Type == volume.EventMounted && mt != nil && mt.MountPoint == mount && strings.EqualFold(mt.UUID, ev.Info.UUID) {
 		logx.Info("formatted card mounted", "name", ev.Info.Name, "path", mount)
 		return true

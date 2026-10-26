@@ -364,6 +364,45 @@ func TestFormattedNotEjectedWhenDisabled(t *testing.T) {
 	}
 }
 
+// A polling watcher that missed the erase reports both halves of it after
+// the erase is over: the erased volume unmounted, then the blank card
+// mounted at the same mount point. Neither is the card being pulled out or
+// plugged in.
+func TestFormattedCardSwapEchoIgnored(t *testing.T) {
+	a, _, _, newCard := formatApp(t)
+	if err := a.Config.Update(func(c *config.Config) { c.Card.AutoEject = false }); err != nil {
+		t.Fatal(err)
+	}
+	useFakeImmich(t, a)
+	putPhotos(t, a, "A.JPG")
+	erased := *a.MountedTarget()
+	statuses := recordFullStatuses(a)
+
+	a.SyncNow()
+	waitFor(t, "formatted", func() bool { return statuses.has(CodeFormatted) })
+	waitSyncFinished(t, a)
+
+	a.handleVolumeEvent(volume.Event{Type: volume.EventUnmounted, Info: erased})
+	a.handleVolumeEvent(volume.Event{Type: volume.EventMounted, Info: newCard})
+	time.Sleep(50 * time.Millisecond)
+
+	if runs, err := a.State.RecentRuns(10); err != nil || len(runs) != 1 {
+		t.Errorf("runs = %d (%v) after the format's echo, want no new sync", len(runs), err)
+	}
+	if got := a.Status().Code; got != CodeFormatted {
+		t.Errorf("Status().Code = %q after the format's echo, want formatted kept", got)
+	}
+	if mt := a.MountedTarget(); mt == nil || *mt != newCard {
+		t.Errorf("MountedTarget() = %+v, want the new card", mt)
+	}
+
+	// Later events are handled as usual.
+	a.handleVolumeEvent(volume.Event{Type: volume.EventUnmounted, Info: newCard})
+	if got := a.Status().Code; got != CodeWaitingForCard {
+		t.Errorf("Status().Code = %q after the card was pulled out, want waiting_for_card", got)
+	}
+}
+
 func TestNoFormatWhenDisabled(t *testing.T) {
 	a, v, e, _ := formatApp(t)
 	if err := a.Config.Update(func(c *config.Config) { c.Card.AutoFormat = false }); err != nil {
