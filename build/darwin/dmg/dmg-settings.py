@@ -16,7 +16,8 @@ filesystem = "HFS+"
 
 files = [app]
 symlinks = {"Applications": "/Applications"}
-hide_extensions = [app_name]
+# No hide_extensions: it marks the bundle with com.apple.FinderInfo, which
+# codesign --strict rejects (Finder hides ".app" anyway).
 
 # The volume shows the app's icon.
 icon = os.path.join(app, "Contents", "Resources", "icons.icns")
