@@ -78,7 +78,7 @@ jobs:
           trap 'hdiutil detach "$mnt"' EXIT
           ls -la "$mnt"
           test "$(readlink "$mnt/Applications")" = /Applications
-          test -f "$mnt/.background/background.tiff"
+          test -f "$mnt/.background.tiff"
           codesign --verify --deep --strict "$mnt/SD Sync Immich.app"
 
       # TEMP (remove before merging): the DMG window as Finder shows it.

@@ -29,27 +29,33 @@
 
 ## Установка
 
-Нужна macOS 13 или новее (Apple Silicon или Intel). Приложение ставится как
-`SD Sync Immich.app` в `~/Applications`. Windows и Linux — в разделе
-[Windows и Linux (бета)](#windows-и-linux-бета).
+Нужна macOS 13 или новее (Apple Silicon или Intel). Windows и Linux — в
+разделе [Windows и Linux (бета)](#windows-и-linux-бета).
 
-### Из GitHub Releases: архив приложения (рекомендуется)
+### Из GitHub Releases: DMG (рекомендуется)
 
 1. Откройте [Releases](https://github.com/brofrong/sd-sync-iimich/releases/latest)
-   и скачайте **`SD-Sync-Immich.zip`**.
-2. Распакуйте его и перенесите **SD Sync Immich.app** в `~/Applications`
-   (папка «Программы» в домашней папке; создайте её, если её нет).
-3. Приложение подписано ad hoc, без Apple Developer ID, поэтому при первом
-   запуске macOS его заблокирует. Откройте его через **ПКМ → «Открыть»** и
-   подтвердите, либо снимите карантин в Терминале:
+   и скачайте **`SD-Sync-Immich.dmg`**. Остальные файлы релиза для Mac —
+   архив и бинарники для командной строки; двойным щелчком они не
+   открываются как приложение.
+2. Откройте DMG и перетащите **SD Sync Immich** на папку **Applications**
+   в том же окне. Если у вас нет прав администратора, перетащите приложение
+   в `~/Applications` (папка «Программы» в домашней папке).
+3. Приложение подписано ad hoc, без Apple Developer ID, поэтому первый
+   запуск macOS заблокирует. Откройте **Системные настройки →
+   Конфиденциальность и безопасность**, внизу у сообщения о SD Sync Immich
+   нажмите кнопку открытия и подтвердите. Или снимите карантин в Терминале:
 
    ```bash
-   xattr -dr com.apple.quarantine ~/Applications/"SD Sync Immich.app"
-   open ~/Applications/"SD Sync Immich.app"
+   xattr -dr com.apple.quarantine /Applications/"SD Sync Immich.app"
+   open /Applications/"SD Sync Immich.app"
    ```
 
 4. Чтобы приложение запускалось при входе в систему, включите
    **Настройки → Автозапуск**.
+
+Вместо DMG можно скачать **`SD-Sync-Immich.zip`**: распакуйте его и
+перенесите приложение в папку «Программы».
 
 ### Из GitHub Releases: бинарник
 
@@ -92,7 +98,7 @@ Xcode Command Line Tools (`xcode-select --install`). Wails CLI запускае�
 git clone https://github.com/brofrong/sd-sync-iimich.git
 cd sd-sync-iimich
 scripts/build-app.sh dev dist
-open dist   # SD Sync Immich.app и SD-Sync-Immich.zip
+open dist   # SD Sync Immich.app, SD-Sync-Immich.zip и (с dmgbuild) SD-Sync-Immich.dmg
 # или сразу установить с автозапуском:
 dist/sd-sync-immich install
 ```
@@ -111,6 +117,13 @@ CGO_ENABLED=1 go build -o sd-sync-immich ./cmd/sd-sync-immich
 
 ```bash
 ~/Applications/"SD Sync Immich.app"/Contents/MacOS/sd-sync-immich uninstall
+```
+
+Если приложение ставилось из DMG в `/Applications`, выполните команду из
+него, а затем перетащите приложение в Корзину:
+
+```bash
+/Applications/"SD Sync Immich.app"/Contents/MacOS/sd-sync-immich uninstall
 ```
 
 ## Windows и Linux (бета)
