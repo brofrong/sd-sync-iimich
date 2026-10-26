@@ -79,6 +79,7 @@ jobs:
           ls -la "$mnt"
           test "$(readlink "$mnt/Applications")" = /Applications
           test -f "$mnt/.background.tiff"
+          xattr -lr "$mnt/SD Sync Immich.app" | head -20
           codesign --verify --deep --strict "$mnt/SD Sync Immich.app"
 
       # TEMP (remove before merging): the DMG window as Finder shows it.

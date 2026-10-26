@@ -76,9 +76,15 @@ sums=(sd-sync-immich sd-sync-immich-darwin-arm64 sd-sync-immich-darwin-amd64 "$z
 # image while building it (hidden from Finder) and copies the bundle with
 # ditto, which keeps its signature.
 if command -v "$dmgbuild" >/dev/null; then
+  # A copy without extended attributes (as the zip's --norsrc): dmgbuild's
+  # ditto would carry them into the image, where codesign --strict rejects
+  # them as detritus.
+  staging="$(mktemp -d)"
+  ditto --norsrc --noextattr --noacl "$app" "$staging/$app"
   "$dmgbuild" -s "$root/build/darwin/dmg/dmg-settings.py" \
-    -D app="$outdir/$app" -D background="$root/build/darwin/dmg/background.tiff" \
+    -D app="$staging/$app" -D background="$root/build/darwin/dmg/background.tiff" \
     "SD Sync Immich" "$dmg"
+  rm -rf "$staging"
   sums+=("$dmg")
 else
   echo "dmgbuild not found: $dmg not built" >&2
