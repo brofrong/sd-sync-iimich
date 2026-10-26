@@ -354,6 +354,12 @@ func (s *Service) EjectCard() error {
 	return s.app.EjectCard()
 }
 
+// FormatCard verifies and erases the selected card (see
+// app.App.FormatCard); the statuses tell how it ends.
+func (s *Service) FormatCard() error {
+	return s.app.FormatCard()
+}
+
 // TestServer checks url and apiKey without saving them. An empty apiKey
 // means the saved key, which is only sent to the saved server's host:
 // another host gets checkKeyRequired.

@@ -114,9 +114,17 @@ func (a *App) reportNeedsAdmin(uuid string) bool {
 // insertion of the card (see reportNeedsAdmin), and the phase ends without
 // failing, so auto-eject still runs.
 func (a *App) autoFormat(ctx context.Context, vol volume.Info, st Status) formatOutcome {
+	return a.formatPhase(ctx, vol, st, false)
+}
+
+// formatPhase is autoFormat, or with manual the format the user asked for
+// (see FormatCard): no countdown and no auto-format setting to check (the
+// window asked the user), an empty card is erased too, and administrator
+// rights were checked before.
+func (a *App) formatPhase(ctx context.Context, vol volume.Info, st Status, manual bool) formatOutcome {
 	keep := formatOutcome{status: st, vol: vol}
 
-	if a.needsAdminToErase() {
+	if !manual && a.needsAdminToErase() {
 		if !a.reportNeedsAdmin(vol.UUID) {
 			logx.Info("not formatting: erasing the card needs administrator rights (already reported for this insertion)", "name", vol.Name)
 			return keep
@@ -158,23 +166,27 @@ func (a *App) autoFormat(ctx context.Context, vol volume.Info, st Status) format
 		keep.status = newStatus(CodeFormatSkippedUnsupported, map[string]string{"files": files})
 		a.setStatus(keep.status)
 		return keep
-	case vr.Media == 0:
+	case vr.Media == 0 && !manual:
 		// An empty card: nothing to free, nothing to report. (Files the app
 		// does not upload were reported above: such a card is not empty.)
 		logx.Info("not formatting: no media on the card", "name", vol.Name)
 		a.restoreStatus(gen, st)
 		return keep
-	case !vr.Safe():
+	case vr.Media > 0 && !vr.Safe():
 		// Unreachable with the cases above; never erase if Safe disagrees.
+		// (Only an empty card formatted by hand gets past them unsafe.)
 		return a.formatFailed(keep, errors.New("the card did not pass verification"))
 	}
 
-	gen, ok := a.countdown(ctx, vol)
-	if !ok {
-		a.restoreStatus(gen, st)
-		return keep
+	if !manual {
+		var ok bool
+		gen, ok = a.countdown(ctx, vol)
+		if !ok {
+			a.restoreStatus(gen, st)
+			return keep
+		}
 	}
-	if !a.beginErase(ctx, vol) {
+	if !a.beginErase(ctx, vol, manual) {
 		logx.Info("not formatting: the card changed during the countdown", "name", vol.Name)
 		a.restoreStatus(gen, st)
 		return keep
@@ -260,6 +272,62 @@ func (a *App) CancelFormat() {
 	}
 }
 
+// Errors of FormatCard (besides ErrCardNotMounted, ErrCardSyncing and
+// volume.ErrNeedsAdmin).
+var (
+	ErrNotConfigured = errors.New("the server is not set up")
+	ErrDryRun        = errors.New("cards are not formatted in a dry run")
+)
+
+// FormatCard formats the selected, mounted card on the user's request: it
+// verifies that everything on it is in Immich and erases it, as the
+// auto-format does after a sync, then selects the blank card (see
+// formatPhase). It returns once the format has started; the statuses tell
+// how it ends, and nothing is erased unless the verification passed. It
+// counts as a sync running (Stop cancels it, no sync starts meanwhile) and
+// is refused while one runs, before the server is set up, in a dry run,
+// and when erasing needs administrator rights.
+func (a *App) FormatCard() error {
+	// Not under syncMu: Stop waits for an in-progress resume, which takes
+	// it.
+	a.resume().Stop()
+
+	a.syncMu.Lock()
+	defer a.syncMu.Unlock()
+	switch {
+	case a.dryRun:
+		return ErrDryRun
+	case !a.Config.IsConfigured():
+		return ErrNotConfigured
+	case a.syncCancel != nil:
+		return ErrCardSyncing
+	case a.needsAdminToErase():
+		return volume.ErrNeedsAdmin
+	}
+	vol := a.MountedTarget()
+	if vol == nil {
+		return ErrCardNotMounted
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	a.syncCancel = cancel
+	a.cardRemoved.Store(false)
+	logx.Info("format requested", "name", vol.Name, "uuid", vol.UUID, "path", vol.MountPoint)
+
+	go func() {
+		release := a.keepMacAwake()
+		defer release()
+
+		a.formatPhase(ctx, *vol, a.Status(), true)
+
+		a.syncMu.Lock()
+		a.syncCancel = nil
+		a.syncMu.Unlock()
+		cancel()
+	}()
+	return nil
+}
+
 // formatTargetOK reports whether vol may still be formatted: the phase was
 // not stopped, auto-format is still on, vol is still the selected card and
 // still the mounted target at the same mount point.
@@ -271,11 +339,12 @@ func (a *App) formatTargetOK(ctx context.Context, vol volume.Info) bool {
 	return a.stillMounted(ctx, vol)
 }
 
-// beginErase checks formatTargetOK one last time and, under the same lock
-// as the mounted-target check, marks vol's mount point as being erased.
-func (a *App) beginErase(ctx context.Context, vol volume.Info) bool {
+// beginErase checks formatTargetOK one last time (with manual, all of it
+// but the auto-format setting) and, under the same lock as the
+// mounted-target check, marks vol's mount point as being erased.
+func (a *App) beginErase(ctx context.Context, vol volume.Info, manual bool) bool {
 	cfg := a.Config.Get()
-	if !cfg.Card.AutoFormat || !strings.EqualFold(cfg.Watch.VolumeUUID, vol.UUID) {
+	if (!manual && !cfg.Card.AutoFormat) || !strings.EqualFold(cfg.Watch.VolumeUUID, vol.UUID) {
 		return false
 	}
 	a.mu.Lock()

@@ -1,8 +1,11 @@
 <script lang="ts">
-  // The Status section: the status card, then three tiles (card, server,
+  // The Status section: the status card, the selected card's own actions
+  // (eject, format) while it is plugged in, then three tiles (card, server,
   // last sync) that each open the section where it can be changed.
   import { onMount } from "svelte";
   import type { SyncRun } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/state";
+  import Button from "../components/Button.svelte";
+  import FormatDialog from "../components/FormatDialog.svelte";
   import GlassCard from "../components/GlassCard.svelte";
   import StatusCard from "../components/StatusCard.svelte";
   import { appState, backend, parseTime, status } from "../lib/backend";
@@ -18,6 +21,52 @@
   let { onNavigate }: Props = $props();
 
   const code = $derived($status.code as string);
+
+  // ---- The selected card's actions --------------------------------------------
+  const card = $derived($appState.card);
+  const showCardBar = $derived(
+    Boolean(card?.uuid && card.mounted) && code !== "" && code !== "not_configured" && code !== "no_card_selected",
+  );
+  // While the card is read, verified or erased it is left alone.
+  const cardBusy = $derived(["scanning", "syncing", "verifying", "format_pending", "formatting"].includes(code));
+  const serverReady = $derived(Boolean($appState.server?.url && $appState.server?.hasKey));
+  const formatHint = $derived(
+    $appState.settings?.autoFormatNeedsAdmin
+      ? t("card_bar.format_needs_admin")
+      : !serverReady
+        ? t("card_bar.format_needs_server")
+        : "",
+  );
+  let formatOpen = $state(false);
+  let cardError = $state("");
+
+  function failed(err: unknown): void {
+    cardError = t("ui.action_failed", { detail: err instanceof Error ? err.message : String(err) });
+  }
+
+  async function eject(): Promise<void> {
+    cardError = "";
+    try {
+      await backend.EjectCard();
+    } catch (err) {
+      failed(err);
+    }
+  }
+
+  async function format(): Promise<void> {
+    formatOpen = false;
+    cardError = "";
+    try {
+      await backend.FormatCard();
+    } catch (err) {
+      failed(err);
+    }
+  }
+
+  // The dialog is about the card that was plugged in when it opened.
+  $effect(() => {
+    if (!showCardBar || cardBusy) formatOpen = false;
+  });
 
   // ---- Last sync ----------------------------------------------------------------
   let lastRun = $state<SyncRun | null | undefined>(undefined);
@@ -169,6 +218,23 @@
 <div class="status">
   <StatusCard status={$status} view={$appState} {onNavigate} {errorKinds} />
 
+  {#if showCardBar}
+    <GlassCard padding="10px 12px 10px 14px">
+      <div class="card-bar">
+        <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true"><path d={icons.cards} /></svg>
+        <span class="card-name" title={card.name}>{card.name}</span>
+        {#if card.sizeBytes > 0}<span class="card-size">{formatBytes(card.sizeBytes)}</span>{/if}
+        <div class="card-actions">
+          <Button disabled={cardBusy} onclick={eject}>{t("card_bar.eject")}</Button>
+          <span title={formatHint}>
+            <Button disabled={cardBusy || formatHint !== ""} onclick={() => (formatOpen = true)}>{t("card_bar.format")}</Button>
+          </span>
+        </div>
+      </div>
+      {#if cardError}<p class="card-error" role="alert">{cardError}</p>{/if}
+    </GlassCard>
+  {/if}
+
   <div class="tiles">
     {#each tiles as tile (tile.id)}
       <GlassCard padding="0">
@@ -188,10 +254,56 @@
   </div>
 </div>
 
+{#if formatOpen}
+  <FormatDialog name={card.name} sizeBytes={card.sizeBytes} onconfirm={format} oncancel={() => (formatOpen = false)} />
+{/if}
+
 <style>
   .status {
     display: grid;
     gap: 14px;
+  }
+
+  /* ---- The selected card's actions ---- */
+  .card-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+  }
+  .card-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    fill: none;
+    stroke: var(--text-2);
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .card-name {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .card-size {
+    color: var(--text-3);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .card-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .card-error {
+    margin: 8px 0 0;
+    color: #ff8a82;
+    font-size: 12px;
   }
 
   .tiles {

@@ -650,6 +650,17 @@ export function createMockTransport(): Transport {
       if (pinned) setStatus(makeStatus("syncing", syncProgress(0.1, 0)));
       else enter(0);
     },
+    // As Go's FormatCard: refused while busy; verifies, then erases.
+    FormatCard: async () => {
+      const busy = ["scanning", "syncing", "verifying", "format_pending", "formatting"].includes(state.status.code);
+      if (busy) throw new Error("the card is syncing");
+      if (!mounted.some((c) => c.uuid === state.card.uuid)) throw new Error("selected card is not mounted");
+      await delay(150, null);
+      const name = state.card.name;
+      interrupt(makeStatus("verifying", new Progress({ current: 0, total: 2114 })), 8000);
+      setTimeout(() => setStatus(makeStatus("formatting", null, { name })), 2500);
+      setTimeout(() => setStatus(makeStatus("formatted", null, { name })), 4500);
+    },
     CancelFormat: async () => {
       if (state.status.code !== "format_pending") return;
       // The sync's result status is shown again.

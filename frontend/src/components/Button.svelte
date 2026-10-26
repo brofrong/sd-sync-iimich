@@ -1,12 +1,13 @@
 <script lang="ts">
   // A push button. "primary" is the one glowing, accent-filled action of a
-  // card; "secondary" is a quiet glass button. When onclick returns a
+  // card; "secondary" is a quiet glass button; "danger" is a red one for
+  // what can't be undone. When onclick returns a
   // promise the button shows a busy state until it settles; `busy` shows
   // it for work started elsewhere (e.g. Enter in a form field).
   import type { Snippet } from "svelte";
 
   interface Props {
-    variant?: "primary" | "secondary";
+    variant?: "primary" | "secondary" | "danger";
     disabled?: boolean;
     busy?: boolean;
     /** id of the element that says what the button acts on (aria-describedby). */
@@ -100,6 +101,20 @@
      loses most of its colour. */
   .primary:disabled:not(.busy) {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    filter: saturate(0.35);
+  }
+
+  .danger {
+    border-color: transparent;
+    background: var(--red);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  }
+  .danger:hover:not(:disabled) {
+    background: #ff5b51;
+  }
+  .danger:disabled:not(.busy) {
     filter: saturate(0.35);
   }
 

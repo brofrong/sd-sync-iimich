@@ -361,12 +361,16 @@ func (a *App) SelectCard(v volume.Info) error {
 	return nil
 }
 
+// ErrCardNotMounted is returned by EjectCard and FormatCard when the
+// selected card isn't mounted.
+var ErrCardNotMounted = errors.New("selected card is not mounted")
+
 // EjectCard ejects the selected card. It fails if the card isn't mounted;
 // on success the unmount event updates the status.
 func (a *App) EjectCard() error {
 	vol := a.MountedTarget()
 	if vol == nil {
-		return errors.New("selected card is not mounted")
+		return ErrCardNotMounted
 	}
 	logx.Info("ejecting card", "name", vol.Name, "path", vol.MountPoint)
 	return volume.Eject(vol.MountPoint)
