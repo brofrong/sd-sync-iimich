@@ -1,9 +1,8 @@
 <script lang="ts">
   // A frosted-glass card: blurred and tinted over whatever lies behind it,
-  // with a grain layer and (unless `sheen` is off) a soft highlight that
-  // follows the pointer. The
-  // tone recolours the tint, border and glow with a crossfade; bumping
-  // `shake` makes the card nudge once (used when an error appears).
+  // with a grain layer. The tone recolours the tint, border and glow with a
+  // crossfade; bumping `shake` makes the card nudge once (used when an
+  // error appears).
   import type { Snippet } from "svelte";
   import { get } from "svelte/store";
   import type { Tone } from "../lib/stores";
@@ -13,12 +12,10 @@
     tone?: Tone;
     shake?: number;
     padding?: string;
-    /** The highlight under the pointer. */
-    sheen?: boolean;
     children: Snippet;
   }
 
-  let { tone = "idle", shake = 0, padding = "16px 18px", sheen = true, children }: Props = $props();
+  let { tone = "idle", shake = 0, padding = "16px 18px", children }: Props = $props();
 
   let el: HTMLDivElement;
   const tones: Tone[] = ["idle", "accent", "error", "warn", "success"];
@@ -38,21 +35,14 @@
       { duration: 500, delay: 200, easing: "ease-out" },
     );
   });
-
-  function track(e: PointerEvent): void {
-    const r = el.getBoundingClientRect();
-    el.style.setProperty("--mx", `${e.clientX - r.left}px`);
-    el.style.setProperty("--my", `${e.clientY - r.top}px`);
-  }
 </script>
 
-<div class="glass noise tone-{tone}" style:padding bind:this={el} onpointermove={sheen ? track : undefined} role="presentation">
+<div class="glass noise tone-{tone}" style:padding bind:this={el}>
   <div class="tints" aria-hidden="true">
     {#each tones as t (t)}
       <i class="tint {t}" class:on={t === tone}></i>
     {/each}
   </div>
-  {#if sheen}<div class="sheen" aria-hidden="true"></div>{/if}
   <div class="content">{@render children()}</div>
 </div>
 
@@ -73,8 +63,7 @@
   }
 
   .tints,
-  .tint,
-  .sheen {
+  .tint {
     position: absolute;
     inset: 0;
     border-radius: inherit;
@@ -120,21 +109,6 @@
   .tone-success {
     border-color: rgba(48, 209, 88, 0.4);
     box-shadow: 0 0 28px rgba(48, 209, 88, 0.22), var(--glass-shadow);
-  }
-
-  /* A soft light under the pointer, as if the glass caught it. */
-  .sheen {
-    z-index: -1;
-    opacity: 0;
-    background: radial-gradient(
-      260px circle at var(--mx, 50%) var(--my, 0%),
-      rgba(255, 255, 255, 0.07),
-      transparent 70%
-    );
-    transition: opacity 0.4s;
-  }
-  .glass:hover .sheen {
-    opacity: 1;
   }
 
   .content {

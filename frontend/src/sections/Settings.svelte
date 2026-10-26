@@ -252,7 +252,7 @@
 {/snippet}
 
 <div class="section">
-  <GlassCard padding="16px 18px 6px" sheen={false}>
+  <GlassCard padding="16px 18px 6px">
     <h2 class="eyebrow">{t("settings.general")}</h2>
 
     <div class="row">
@@ -357,7 +357,7 @@
     {@render feedback("general")}
   </GlassCard>
 
-  <GlassCard padding="16px 18px 6px" sheen={false}>
+  <GlassCard padding="16px 18px 6px">
     <h2 class="eyebrow">{t("settings.card")}</h2>
 
     <div class="row">
@@ -428,7 +428,7 @@
     {@render feedback("card")}
   </GlassCard>
 
-  <GlassCard padding="16px 18px 6px" sheen={false}>
+  <GlassCard padding="16px 18px 6px">
     <h2 class="eyebrow">{t("settings.notifications")}</h2>
 
     <div class="row">
@@ -461,7 +461,7 @@
     {@render feedback("notify")}
   </GlassCard>
 
-  <GlassCard tone={update ? "accent" : "idle"} padding="16px 18px 18px" sheen={false}>
+  <GlassCard tone={update ? "accent" : "idle"} padding="16px 18px 18px">
     <h2 class="eyebrow">{t("settings.updates")}</h2>
 
     <div class="version-row">
