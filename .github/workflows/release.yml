@@ -52,14 +52,53 @@ jobs:
           go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.34
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      # Frontend, arm64/amd64/universal binaries, the signed app bundle and
-      # its zip (see the script). The CGO flags and -tags production are set
-      # by the script. Its checksums.txt covers only these files and stays
-      # here: the release job writes the one for all systems.
+      # dmgbuild lays out the DMG window; pinned with hashes.
+      - name: Install dmgbuild
+        run: |
+          python3 -m venv "$RUNNER_TEMP/dmgbuild"
+          "$RUNNER_TEMP/dmgbuild/bin/pip" install --require-hashes --only-binary=:all: -r build/darwin/dmg/requirements.txt
+          echo "DMGBUILD=$RUNNER_TEMP/dmgbuild/bin/dmgbuild" >> "$GITHUB_ENV"
+
+      # Frontend, arm64/amd64/universal binaries, the signed app bundle, its
+      # zip and the DMG (see the script). The CGO flags and -tags production
+      # are set by the script. Its checksums.txt covers only these files and
+      # stays here: the release job writes the one for all systems.
       - name: Build release
         env:
           WAILS3: wails3
         run: scripts/build-app.sh "$VERSION" dist
+
+      # The DMG holds the signed app, the link to /Applications and the
+      # window's background.
+      - name: Check DMG
+        run: |
+          hdiutil verify dist/SD-Sync-Immich.dmg
+          mnt="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mnt" dist/SD-Sync-Immich.dmg
+          trap 'hdiutil detach "$mnt"' EXIT
+          ls -la "$mnt"
+          test "$(readlink "$mnt/Applications")" = /Applications
+          test -f "$mnt/.background/background.tiff"
+          codesign --verify --deep --strict "$mnt/SD Sync Immich.app"
+
+      # TEMP (remove before merging): the DMG window as Finder shows it.
+      - name: DMG screenshot
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          hdiutil attach dist/SD-Sync-Immich.dmg
+          open "/Volumes/SD Sync Immich"
+          sleep 8
+          screencapture -x "$RUNNER_TEMP/dmg.png"
+          osascript -e 'tell application "Finder" to get bounds of front window' || true
+          hdiutil detach "/Volumes/SD Sync Immich" || true
+      - name: Upload DMG screenshot
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmg-screenshot
+          path: ${{ runner.temp }}/dmg.png
 
       # sd-sync-immich keeps its name: v0.3.0's updater downloads it to
       # migrate to the bundle, and the in-app updater downloads it too.
@@ -73,6 +112,7 @@ jobs:
             dist/sd-sync-immich-darwin-arm64
             dist/sd-sync-immich-darwin-amd64
             dist/SD-Sync-Immich.zip
+            dist/SD-Sync-Immich.dmg
 
   windows:
     name: Windows
@@ -187,6 +227,7 @@ jobs:
             sd-sync-immich-darwin-arm64 \
             sd-sync-immich-darwin-amd64 \
             SD-Sync-Immich.zip \
+            SD-Sync-Immich.dmg \
             SD-Sync-Immich-Setup-x64.exe \
             SD-Sync-Immich-x86_64.AppImage \
             > checksums.txt
@@ -203,6 +244,7 @@ jobs:
             dist/sd-sync-immich-darwin-arm64
             dist/sd-sync-immich-darwin-amd64
             dist/SD-Sync-Immich.zip
+            dist/SD-Sync-Immich.dmg
             dist/SD-Sync-Immich-Setup-x64.exe
             dist/SD-Sync-Immich-x86_64.AppImage
             dist/checksums.txt
@@ -216,12 +258,13 @@ jobs:
         with:
           generate_release_notes: true
           body: |
-            **Windows и Linux — бета.** macOS: `SD-Sync-Immich.zip`; Windows 10/11: `SD-Sync-Immich-Setup-x64.exe`; Linux x86_64: `SD-Sync-Immich-x86_64.AppImage`. Установка и ограничения — в [README](https://github.com/brofrong/sd-sync-iimich#readme).
+            **Windows и Linux — бета.** macOS: `SD-Sync-Immich.dmg`; Windows 10/11: `SD-Sync-Immich-Setup-x64.exe`; Linux x86_64: `SD-Sync-Immich-x86_64.AppImage`. Установка и ограничения — в [README](https://github.com/brofrong/sd-sync-iimich#readme).
           files: |
             dist/sd-sync-immich
             dist/sd-sync-immich-darwin-arm64
             dist/sd-sync-immich-darwin-amd64
             dist/SD-Sync-Immich.zip
+            dist/SD-Sync-Immich.dmg
             dist/SD-Sync-Immich-Setup-x64.exe
             dist/SD-Sync-Immich-x86_64.AppImage
             dist/checksums.txt

@@ -8,15 +8,21 @@
 #   sd-sync-immich-darwin-arm64   Apple Silicon only
 #   sd-sync-immich-darwin-amd64   Intel only
 #   SD Sync Immich.app            the bundle (not uploaded; zipped below)
-#   SD-Sync-Immich.zip            the bundle for manual installation
-#   checksums.txt                 SHA-256 of the four files above, for a
+#   SD-Sync-Immich.zip            the bundle zipped, for manual installation
+#                                 (as in releases before the DMG)
+#   SD-Sync-Immich.dmg            the bundle and a link to /Applications to
+#                                 drag it onto, for manual installation
+#                                 (skipped when dmgbuild is not installed)
+#   checksums.txt                 SHA-256 of the files above, for a
 #                                 local build: a release gets one
 #                                 checksums.txt for every system's files,
 #                                 which .github/workflows/release.yml writes
 #
 # Usage: scripts/build-app.sh <version> <outdir>
 # The version (e.g. v0.4.0) is embedded with -ldflags. Set WAILS3 to use an
-# installed Wails CLI (see scripts/build-frontend.sh).
+# installed Wails CLI (see scripts/build-frontend.sh) and DMGBUILD to use a
+# dmgbuild outside PATH (install it with
+# `pip install --require-hashes --only-binary=:all: -r build/darwin/dmg/requirements.txt`).
 set -euo pipefail
 
 if [[ $# -ne 2 ]]; then
@@ -29,6 +35,8 @@ mkdir -p "$2"
 outdir="$(cd "$2" && pwd)"
 app="SD Sync Immich.app"
 zip="SD-Sync-Immich.zip"
+dmg="SD-Sync-Immich.dmg"
+dmgbuild="${DMGBUILD:-dmgbuild}"
 
 # The app's minimum macOS is 13.0 (LSMinimumSystemVersion): the Go 1.27
 # linker marks its own objects for 13.0, so a lower target only makes ld
@@ -53,7 +61,7 @@ lipo -create -output "$outdir/sd-sync-immich" \
 chmod 0755 "$outdir/sd-sync-immich" "$outdir/sd-sync-immich-darwin-arm64" "$outdir/sd-sync-immich-darwin-amd64"
 
 # make-bundle only lays out and signs the bundle; it does not start the app.
-rm -rf "${outdir:?}/$app" "$outdir/$zip"
+rm -rf "${outdir:?}/$app" "$outdir/$zip" "$outdir/$dmg"
 "$outdir/sd-sync-immich" make-bundle "$outdir/$app"
 
 cd "$outdir"
@@ -61,5 +69,19 @@ cd "$outdir"
 # (com.apple.provenance); unzip(1) would extract them as files into the
 # bundle and break its signature.
 ditto -c -k --norsrc --keepParent "$app" "$zip"
-shasum -a 256 sd-sync-immich sd-sync-immich-darwin-arm64 sd-sync-immich-darwin-amd64 "$zip" > checksums.txt
+sums=(sd-sync-immich sd-sync-immich-darwin-arm64 sd-sync-immich-darwin-amd64 "$zip")
+
+# The DMG opens a window with the app, an arrow and the Applications folder
+# (build/darwin/dmg). dmgbuild lays it out without Finder; it mounts the
+# image while building it (hidden from Finder) and copies the bundle with
+# ditto, which keeps its signature.
+if command -v "$dmgbuild" >/dev/null; then
+  "$dmgbuild" -s "$root/build/darwin/dmg/dmg-settings.py" \
+    -D app="$outdir/$app" -D background="$root/build/darwin/dmg/background.tiff" \
+    "SD Sync Immich" "$dmg"
+  sums+=("$dmg")
+else
+  echo "dmgbuild not found: $dmg not built" >&2
+fi
+shasum -a 256 "${sums[@]}" > checksums.txt
 echo "Built $version into $outdir"

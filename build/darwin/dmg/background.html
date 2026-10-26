@@ -1,0 +1,109 @@
+<!doctype html>
+<!--
+  The background of the DMG window (660 × 400 points). The app icon sits at
+  (165, 200) and the Applications folder at (495, 200), 128 points wide
+  (see dmg-settings.py); the arrow runs between them. Rendered to
+  background.tiff (1x and 2x) by scripts/dmg-background.sh.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body {
+    margin: 0;
+    width: 660px;
+    height: 400px;
+    overflow: hidden;
+  }
+  body {
+    position: relative;
+    background:
+      radial-gradient(420px 300px at 8% 0%, rgba(123, 92, 255, 0.42), transparent 70%),
+      radial-gradient(420px 300px at 100% 100%, rgba(10, 132, 255, 0.30), transparent 70%),
+      #15141c;
+    color: #f2f2f7;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .title {
+    position: absolute;
+    top: 30px;
+    width: 100%;
+    text-align: center;
+  }
+  .title h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .title p {
+    margin: 6px 0 0;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.72);
+  }
+  .title p.en {
+    margin-top: 2px;
+    font-size: 11.5px;
+    color: rgba(255, 255, 255, 0.45);
+  }
+  /* A soft disc behind each icon. */
+  .spot {
+    position: absolute;
+    top: 200px;
+    width: 172px;
+    height: 172px;
+    margin: -86px 0 0 -86px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.08), transparent 70%);
+  }
+  svg.arrow {
+    position: absolute;
+    left: 248px;
+    top: 168px;
+  }
+  .note {
+    position: absolute;
+    bottom: 22px;
+    width: 100%;
+    text-align: center;
+    font-size: 10.5px;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.42);
+  }
+</style>
+</head>
+<body>
+  <div class="title">
+    <h1>SD Sync Immich</h1>
+    <p>Перетащите приложение в папку «Программы»</p>
+    <p class="en">Drag the app to the Applications folder</p>
+  </div>
+
+  <div class="spot" style="left: 165px"></div>
+  <div class="spot" style="left: 495px"></div>
+
+  <svg class="arrow" width="164" height="64" viewBox="0 0 164 64" aria-hidden="true">
+    <defs>
+      <linearGradient id="g" x1="0" x2="1" y1="0" y2="0">
+        <stop offset="0" stop-color="#7b5cff" />
+        <stop offset="1" stop-color="#0a84ff" />
+      </linearGradient>
+      <filter id="glow" x="-20%" y="-60%" width="140%" height="220%">
+        <feGaussianBlur stdDeviation="4" />
+      </filter>
+    </defs>
+    <g filter="url(#glow)" opacity="0.7">
+      <path d="M8 40 C 50 8, 104 8, 140 32" fill="none" stroke="url(#g)" stroke-width="6" stroke-linecap="round" />
+    </g>
+    <path d="M8 40 C 50 8, 104 8, 134 28" fill="none" stroke="url(#g)" stroke-width="5" stroke-linecap="round" stroke-dasharray="1 11" />
+    <!-- The head, along the curve's direction at its end (34°). -->
+    <path d="M-13 -11 L 2 0 L -13 11" transform="translate(142 33) rotate(34)" fill="none" stroke="#0a84ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+
+  <div class="note">
+    Первый запуск заблокирован? Системные настройки → Конфиденциальность и безопасность → «Открыть»<br>
+    First launch blocked? System Settings → Privacy &amp; Security → Open Anyway
+  </div>
+</body>
+</html>
