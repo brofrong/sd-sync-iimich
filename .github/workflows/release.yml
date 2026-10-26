@@ -69,7 +69,8 @@ jobs:
         run: scripts/build-app.sh "$VERSION" dist
 
       # The DMG holds the signed app, the link to /Applications and the
-      # window's background.
+      # window's background. Any extended attributes on the app are listed
+      # first: codesign --strict rejects Finder info on it.
       - name: Check DMG
         run: |
           hdiutil verify dist/SD-Sync-Immich.dmg
@@ -81,25 +82,6 @@ jobs:
           test -f "$mnt/.background.tiff"
           xattr -lr "$mnt/SD Sync Immich.app" | head -20
           codesign --verify --deep --strict "$mnt/SD Sync Immich.app"
-
-      # TEMP (remove before merging): the DMG window as Finder shows it.
-      - name: DMG screenshot
-        continue-on-error: true
-        timeout-minutes: 3
-        run: |
-          hdiutil attach dist/SD-Sync-Immich.dmg
-          open "/Volumes/SD Sync Immich"
-          sleep 8
-          screencapture -x "$RUNNER_TEMP/dmg.png"
-          osascript -e 'tell application "Finder" to get bounds of front window' || true
-          hdiutil detach "/Volumes/SD Sync Immich" || true
-      - name: Upload DMG screenshot
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: dmg-screenshot
-          path: ${{ runner.temp }}/dmg.png
 
       # sd-sync-immich keeps its name: v0.3.0's updater downloads it to
       # migrate to the bundle, and the in-app updater downloads it too.
