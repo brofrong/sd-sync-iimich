@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -21,13 +22,24 @@ const (
 	thumbSide = 400
 	// thumbQuality is the JPEG quality of re-encoded thumbnails.
 	thumbQuality = 80
+	// maxImagePixels is the largest photo decoded for a thumbnail: a crafted
+	// header could otherwise claim a size that takes gigabytes to decode.
+	maxImagePixels = 64_000_000
+	// maxEmbeddedPixels is the largest embedded thumbnail used; a bigger one
+	// is ignored and the photo itself is scaled down.
+	maxEmbeddedPixels = 4_000_000
 )
+
+// errTooLarge reports a JPEG whose header claims more pixels than allowed.
+var errTooLarge = errors.New("image too large")
 
 // Thumbnail returns a JPEG thumbnail of the photo at path. It prefers the
 // camera's embedded EXIF thumbnail, read from the head of the file and turned
 // upright by the main image's Orientation; when there is none, or it is
 // broken, it decodes the whole photo and scales it to thumbSide px on the
-// long side.
+// long side. Embedded thumbnails over maxEmbeddedPixels are ignored and
+// photos over maxImagePixels are refused, both judged from the JPEG header
+// before decoding.
 func Thumbnail(path string) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -43,22 +55,40 @@ func Thumbnail(path string) ([]byte, error) {
 	o, thumb := parseExif(head[:n])
 
 	if thumb != nil {
-		if img, err := jpeg.Decode(bytes.NewReader(thumb)); err == nil {
+		if img, err := decodeLimited(bytes.NewReader(thumb), maxEmbeddedPixels); err == nil {
 			if o == 1 {
-				return thumb, nil
+				// Copied: a sub-slice would keep the whole head buffer alive.
+				return bytes.Clone(thumb), nil
 			}
 			return encodeThumb(orient(img, o))
 		}
 	}
 
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-	img, err := jpeg.Decode(bufio.NewReader(f))
+	img, err := decodeLimited(f, maxImagePixels)
 	if err != nil {
 		return nil, fmt.Errorf("decode %s: %w", path, err)
 	}
 	return encodeThumb(orient(scale(img, thumbSide), o))
+}
+
+// decodeLimited decodes the JPEG in r, from its start, after checking from
+// its header that it has at most maxPixels pixels: a bigger one is
+// errTooLarge and is never decoded.
+func decodeLimited(r io.ReadSeeker, maxPixels int) (image.Image, error) {
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	cfg, err := jpeg.DecodeConfig(bufio.NewReader(r))
+	if err != nil {
+		return nil, err
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > int64(maxPixels) {
+		return nil, fmt.Errorf("%w: %dx%d", errTooLarge, cfg.Width, cfg.Height)
+	}
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	return jpeg.Decode(bufio.NewReader(r))
 }
 
 func encodeThumb(img image.Image) ([]byte, error) {

@@ -8,6 +8,7 @@ import (
 	"image/jpeg"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -303,5 +304,62 @@ func TestOrient(t *testing.T) {
 		if c := at(tc.green); c != green {
 			t.Errorf("orient(%d) at %v = %v, want green", tc.o, tc.green, c)
 		}
+	}
+}
+
+func TestThumbnailDoesNotPinHeadBuffer(t *testing.T) {
+	thumb := encodeJPEG(t, 160, 106, red)
+	file := withExif(encodeJPEG(t, 1200, 800, blue), buildTIFF(binary.LittleEndian, 1, thumb))
+
+	got, err := Thumbnail(writeTemp(t, file))
+	if err != nil {
+		t.Fatalf("Thumbnail() error = %v", err)
+	}
+	// A sub-slice of the head buffer would keep all of it alive in the cache.
+	if cap(got) >= headSize/2 {
+		t.Fatalf("cap(result) = %d for a %d-byte thumbnail: it pins the %d-byte head buffer", cap(got), len(got), headSize)
+	}
+}
+
+func TestThumbnailIgnoresHugeEmbeddedThumbnail(t *testing.T) {
+	// 2100×2000 is over the embedded thumbnail limit; one flat grey plane
+	// keeps it small enough to fit in an APP1 segment.
+	img := image.NewGray(image.Rect(0, 0, 2100, 2000))
+	for i := range img.Pix {
+		img.Pix[i] = 255
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 75}); err != nil {
+		t.Fatal(err)
+	}
+	file := withExif(encodeJPEG(t, 2000, 1000, blue), buildTIFF(binary.LittleEndian, 1, buf.Bytes()))
+
+	got, err := Thumbnail(writeTemp(t, file))
+	if err != nil {
+		t.Fatalf("Thumbnail() error = %v", err)
+	}
+	assertColor(t, decode(t, got, 400, 200), blue)
+}
+
+// withSize rewrites the frame size in a baseline JPEG's SOF0 header.
+func withSize(t *testing.T, jpg []byte, w, h int) []byte {
+	t.Helper()
+	out := bytes.Clone(jpg)
+	i := bytes.Index(out, []byte{0xFF, 0xC0})
+	if i < 0 || i+9 > len(out) {
+		t.Fatal("no SOF0 marker")
+	}
+	binary.BigEndian.PutUint16(out[i+5:], uint16(h))
+	binary.BigEndian.PutUint16(out[i+7:], uint16(w))
+	return out
+}
+
+func TestThumbnailRefusesHugeImage(t *testing.T) {
+	// 10000×10000 claims 100 megapixels: decoding would allocate ~150 MB.
+	file := withSize(t, encodeJPEG(t, 64, 64, blue), 10000, 10000)
+
+	_, err := Thumbnail(writeTemp(t, file))
+	if err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("Thumbnail() error = %v, want a too-large error", err)
 	}
 }
