@@ -16,6 +16,9 @@
 //   ?update=manual  installing it fails with update_manual (Linux outside
 //                   an AppImage)
 //   ?history=none   no sync runs yet
+//   ?gallery=none   Gallery finds no card (as when it is not plugged in);
+//                   ?gallery=empty a card without photos, ?gallery=error
+//                   a failing Gallery call
 //   ?expand=<id>    expand the failed files of run <id> in History
 //   ?os=<system>    the system AppInfo reports: macos (default), windows or
 //                   linux; Windows and Linux are betas (the sidebar badge)
@@ -37,6 +40,7 @@ import {
 import { Progress, Status } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/app";
 import type { Action, Code } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/app";
 import { FileFailure, SyncRun } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/state";
+import { List, Photo } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gallery";
 import type { Backend, EventMap, Transport } from "./backend";
 import { resolveLanguage } from "./i18n";
 
@@ -172,6 +176,80 @@ const cycle: Phase[] = [
   { code: "done", ms: 4200 },
 ];
 
+// ---- Gallery ----------------------------------------------------------------
+// The card's JPEGs, numbered k from the oldest: PHOTOS of them taken over
+// five days (the rest of the FILES are RAW and video). The sync uploads
+// them oldest first, so a photo is in Immich once the sync has passed it.
+
+const PHOTOS = 2000;
+const IN_FLIGHT = 4; // files uploading at once
+// [days ago, photos], oldest day first.
+const shootingDays: [number, number][] = [
+  [9, 514],
+  [5, 640],
+  [3, 586],
+  [2, 212],
+  [0, 48],
+];
+
+const photoName = (k: number) => `DSC${String(5000 + k).padStart(5, "0")}.JPG`;
+const photoPath = (k: number) => `DCIM/100MSDCF/${photoName(k)}`;
+
+/** The photos the sync is uploading once it is fraction done. */
+function inFlightAt(fraction: number): string[] {
+  const first = Math.round(PHOTOS * fraction);
+  const out: string[] = [];
+  for (let k = first; k < Math.min(PHOTOS, first + IN_FLIGHT); k++) out.push(photoPath(k));
+  return out;
+}
+
+/** A stand-in picture: a gradient landscape with the photo's number. */
+function picture(k: number, width: number): string {
+  const hue = (k * 47) % 360;
+  const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${(width * 2) / 3}' viewBox='0 0 300 200'>` +
+    `<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>` +
+    `<stop offset='0' stop-color='hsl(${hue},70%,58%)'/><stop offset='1' stop-color='hsl(${(hue + 70) % 360},60%,22%)'/>` +
+    `</linearGradient></defs><rect width='300' height='200' fill='url(#g)'/>` +
+    `<circle cx='228' cy='58' r='22' fill='rgba(255,255,255,.3)'/>` +
+    `<path d='M0 200L78 122l58 44 72-68 92 78v24z' fill='rgba(0,0,0,.28)'/>` +
+    `<text x='150' y='116' font-family='-apple-system,Helvetica,sans-serif' font-size='44' font-weight='700' ` +
+    `fill='rgba(255,255,255,.9)' text-anchor='middle'>${k + 1}</text></svg>`;
+  return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+}
+
+/** samplePhotos are the card's photos, oldest first, without statuses. */
+function samplePhotos(): Photo[] {
+  const now = Date.now();
+  const out: Photo[] = [];
+  for (const [daysAgo, count] of shootingDays) {
+    const day = new Date(now - daysAgo * 86400e3);
+    // A day's shooting from 9:00, spread over ten hours; today's ends
+    // a few minutes ago.
+    let start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9).getTime();
+    let step = (10 * 3600e3) / count;
+    if (daysAgo === 0) {
+      step = 20e3;
+      start = now - 5 * 60e3 - count * step;
+    }
+    for (let i = 0; i < count; i++) {
+      const k = out.length;
+      out.push(
+        new Photo({
+          path: photoPath(k),
+          name: photoName(k),
+          takenAt: new Date(start + i * step).toISOString(),
+          size: 4.2e6 + ((k * 7919) % 8000) * 1000,
+          status: "waiting",
+          thumb: picture(k, 300),
+          src: picture(k, 1500),
+        }),
+      );
+    }
+  }
+  return out;
+}
+
 function syncProgress(fraction: number, tick: number): Progress {
   const current = Math.round(FILES * fraction);
   const bytesDone = BYTES * fraction;
@@ -189,6 +267,7 @@ function syncProgress(fraction: number, tick: number): Progress {
     duplicates: Math.round(current * 0.2),
     errors: fraction > 0.33 ? 1 : 0,
     uploaded: current - Math.round(current * 0.2) - (fraction > 0.33 ? 1 : 0),
+    inFlight: inFlightAt(fraction),
   });
 }
 
@@ -383,6 +462,8 @@ export function createMockTransport(): Transport {
     state.card = unplugged(mainCard);
   }
   if (pinned === "syncing") state.status = makeStatus("syncing", syncProgress(0.38, 0));
+  // The pinned sync stands at 38 %; otherwise the scenario moves it.
+  let fraction = pinned === "syncing" ? 0.38 : 0.2;
   if (pinned === "scanning") state.status = makeStatus("scanning");
   if (pinned === "verifying") state.status = makeStatus("verifying", new Progress({ current: 1388, total: 2114 }));
   if (pinned === "ejected") {
@@ -437,7 +518,6 @@ export function createMockTransport(): Transport {
   let elapsed = 0;
   let tick = 0;
   let hold = 0; // ms left on an interrupting status (stop, eject)
-  let fraction = 0.2;
   let timer: ReturnType<typeof setInterval> | undefined;
 
   function enter(i: number): void {
@@ -496,8 +576,23 @@ export function createMockTransport(): Transport {
 
   const delay = <T>(ms: number, v: T) => new Promise<T>((r) => setTimeout(() => r(v), ms));
 
-  // Gallery and fullscreen are stubbed here; the gallery's sample data and
-  // fullscreen-driving UI are mocked where they are consumed.
+  // As Go's Gallery: the selected card's photos while it is mounted, newest
+  // first, with the statuses of the sync so far.
+  const photos = samplePhotos();
+  const galleryMode = query.get("gallery");
+  const finished = ["done", "done_with_errors", "nothing_new", "format_pending", "formatting", "formatted"];
+  function gallery(): List | null {
+    if (galleryMode === "none" || !mounted.some((c) => c.uuid === state.card.uuid)) return null;
+    if (galleryMode === "empty") return new List({ cardUuid: state.card.uuid, cardName: state.card.name, photos: [], other: 114 });
+    const uploaded = finished.includes(state.status.code) ? PHOTOS : Math.round(PHOTOS * fraction);
+    const list = photos.map((p, k) => {
+      // A few files failed in the last sync.
+      const status = k >= uploaded ? "waiting" : k % 331 === 170 ? "failed" : "in_immich";
+      return new Photo({ ...p, status });
+    });
+    return new List({ cardUuid: state.card.uuid, cardName: state.card.name, photos: list.reverse(), other: FILES - PHOTOS });
+  }
+
   let fullscreen = false;
 
   // As Go's normalizeServer.
@@ -706,7 +801,13 @@ export function createMockTransport(): Transport {
       await delay(1500, null);
       if (query.get("update") === "manual") throw new Error("update_manual");
     },
-    Gallery: async () => null,
+    Gallery: async () => {
+      if (galleryMode === "error") {
+        await delay(300, null);
+        throw new Error("read /Volumes/Brofrong/DCIM: input/output error");
+      }
+      return delay(250, gallery());
+    },
     SetFullscreen: async (on) => {
       fullscreen = on;
     },

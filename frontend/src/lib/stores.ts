@@ -4,7 +4,7 @@
 import { readable, writable } from "svelte/store";
 
 /** Window sections, in sidebar order. */
-export const sections = ["status", "history", "cards", "settings"] as const;
+export const sections = ["status", "gallery", "history", "cards", "settings"] as const;
 export type SectionId = (typeof sections)[number];
 
 export function isSection(id: string): id is SectionId {

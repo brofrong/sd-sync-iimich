@@ -8,6 +8,7 @@
   import LogsDialog from "./components/LogsDialog.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import Cards from "./sections/Cards.svelte";
+  import Gallery from "./sections/Gallery.svelte";
   import History from "./sections/History.svelte";
   import Settings from "./sections/Settings.svelte";
   import Status from "./sections/Status.svelte";
@@ -44,6 +45,8 @@
             <div class="page" in:fly={{ y: 12, duration: ms(350), delay: ms(90) }} out:fade={{ duration: ms(120) }}>
               {#if $section === "status"}
                 <Status onNavigate={navigate} />
+              {:else if $section === "gallery"}
+                <Gallery onNavigate={navigate} />
               {:else if $section === "history"}
                 <History />
               {:else if $section === "cards"}

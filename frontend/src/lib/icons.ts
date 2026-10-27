@@ -1,6 +1,7 @@
 // Line icons (24×24, stroked) as SVG path data.
 export const icons = {
   status: "M3 12h4l3-8 4 16 3-8h4",
+  gallery: "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3 16l5-5 4 4 3-3 6 6M16 7.5a1.5 1.5 0 1 1 0 3a1.5 1.5 0 1 1 0-3z",
   history: "M12 3a9 9 0 1 1 0 18a9 9 0 1 1 0-18zM12 7v5l3.5 2",
   cards: "M8 3h7l4 4v13a1 1 0 0 1-1 1H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM10 3v4M13 3v4M16 5v2",
   server:
