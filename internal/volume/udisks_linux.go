@@ -209,3 +209,50 @@ func isNotAuthorizedErr(err error) bool {
 	}
 	return false
 }
+
+// listUDisksLinksFn lists the UUIDs and labels of UDisks2's block devices,
+// for a Flatpak, whose sandbox has no /dev/disk. A variable so tests never
+// talk to this machine's UDisks2.
+var listUDisksLinksFn = listUDisksLinks
+
+func listUDisksLinks() ([]uuidLink, []labelLink, error) {
+	conn, err := dbus.ConnectSystemBus()
+	if err != nil {
+		return nil, nil, err
+	}
+	defer conn.Close()
+	c := &realUDisksConn{conn: conn}
+	var paths []dbus.ObjectPath
+	if err := c.object("/org/freedesktop/UDisks2/Manager").Call(
+		"org.freedesktop.UDisks2.Manager.GetBlockDevices", 0, map[string]dbus.Variant{},
+	).Store(&paths); err != nil {
+		return nil, nil, err
+	}
+	blocks := make([]udisksBlockState, 0, len(paths))
+	for _, p := range paths {
+		if st, err := c.blockState(p); err == nil {
+			blocks = append(blocks, st)
+		}
+	}
+	links, labels := linksFromBlocks(blocks)
+	return links, labels, nil
+}
+
+// linksFromBlocks turns UDisks2's block devices into the entries
+// /dev/disk/by-uuid and /dev/disk/by-label would have.
+func linksFromBlocks(blocks []udisksBlockState) ([]uuidLink, []labelLink) {
+	var links []uuidLink
+	var labels []labelLink
+	for _, b := range blocks {
+		if b.Device == "" {
+			continue
+		}
+		if b.IdUUID != "" {
+			links = append(links, uuidLink{UUID: b.IdUUID, Device: b.Device})
+		}
+		if b.IdLabel != "" {
+			labels = append(labels, labelLink{Label: b.IdLabel, Device: b.Device})
+		}
+	}
+	return links, labels
+}

@@ -3,6 +3,7 @@
 package volume
 
 import (
+	"io/fs"
 	"reflect"
 	"testing"
 )
@@ -17,11 +18,13 @@ func withVolumeSeams(t *testing.T) {
 	origSysRemovable := isSysRemovableFn
 	origByUUID := listByUUIDFn
 	origByLabel := listByLabelFn
+	origUDisks := listUDisksLinksFn
 	t.Cleanup(func() {
 		readMountinfoFn = origMountinfo
 		isSysRemovableFn = origSysRemovable
 		listByUUIDFn = origByUUID
 		listByLabelFn = origByLabel
+		listUDisksLinksFn = origUDisks
 	})
 	// Every test sets its own fixture for whichever of these it cares
 	// about; default the rest to empty rather than leaving them pointed at
@@ -30,6 +33,10 @@ func withVolumeSeams(t *testing.T) {
 	// them would currently fail harmlessly inside the Docker container).
 	listByUUIDFn = func() ([]uuidLink, error) { return nil, nil }
 	listByLabelFn = func() ([]labelLink, error) { return nil, nil }
+	listUDisksLinksFn = func() ([]uuidLink, []labelLink, error) {
+		t.Error("UDisks2 asked although /dev/disk exists")
+		return nil, nil, nil
+	}
 }
 
 func TestParseMountinfo(t *testing.T) {
@@ -335,5 +342,37 @@ func TestWatcherDiffSharedWithLinux(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("diffVolumes() = %+v, want %+v", got, want)
+	}
+}
+
+// TestLinuxWithoutDevDiskAsksUDisks: a Flatpak sandbox has no /dev/disk,
+// so the UUID and label come from UDisks2.
+func TestLinuxWithoutDevDiskAsksUDisks(t *testing.T) {
+	withVolumeSeams(t)
+
+	readMountinfoFn = func() (string, error) {
+		return "60 25 8:17 / /run/media/u/CARD rw,relatime shared:34 - exfat /dev/sdb1 rw\n", nil
+	}
+	isSysRemovableFn = func(disk string) bool { return true }
+	listByUUIDFn = func() ([]uuidLink, error) { return nil, fs.ErrNotExist }
+	listByLabelFn = func() ([]labelLink, error) { return nil, fs.ErrNotExist }
+	listUDisksLinksFn = func() ([]uuidLink, []labelLink, error) {
+		links, labels := linksFromBlocks([]udisksBlockState{
+			{Device: "/dev/sda2", IdUUID: "root-uuid"},
+			{Device: "/dev/sdb1", IdUUID: "1a2b-3c4d", IdLabel: "EOS_DIGITAL"},
+			{IdUUID: "no-device"},
+		})
+		return links, labels, nil
+	}
+
+	got, err := ListRemovable()
+	if err != nil {
+		t.Fatalf("ListRemovable() error = %v", err)
+	}
+	want := []Info{
+		{Name: "EOS_DIGITAL", MountPoint: "/run/media/u/CARD", UUID: "1A2B-3C4D", Removable: true},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListRemovable() = %+v, want %+v", got, want)
 	}
 }

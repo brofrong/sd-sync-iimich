@@ -3,7 +3,9 @@
 package volume
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -329,8 +331,12 @@ func listAllVolumes() ([]Info, error) {
 	if err != nil {
 		return nil, err
 	}
-	links, _ := listByUUIDFn()   // best-effort: a missing UUID isn't fatal.
+	links, err := listByUUIDFn() // best-effort: a missing UUID isn't fatal.
 	labels, _ := listByLabelFn() // best-effort: falls back to the mount-point name below.
+	if errors.Is(err, fs.ErrNotExist) {
+		// No /dev/disk: a Flatpak sandbox. UDisks2 knows the same.
+		links, labels, _ = listUDisksLinksFn()
+	}
 
 	var result []Info
 	for _, e := range entries {
