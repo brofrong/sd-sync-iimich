@@ -4,7 +4,7 @@
 import { readable, writable } from "svelte/store";
 
 /** Window sections, in sidebar order. */
-export const sections = ["status", "history", "cards", "server", "logs", "settings"] as const;
+export const sections = ["status", "history", "cards", "settings"] as const;
 export type SectionId = (typeof sections)[number];
 
 export function isSection(id: string): id is SectionId {
@@ -14,9 +14,18 @@ export function isSection(id: string): id is SectionId {
 /** The section the window shows. The "navigate" event from Go sets it too. */
 export const section = writable<SectionId>("status");
 
-/** Navigates to id if it names a section. */
+/** True while the log panel is open over the window. */
+export const logsOpen = writable(false);
+
+/**
+ * Navigates to id if it names a section. "server" (the server settings,
+ * first in Settings) shows Settings; "logs" opens the log panel over the
+ * current section.
+ */
 export function navigate(id: string): void {
-  if (isSection(id)) section.set(id);
+  if (id === "logs") logsOpen.set(true);
+  else if (id === "server") section.set("settings");
+  else if (isSection(id)) section.set(id);
 }
 
 /** False while the window is hidden or minimised. */

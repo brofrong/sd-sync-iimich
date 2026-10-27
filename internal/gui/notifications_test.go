@@ -394,7 +394,7 @@ func TestNotificationActions(t *testing.T) {
 		}), app.ActionSelectCard},
 		{statusOf(app.CodeDoneWithErrors, map[string]string{"uploaded": "3", "errors": "2"}), app.ActionOpenHistory},
 		{statusOf(app.CodeServerUnreachable, map[string]string{"host": "h", "detail": "d"}), app.ActionRetry},
-		// A rejected key needs the user, not a retry: open the Server section.
+		// A rejected key needs the user, not a retry: open the server settings.
 		{statusOf(app.CodeAuthFailed, nil), app.ActionOpenServer},
 		{statusOf(app.CodeServerError, map[string]string{"status": "500", "detail": "d"}), app.ActionRetry},
 		{statusOf(app.CodeFormatPending, map[string]string{"seconds": "30", "name": "Brofrong"}), app.ActionCancelFormat},

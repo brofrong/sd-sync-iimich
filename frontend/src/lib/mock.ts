@@ -22,7 +22,7 @@
 //
 // "Retry failed files" works for a run of the selected, mounted card (the
 // scenario syncs again) and answers retry_unavailable otherwise, as Go.
-// In the Server section a URL containing "bad" is unreachable, the API key
+// In the server settings a URL containing "bad" is unreachable, the API key
 // "bad" is rejected, and a URL containing "readonly" fails to save.
 import {
   AppInfoView,

@@ -1,5 +1,6 @@
 <script lang="ts">
-  // The Settings section: language, parallel uploads, automatic camera
+  // The Settings section: the Immich server (ServerSettings), then
+  // language, parallel uploads, automatic camera
   // paths and autostart (each saved as soon as it changes; Go answers with
   // a "state" event, which also switches the UI language; autostart is
   // disabled when the app does not run from its bundle), what happens to
@@ -8,17 +9,19 @@
   // the notification switches (the kinds are disabled while notifications
   // are off), then updates: the
   // running version, a manual check, and the available update's notes
-  // with an Install button that asks first (the app restarts after it).
+  // with an Install button that asks first (the app restarts after it),
+  // and last a button that opens the log panel.
   import { onDestroy } from "svelte";
   import { fade, fly, slide } from "svelte/transition";
   import { NotificationsView, SettingsView, type UpdateView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
   import Button from "../components/Button.svelte";
   import GlassCard from "../components/GlassCard.svelte";
+  import ServerSettings from "../components/ServerSettings.svelte";
   import Switch from "../components/Switch.svelte";
   import { appInfo, appState, backend } from "../lib/backend";
   import { formatNumber, languageNames, supported, t } from "../lib/i18n";
   import { icons } from "../lib/icons";
-  import { reducedMotion } from "../lib/stores";
+  import { logsOpen, reducedMotion } from "../lib/stores";
 
   // As Go's config.DefaultConcurrency and maxConcurrency.
   const DEFAULT_CONCURRENCY = 4;
@@ -252,6 +255,8 @@
 {/snippet}
 
 <div class="section">
+  <ServerSettings />
+
   <GlassCard padding="16px 18px 6px">
     <h2 class="eyebrow">{t("settings.general")}</h2>
 
@@ -512,6 +517,20 @@
       </div>
     {/if}
   </GlassCard>
+
+  <GlassCard padding="16px 18px 6px">
+    <h2 class="eyebrow">{t("settings.logs")}</h2>
+
+    <div class="row">
+      <div class="text">
+        <p class="hint" id="set-logs-hint">{t("settings.logs_hint")}</p>
+      </div>
+      <Button describedby="set-logs-hint" onclick={() => logsOpen.set(true)}>
+        <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d={icons.logs} /></svg>
+        {t("settings.open_logs")}
+      </Button>
+    </div>
+  </GlassCard>
 </div>
 
 <style>
@@ -716,6 +735,18 @@
     fill: none;
     stroke: currentColor;
     stroke-width: 2.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .button-icon {
+    width: 15px;
+    height: 15px;
+    margin-right: 6px;
+    vertical-align: -3px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
     stroke-linecap: round;
     stroke-linejoin: round;
   }

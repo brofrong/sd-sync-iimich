@@ -1,19 +1,19 @@
 <script lang="ts">
   // The window: sidebar on the left, the current section on the right.
   // Behind the content, soft colour blobs (tinted by the status) give the
-  // glass cards something to blur — the window itself is opaque.
+  // glass cards something to blur — the window itself is opaque. The log
+  // panel opens over all of it.
   import { onMount } from "svelte";
   import { fade, fly } from "svelte/transition";
+  import LogsDialog from "./components/LogsDialog.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import Cards from "./sections/Cards.svelte";
   import History from "./sections/History.svelte";
-  import Logs from "./sections/Logs.svelte";
-  import Server from "./sections/Server.svelte";
   import Settings from "./sections/Settings.svelte";
   import Status from "./sections/Status.svelte";
   import { connect, status } from "./lib/backend";
   import { lang, t } from "./lib/i18n";
-  import { navigate, reducedMotion, section, toneFor } from "./lib/stores";
+  import { logsOpen, navigate, reducedMotion, section, toneFor } from "./lib/stores";
 
   onMount(connect);
 
@@ -48,10 +48,6 @@
                 <History />
               {:else if $section === "cards"}
                 <Cards />
-              {:else if $section === "server"}
-                <Server />
-              {:else if $section === "logs"}
-                <Logs />
               {:else}
                 <Settings />
               {/if}
@@ -61,6 +57,10 @@
       </div>
     </main>
   </div>
+
+  {#if $logsOpen}
+    <LogsDialog onclose={() => logsOpen.set(false)} />
+  {/if}
 {/key}
 
 <style>

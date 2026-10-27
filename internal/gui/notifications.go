@@ -282,7 +282,7 @@ func (n *notifier) notice(no app.Notice, cfg config.Config, c *i18n.Catalog) {
 // response to a notification (its action and Data), and false when the
 // response is not about the window: clicking a notification opens the
 // history for errors and the status otherwise; "Details" opens the history
-// and "Open Server Settings" (a rejected API key) the Server section.
+// and "Open Server Settings" (a rejected API key) the server settings.
 func responseSection(action string, data map[string]string) (string, bool) {
 	switch action {
 	case notify.DefaultAction:

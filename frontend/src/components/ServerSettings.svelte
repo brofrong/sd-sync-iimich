@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The Server section: the Immich URL and API key. "Test Connection"
+  // The server card, first in Settings: the Immich URL and API key. "Test Connection"
   // checks what is typed (an empty key means the saved one) and shows the
   // server version or why it failed; "Save" checks the URL first and saves
   // only a valid one. The saved key never comes back from Go: the field
@@ -7,12 +7,12 @@
   import { onDestroy, untrack } from "svelte";
   import { fade, fly } from "svelte/transition";
   import type { ServerCheckView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
-  import Button from "../components/Button.svelte";
-  import GlassCard from "../components/GlassCard.svelte";
   import { appState, backend } from "../lib/backend";
   import { t } from "../lib/i18n";
   import { icons } from "../lib/icons";
   import { reducedMotion } from "../lib/stores";
+  import Button from "./Button.svelte";
+  import GlassCard from "./GlassCard.svelte";
 
   const ms = (n: number) => ($reducedMotion ? 0 : n);
 
@@ -151,114 +151,114 @@
   );
 </script>
 
-<div class="section">
-  <GlassCard padding="18px 20px 20px">
-    <div class="field">
-      <label for="server-url">{t("server.url")}</label>
+<GlassCard padding="16px 18px 18px">
+  <h2 class="eyebrow">{t("settings.server")}</h2>
+
+  <div class="field">
+    <label for="server-url">{t("server.url")}</label>
+    <input
+      id="server-url"
+      class="input"
+      type="url"
+      inputmode="url"
+      autocomplete="url"
+      autocapitalize="off"
+      spellcheck="false"
+      placeholder={t("server.url_placeholder")}
+      aria-invalid={urlError}
+      aria-describedby={urlError ? "server-url-error" : "server-url-hint"}
+      bind:this={urlInput}
+      bind:value={url}
+      oninput={onUrlInput}
+      onkeydown={onEnter}
+    />
+    {#if urlError}
+      <p id="server-url-error" class="error-text" role="alert" in:fly={{ y: -4, duration: ms(220) }}>
+        {t("server.invalid_url")}
+      </p>
+    {:else}
+      <p id="server-url-hint" class="hint">{t("server.url_hint")}</p>
+    {/if}
+  </div>
+
+  <div class="field">
+    <label for="server-key">{t("server.key")}</label>
+    <div class="key">
       <input
-        id="server-url"
+        id="server-key"
         class="input"
-        type="url"
-        inputmode="url"
-        autocomplete="url"
+        type={showKey ? "text" : "password"}
+        autocomplete="off"
         autocapitalize="off"
         spellcheck="false"
-        placeholder={t("server.url_placeholder")}
-        aria-invalid={urlError}
-        aria-describedby={urlError ? "server-url-error" : "server-url-hint"}
-        bind:this={urlInput}
-        bind:value={url}
-        oninput={onUrlInput}
+        placeholder={hasKey && !keyRequired ? t("server.key_saved_placeholder") : t("server.key_placeholder")}
+        aria-invalid={keyRequired}
+        aria-describedby={keyRequired ? "server-key-error" : "server-key-hint"}
+        bind:this={keyInput}
+        bind:value={key}
+        oninput={clearFeedback}
         onkeydown={onEnter}
       />
-      {#if urlError}
-        <p id="server-url-error" class="error-text" role="alert" in:fly={{ y: -4, duration: ms(220) }}>
-          {t("server.invalid_url")}
-        </p>
-      {:else}
-        <p id="server-url-hint" class="hint">{t("server.url_hint")}</p>
+      <button
+        type="button"
+        class="reveal"
+        aria-label={showKey ? t("server.hide_key") : t("server.show_key")}
+        aria-pressed={showKey}
+        aria-controls="server-key"
+        title={showKey ? t("server.hide_key") : t("server.show_key")}
+        onclick={() => (showKey = !showKey)}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d={showKey ? icons.eyeOff : icons.eye} /></svg>
+      </button>
+    </div>
+    {#if keyRequired}
+      <p id="server-key-error" class="error-text" role="alert" in:fly={{ y: -4, duration: ms(220) }}>
+        {t("server.key_required")}
+      </p>
+    {:else}
+      <p id="server-key-hint" class="hint">{t("server.key_hint")}</p>
+    {/if}
+  </div>
+
+  <div class="actions">
+    <Button busy={busy === "test"} disabled={busy === "save"} onclick={test}>{t("server.test")}</Button>
+    <Button variant="primary" busy={busy === "save"} disabled={!dirty || busy === "test"} onclick={save}>
+      {t("server.save")}
+    </Button>
+    <span class="saved" aria-live="polite">
+      {#if saved}
+        <span class="saved-text" transition:fade={{ duration: ms(200) }}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.check} /></svg>{t("server.saved")}
+        </span>
       {/if}
-    </div>
+    </span>
+  </div>
 
-    <div class="field">
-      <label for="server-key">{t("server.key")}</label>
-      <div class="key">
-        <input
-          id="server-key"
-          class="input"
-          type={showKey ? "text" : "password"}
-          autocomplete="off"
-          autocapitalize="off"
-          spellcheck="false"
-          placeholder={hasKey && !keyRequired ? t("server.key_saved_placeholder") : t("server.key_placeholder")}
-          aria-invalid={keyRequired}
-          aria-describedby={keyRequired ? "server-key-error" : "server-key-hint"}
-          bind:this={keyInput}
-          bind:value={key}
-          oninput={clearFeedback}
-          onkeydown={onEnter}
-        />
-        <button
-          type="button"
-          class="reveal"
-          aria-label={showKey ? t("server.hide_key") : t("server.show_key")}
-          aria-pressed={showKey}
-          aria-controls="server-key"
-          title={showKey ? t("server.hide_key") : t("server.show_key")}
-          onclick={() => (showKey = !showKey)}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={showKey ? icons.eyeOff : icons.eye} /></svg>
-        </button>
-      </div>
-      {#if keyRequired}
-        <p id="server-key-error" class="error-text" role="alert" in:fly={{ y: -4, duration: ms(220) }}>
-          {t("server.key_required")}
-        </p>
-      {:else}
-        <p id="server-key-hint" class="hint">{t("server.key_hint")}</p>
-      {/if}
+  {#if saveError !== null}
+    <div class="save-error" role="alert">
+      <p class="error-text">{t("server.save_failed")}</p>
+      {#if saveError}<p class="detail-text">{saveError}</p>{/if}
     </div>
+  {/if}
 
-    <div class="actions">
-      <Button busy={busy === "test"} disabled={busy === "save"} onclick={test}>{t("server.test")}</Button>
-      <Button variant="primary" busy={busy === "save"} disabled={!dirty || busy === "test"} onclick={save}>
-        {t("server.save")}
-      </Button>
-      <span class="saved" aria-live="polite">
-        {#if saved}
-          <span class="saved-text" transition:fade={{ duration: ms(200) }}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.check} /></svg>{t("server.saved")}
-          </span>
-        {/if}
-      </span>
-    </div>
-
-    {#if saveError !== null}
-      <div class="save-error" role="alert">
-        <p class="error-text">{t("server.save_failed")}</p>
-        {#if saveError}<p class="detail-text">{saveError}</p>{/if}
+  <div aria-live="polite">
+    {#if result}
+      <div class="result" class:ok={result.ok} in:fly={{ y: 6, duration: ms(300) }}>
+        <span class="glyph" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d={result.ok ? icons.check : icons.warning} /></svg>
+        </span>
+        <div class="result-text">
+          {#if result.ok}
+            <p class="result-title">{t("server.connected", { version: result.version })}</p>
+          {:else}
+            <p class="result-title">{t(`status.${result.code}.title`)}</p>
+            {#if resultDetail}<p class="detail-text">{resultDetail}</p>{/if}
+          {/if}
+        </div>
       </div>
     {/if}
-
-    <div aria-live="polite">
-      {#if result}
-        <div class="result" class:ok={result.ok} in:fly={{ y: 6, duration: ms(300) }}>
-          <span class="glyph" aria-hidden="true">
-            <svg viewBox="0 0 24 24"><path d={result.ok ? icons.check : icons.warning} /></svg>
-          </span>
-          <div class="result-text">
-            {#if result.ok}
-              <p class="result-title">{t("server.connected", { version: result.version })}</p>
-            {:else}
-              <p class="result-title">{t(`status.${result.code}.title`)}</p>
-              {#if resultDetail}<p class="detail-text">{resultDetail}</p>{/if}
-            {/if}
-          </div>
-        </div>
-      {/if}
-    </div>
-  </GlassCard>
-</div>
+  </div>
+</GlassCard>
 
 <style>
   .field + .field {

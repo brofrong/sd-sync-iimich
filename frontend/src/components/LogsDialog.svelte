@@ -1,16 +1,23 @@
 <script lang="ts">
-  // The Logs section: the end of app.log in a monospace view, scrolled to
-  // the newest line, with Refresh, Copy (to attach the log to an issue)
-  // and Show in Finder (File Explorer on Windows; on Linux the file
-  // manager opens the log's folder). Warning and error lines are tinted.
+  // The log panel over the whole window (opened from Settings, or by a
+  // status's "Open Logs"): the end of app.log in a monospace view,
+  // scrolled to the newest line, with Refresh, Copy (to attach the log to
+  // an issue) and Show in Finder (File Explorer on Windows; on Linux the
+  // file manager opens the log's folder). Warning and error lines are
+  // tinted. The close button, Escape and a click outside close it.
   import { onDestroy, onMount, tick } from "svelte";
-  import { fade } from "svelte/transition";
-  import Button from "../components/Button.svelte";
-  import GlassCard from "../components/GlassCard.svelte";
+  import { fade, scale } from "svelte/transition";
   import { appInfo, backend } from "../lib/backend";
   import { formatNumber, t } from "../lib/i18n";
   import { icons } from "../lib/icons";
   import { reducedMotion } from "../lib/stores";
+  import Button from "./Button.svelte";
+
+  interface Props {
+    onclose: () => void;
+  }
+
+  let { onclose }: Props = $props();
 
   const LINES = 300;
   const ms = (n: number) => ($reducedMotion ? 0 : n);
@@ -48,9 +55,18 @@
     if (view) view.scrollTop = view.scrollHeight;
   }
 
+  let closeButton = $state<HTMLButtonElement>();
   onMount(() => {
+    closeButton?.focus();
     load();
   });
+
+  function keydown(e: KeyboardEvent): void {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onclose();
+    }
+  }
 
   const lines = $derived(text ? text.split("\n") : []);
 
@@ -102,10 +118,35 @@
   }
 </script>
 
-<div class="section">
-  <GlassCard padding="14px 16px 16px">
+<svelte:window onkeydown={keydown} />
+
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions (Escape closes it, see keydown) -->
+<div class="backdrop" transition:fade={{ duration: ms(180) }} onclick={(e) => e.target === e.currentTarget && onclose()}>
+  <div
+    class="dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="logs-title"
+    transition:scale={{ start: 0.96, duration: ms(220) }}
+  >
+    <header class="head">
+      <div>
+        <h2 id="logs-title">{t("logs.label")}</h2>
+        <p class="caption">{t("logs.caption", { count: formatNumber(LINES) })}</p>
+      </div>
+      <button
+        type="button"
+        class="close"
+        aria-label={t("logs.close")}
+        title={t("logs.close")}
+        bind:this={closeButton}
+        onclick={onclose}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.close} /></svg>
+      </button>
+    </header>
+
     <div class="toolbar">
-      <span class="eyebrow caption">{t("logs.caption", { count: formatNumber(LINES) })}</span>
       <div class="buttons">
         <span class="copied" aria-live="polite">
           {#if copied}
@@ -135,20 +176,84 @@
     {#if actionError}
       <p class="error-text" role="alert">{actionError}</p>
     {/if}
-  </GlassCard>
+  </div>
 </div>
 
 <style>
-  .toolbar {
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(6, 4, 14, 0.62);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+
+  .dialog {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
+    flex-direction: column;
+    width: min(860px, 100%);
+    /* The window's height less the backdrop's padding: the log scrolls
+       inside, it does not grow the panel. */
+    height: calc(100vh - 48px);
+    padding: 16px 18px 18px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-l);
+    background: linear-gradient(160deg, #221d3a, var(--bg-main) 70%);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  }
+
+  .head {
+    display: flex;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: 8px 12px;
+    gap: 12px;
     margin-bottom: 12px;
   }
-  .caption {
+  h2 {
     margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .caption {
+    margin: 2px 0 0;
+    color: var(--text-3);
+    font-size: 12px;
+  }
+  .close {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-2);
+    cursor: pointer;
+    transition:
+      color 0.2s,
+      background-color 0.2s;
+  }
+  .close:hover {
+    background: rgba(255, 255, 255, 0.16);
+    color: var(--text);
+  }
+  .close svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.4;
+    stroke-linecap: round;
+  }
+
+  .toolbar {
+    margin-bottom: 12px;
   }
   .buttons {
     display: flex;
@@ -179,7 +284,8 @@
   }
 
   .log {
-    height: max(220px, calc(100vh - 210px));
+    flex: 1;
+    min-height: 120px;
     margin: 0;
     padding: 10px 12px;
     overflow: auto;
