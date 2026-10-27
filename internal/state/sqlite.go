@@ -208,8 +208,11 @@ type VolumeSyncCursor struct {
 	RelativePath string
 }
 
+// GetVolumeSync returns the volume's sync cursor. A volume with no saved
+// cursor gets one rebuilt from its newest file recorded as uploaded, and
+// that cursor is saved: only the sync may call it.
 func (s *DB) GetVolumeSync(volumeUUID string) (VolumeSyncCursor, error) {
-	cur, found, err := s.getVolumeSyncRow(volumeUUID)
+	cur, found, err := s.SavedVolumeSync(volumeUUID)
 	if err != nil {
 		return VolumeSyncCursor{}, err
 	}
@@ -219,15 +222,19 @@ func (s *DB) GetVolumeSync(volumeUUID string) (VolumeSyncCursor, error) {
 	return s.backfillVolumeSync(volumeUUID)
 }
 
-func (s *DB) getVolumeSyncRow(volumeUUID string) (VolumeSyncCursor, bool, error) {
+// SavedVolumeSync returns the volume's saved sync cursor, and whether there
+// is one, without writing anything: with no saved cursor it returns the zero
+// cursor (which covers nothing) and found false. Readers outside the sync,
+// such as the gallery, use it so they never save a cursor in the middle of
+// a sync.
+func (s *DB) SavedVolumeSync(volumeUUID string) (cur VolumeSyncCursor, found bool, err error) {
 	row := s.db.QueryRow(`
 		SELECT last_synced_mtime, last_synced_path
 		FROM volume_sync WHERE volume_uuid = ?
 	`, volumeUUID)
 
-	var cur VolumeSyncCursor
 	var mtimeUnix int64
-	err := row.Scan(&mtimeUnix, &cur.RelativePath)
+	err = row.Scan(&mtimeUnix, &cur.RelativePath)
 	if err == sql.ErrNoRows {
 		return VolumeSyncCursor{}, false, nil
 	}
@@ -281,7 +288,7 @@ func (s *DB) EnsureVolumeSync(volumeUUID string) error {
 
 // SetVolumeSync saves the sync watermark when it moves forward in file order.
 func (s *DB) SetVolumeSync(volumeUUID string, mtime time.Time, relativePath string) error {
-	cur, found, err := s.getVolumeSyncRow(volumeUUID)
+	cur, found, err := s.SavedVolumeSync(volumeUUID)
 	if err != nil {
 		return err
 	}

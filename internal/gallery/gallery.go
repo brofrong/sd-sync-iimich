@@ -255,9 +255,11 @@ func samePhotos(a, b []photoFile) bool {
 // statuses reads the card's sync state and returns the status of a photo:
 // in Immich when the sync cursor has passed it or it is recorded as
 // uploaded, failed when the card's last finished sync failed it, waiting
-// otherwise.
+// otherwise. It only reads the database: with no saved cursor (a card's
+// first sync, a forgotten card) the zero cursor covers nothing and the
+// files recorded as uploaded say what is in Immich.
 func (g *Gallery) statuses(uuid string) (func(photoFile) string, error) {
-	cursor, err := g.st.GetVolumeSync(uuid)
+	cursor, _, err := g.st.SavedVolumeSync(uuid)
 	if err != nil {
 		return nil, fmt.Errorf("gallery: sync cursor: %w", err)
 	}

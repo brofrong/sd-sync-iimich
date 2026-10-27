@@ -219,6 +219,39 @@ func TestListStatuses(t *testing.T) {
 	check(mustList(t, g, vol))
 }
 
+// TestListDoesNotSaveCursor covers a card's first sync with several
+// workers: a newer file B is recorded as uploaded before the older A, and
+// the cursor is not saved yet. List must not save one (at B, which would
+// make the sync skip A for good) nor show A in Immich.
+func TestListDoesNotSaveCursor(t *testing.T) {
+	g, st := newTestGallery(t)
+	vol := newCard(t, "CARD-A")
+	a := putFile(t, vol, "A.JPG", []byte("a"), base)
+	b := putFile(t, vol, "B.JPG", []byte("b"), base.Add(time.Minute))
+	if err := st.MarkHashed(vol.UUID, b, "sha-b", 1, base.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.MarkUploaded(vol.UUID, b, base); err != nil {
+		t.Fatal(err)
+	}
+
+	l := mustList(t, g, vol)
+
+	want := map[string]string{a: StatusWaiting, b: StatusInImmich}
+	for _, p := range l.Photos {
+		if p.Status != want[p.Path] {
+			t.Errorf("%s status = %q, want %q", p.Path, p.Status, want[p.Path])
+		}
+	}
+	cur, found, err := st.SavedVolumeSync(vol.UUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Errorf("List saved a sync cursor %+v, want none", cur)
+	}
+}
+
 // finishRun records a finished sync run of vol that failed the given paths.
 func finishRun(t *testing.T, st *state.DB, vol volume.Info, at time.Time, failed ...string) {
 	t.Helper()

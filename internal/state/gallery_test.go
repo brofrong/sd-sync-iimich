@@ -107,3 +107,39 @@ func TestLastFinishedRunFor(t *testing.T) {
 		t.Fatalf("LastFinishedRunFor(CARD-C) = %+v, want nil", none)
 	}
 }
+
+func TestSavedVolumeSyncIsReadOnly(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Now().Truncate(time.Second)
+
+	// A file is recorded as uploaded but no cursor is saved: GetVolumeSync
+	// would rebuild and save one; SavedVolumeSync must not.
+	if err := db.MarkHashed("CARD-A", "DCIM/2.JPG", "a2", 1, now); err != nil {
+		t.Fatalf("MarkHashed: %v", err)
+	}
+	if err := db.MarkUploaded("CARD-A", "DCIM/2.JPG", now); err != nil {
+		t.Fatalf("MarkUploaded: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		cur, found, err := db.SavedVolumeSync("CARD-A")
+		if err != nil {
+			t.Fatalf("SavedVolumeSync: %v", err)
+		}
+		if found || cur != (VolumeSyncCursor{}) {
+			t.Fatalf("SavedVolumeSync #%d = %+v, %v; want the zero cursor, not found", i, cur, found)
+		}
+	}
+
+	// An older file uploaded later still moves the cursor: nothing was saved.
+	older := now.Add(-time.Minute)
+	if err := db.SetVolumeSync("CARD-A", older, "DCIM/1.JPG"); err != nil {
+		t.Fatalf("SetVolumeSync: %v", err)
+	}
+	cur, found, err := db.SavedVolumeSync("CARD-A")
+	if err != nil {
+		t.Fatalf("SavedVolumeSync: %v", err)
+	}
+	if !found || !cur.Mtime.Equal(older) || cur.RelativePath != "DCIM/1.JPG" {
+		t.Fatalf("SavedVolumeSync = %+v, %v; want %v DCIM/1.JPG, found", cur, found, older)
+	}
+}
