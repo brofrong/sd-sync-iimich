@@ -280,6 +280,7 @@
   "settings.installing": "Instalando… O app será reiniciado quando terminar.",
   "settings.install_failed": "Não foi possível instalar a atualização: {detail}",
   "settings.update_manual": "Atualize manualmente: baixe a nova versão no GitHub.",
+  "settings.updates_flatpak": "O Flatpak atualiza esta cópia: pela sua central de programas ou com flatpak update.",
   "settings.logs": "Logs",
   "settings.logs_hint": "O que o app fez recentemente. Útil quando algo dá errado ou para relatar um problema.",
   "settings.open_logs": "Abrir log",

@@ -161,3 +161,6 @@ func UnderLaunchd() bool { return false }
 // Translocated reports whether path is inside macOS App Translocation:
 // never outside macOS.
 func Translocated(path string) bool { return false }
+
+// Flatpak reports whether the app runs as a Flatpak: never outside Linux.
+func Flatpak() bool { return false }

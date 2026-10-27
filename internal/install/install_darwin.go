@@ -419,3 +419,6 @@ func OpenWhenExited(bundlePath string) error {
 	}
 	return nil
 }
+
+// Flatpak reports whether the app runs as a Flatpak: never outside Linux.
+func Flatpak() bool { return false }

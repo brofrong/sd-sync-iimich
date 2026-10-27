@@ -280,6 +280,7 @@
   "settings.installing": "Wird installiert … Danach startet die App neu.",
   "settings.install_failed": "Das Update konnte nicht installiert werden: {detail}",
   "settings.update_manual": "Aktualisiere manuell: Lade die neue Version von GitHub herunter.",
+  "settings.updates_flatpak": "Diese Kopie aktualisiert Flatpak: über die Softwareverwaltung oder mit flatpak update.",
   "settings.logs": "Protokoll",
   "settings.logs_hint": "Was die App zuletzt getan hat. Hilfreich, wenn etwas schiefgeht, oder für einen Fehlerbericht.",
   "settings.open_logs": "Protokoll öffnen",

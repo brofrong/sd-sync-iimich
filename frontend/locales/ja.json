@@ -280,6 +280,7 @@
   "settings.installing": "インストール中… 完了するとアプリが再起動します。",
   "settings.install_failed": "アップデートをインストールできませんでした: {detail}",
   "settings.update_manual": "手動で更新してください：GitHub から新しいバージョンをダウンロードしてください。",
+  "settings.updates_flatpak": "このコピーは Flatpak が更新します。ソフトウェアセンターから、または flatpak update で更新できます。",
   "settings.logs": "ログ",
   "settings.logs_hint": "アプリの最近の動作です。問題が起きたときや不具合の報告に役立ちます。",
   "settings.open_logs": "ログを開く",

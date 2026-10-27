@@ -280,6 +280,7 @@
   "settings.installing": "正在安装… 完成后应用将重新启动。",
   "settings.install_failed": "无法安装更新：{detail}",
   "settings.update_manual": "请手动更新：从 GitHub 下载新版本。",
+  "settings.updates_flatpak": "此副本由 Flatpak 更新：通过软件中心或运行 flatpak update。",
   "settings.logs": "日志",
   "settings.logs_hint": "应用最近的运行记录。出现问题或报告错误时很有用。",
   "settings.open_logs": "打开日志",

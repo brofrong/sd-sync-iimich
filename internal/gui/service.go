@@ -680,6 +680,9 @@ func (s *Service) CheckForUpdates() (*UpdateView, error) {
 	if !version.IsRelease() {
 		return nil, errors.New("update checks are disabled for development builds")
 	}
+	if runsAsFlatpak() {
+		return nil, errors.New("Flatpak updates this app")
+	}
 	rel, err := s.checkForUpdates(context.Background())
 	if err != nil {
 		return nil, err
@@ -688,10 +691,15 @@ func (s *Service) CheckForUpdates() (*UpdateView, error) {
 }
 
 // runUpdateChecks checks for updates now and every updateCheckInterval
-// until ctx is cancelled. Development builds are never checked.
+// until ctx is cancelled. Development builds and Flatpaks (which Flatpak
+// updates) are never checked.
 func (s *Service) runUpdateChecks(ctx context.Context) {
 	if !version.IsRelease() {
 		logx.Debug("automatic update checks disabled for development build", "version", version.Current)
+		return
+	}
+	if runsAsFlatpak() {
+		logx.Info("automatic update checks disabled: Flatpak updates this app")
 		return
 	}
 	ticker := time.NewTicker(updateCheckInterval)
@@ -771,6 +779,7 @@ func (s *Service) InstallUpdate() error {
 
 // Seams for tests.
 var (
+	runsAsFlatpak      = install.Flatpak
 	autostartAvailable = install.AutostartAvailable
 	autostartEnabled   = install.AutostartEnabled
 	setAutostart       = install.SetAutostart

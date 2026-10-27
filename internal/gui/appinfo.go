@@ -87,7 +87,9 @@ func allowedURL(raw string) bool {
 // AppInfo describes this copy of the app for the sidebar footer: its
 // version, the system and whether it is a beta, and the GitHub links.
 func (s *Service) AppInfo() AppInfoView {
-	return appInfo(runtime.GOOS, s.version, systemVersion())
+	info := appInfo(runtime.GOOS, s.version, systemVersion())
+	info.Flatpak = runsAsFlatpak()
+	return info
 }
 
 // OpenURL opens the repository or a new issue (see AppInfoView) in the

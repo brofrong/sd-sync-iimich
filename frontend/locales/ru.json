@@ -280,6 +280,7 @@
   "settings.installing": "Устанавливаем… Когда всё будет готово, приложение перезапустится.",
   "settings.install_failed": "Не удалось установить обновление: {detail}",
   "settings.update_manual": "Обновите вручную: скачайте новую версию на GitHub.",
+  "settings.updates_flatpak": "Эту копию обновляет Flatpak: через магазин приложений или командой flatpak update.",
   "settings.logs": "Журнал",
   "settings.logs_hint": "Что приложение делало в последнее время. Пригодится, если что-то пошло не так, или для сообщения об ошибке.",
   "settings.open_logs": "Открыть журнал",

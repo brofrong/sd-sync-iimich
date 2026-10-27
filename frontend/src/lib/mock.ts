@@ -21,8 +21,9 @@
 //                   a failing Gallery call; ?numbers=off pictures without
 //                   their numbers
 //   ?expand=<id>    expand the failed files of run <id> in History
-//   ?os=<system>    the system AppInfo reports: macos (default), windows or
-//                   linux; Windows and Linux are betas (the sidebar badge)
+//   ?os=<system>    the system AppInfo reports: macos (default), windows,
+//                   linux or flatpak (Linux, updated by Flatpak); Windows and
+//                   Linux are betas (the sidebar badge)
 //
 // "Retry failed files" works for a run of the selected, mounted card (the
 // scenario syncs again) and answers retry_unavailable otherwise, as Go.
@@ -56,6 +57,7 @@ const systems: Record<string, { os: string; osVersion: string }> = {
   macos: { os: "macOS", osVersion: "15.1.1" },
   windows: { os: "Windows", osVersion: "11 (10.0.22631)" },
   linux: { os: "Linux", osVersion: "Ubuntu 24.04.1 LTS" },
+  flatpak: { os: "Linux", osVersion: "Fedora Linux 43 (Workstation Edition)" },
 };
 
 /** As Go's appInfo and issueURL. */
@@ -70,6 +72,7 @@ function appInfo(system: string, version: string): AppInfoView {
     beta: os !== "macOS",
     repoURL: REPO_URL,
     issueURL: `${NEW_ISSUE_URL}?${new URLSearchParams({ body })}`,
+    flatpak: system === "flatpak",
   });
 }
 

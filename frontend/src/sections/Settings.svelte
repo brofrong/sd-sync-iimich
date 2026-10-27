@@ -232,8 +232,11 @@
     }
   }
 
+  // Flatpak updates a Flatpak: the app never checks.
+  const flatpak = $derived($appInfo?.flatpak ?? false);
+
   onMount(() => {
-    if (Date.now() - checkedAt > AUTO_CHECK_AFTER) checkUpdates(true);
+    if (!$appInfo?.flatpak && Date.now() - checkedAt > AUTO_CHECK_AFTER) checkUpdates(true);
   });
 
   let confirming = $state(false);
@@ -288,7 +291,9 @@
       <div class="text">
         <div class="app-version">{t("settings.version", { version: $appState.version || "—" })}</div>
         <div class="check-result" aria-live="polite">
-          {#if check === "failed"}
+          {#if flatpak}
+            <p class="hint">{t("settings.updates_flatpak")}</p>
+          {:else if check === "failed"}
             <p class="error-text" in:fly={{ y: 4, duration: ms(250) }}>{checkError}</p>
           {:else if checkedAt && !update}
             <p class="ok-text" in:fly={{ y: 4, duration: ms(250) }}>
@@ -302,7 +307,9 @@
           {/if}
         </div>
       </div>
-      <Button busy={check === "checking"} disabled={installing} onclick={() => checkUpdates()}>{t("settings.check_updates")}</Button>
+      {#if !flatpak}
+        <Button busy={check === "checking"} disabled={installing} onclick={() => checkUpdates()}>{t("settings.check_updates")}</Button>
+      {/if}
     </div>
 
     {#if update}

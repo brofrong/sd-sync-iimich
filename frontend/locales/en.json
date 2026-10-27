@@ -280,6 +280,7 @@
   "settings.installing": "Installing… The app will restart when it’s done.",
   "settings.install_failed": "Couldn’t install the update: {detail}",
   "settings.update_manual": "Update manually: download the new version from GitHub.",
+  "settings.updates_flatpak": "Flatpak installs updates for this copy: your software center, or flatpak update.",
   "settings.logs": "Logs",
   "settings.logs_hint": "What the app has been doing lately. Useful when something goes wrong or for a bug report.",
   "settings.open_logs": "Open Log",

@@ -1,6 +1,7 @@
-// On Linux the app is an AppImage the user keeps wherever they like; this
-// package only manages starting it at login: an XDG autostart entry,
-// ~/.config/autostart/sd-sync-immich.desktop, that runs the AppImage.
+// On Linux the app is an AppImage the user keeps wherever they like, or a
+// Flatpak; this package only manages starting it at login. For an AppImage
+// that is an XDG autostart entry, ~/.config/autostart/sd-sync-immich.desktop,
+// that runs it; a Flatpak asks the Background portal (flatpak_linux.go).
 
 package install
 
@@ -61,9 +62,10 @@ func desktopFile() (string, error) {
 }
 
 // AutostartAvailable reports whether the app can start at login: when it
-// runs from an AppImage, whose path the autostart entry can run.
+// runs from an AppImage, whose path the autostart entry can run, or as a
+// Flatpak.
 func AutostartAvailable(executable string) bool {
-	return AppImage() != ""
+	return AppImage() != "" || Flatpak()
 }
 
 // AutostartEnabled reports whether the autostart entry exists, runs this
@@ -71,6 +73,9 @@ func AutostartAvailable(executable string) bool {
 // X-GNOME-Autostart-enabled / X-MATE-Autostart-enabled false, which the
 // sessions' settings apps write).
 func AutostartEnabled(executable string) bool {
+	if Flatpak() {
+		return flatpakAutostartEnabled()
+	}
 	_, enabled := currentEntry()
 	return enabled
 }
@@ -92,10 +97,7 @@ func currentEntry() (file string, enabled bool) {
 	if !ok || !samePath(program, target) {
 		return "", false
 	}
-	off := strings.EqualFold(keys["Hidden"], "true") ||
-		strings.EqualFold(keys["X-GNOME-Autostart-enabled"], "false") ||
-		strings.EqualFold(keys["X-MATE-Autostart-enabled"], "false")
-	return string(data), !off
+	return string(data), entryOn(keys)
 }
 
 // RefreshAutostart brings the Exec line of the enabled autostart entry of
@@ -142,8 +144,12 @@ func replaceExec(file, exec string) string {
 }
 
 // SetAutostart writes (enabled) or removes the autostart entry that runs
-// this AppImage at login. Enabling fails outside an AppImage.
+// this AppImage at login, or asks the Background portal to in a Flatpak.
+// Enabling fails outside both.
 func SetAutostart(enabled bool, executable string) error {
+	if Flatpak() {
+		return requestBackgroundFn(enabled)
+	}
 	path, err := desktopFile()
 	if err != nil {
 		return err

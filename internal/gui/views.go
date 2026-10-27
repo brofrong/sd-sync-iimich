@@ -133,4 +133,7 @@ type AppInfoView struct {
 	Beta      bool   `json:"beta"`
 	RepoURL   string `json:"repoURL"`
 	IssueURL  string `json:"issueURL"`
+	// Flatpak is true when the app runs as a Flatpak, which Flatpak itself
+	// updates: the app then never checks for updates.
+	Flatpak bool `json:"flatpak"`
 }
