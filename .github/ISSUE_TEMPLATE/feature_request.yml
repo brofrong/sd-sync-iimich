@@ -1,0 +1,20 @@
+name: Idea or feature request
+description: Something the app could do for you.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        You can write in English or Russian. Можно писать по-русски.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: How you shoot and upload today, and where the app gets in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: How you would like it to work. Screenshots or examples from other apps are welcome.

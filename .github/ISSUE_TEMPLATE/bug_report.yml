@@ -1,0 +1,60 @@
+name: Bug report
+description: Something does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time! You can write in English or Russian.
+        Можно писать по-русски.
+  - type: dropdown
+    id: os
+    attributes:
+      label: System
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: System version
+      placeholder: "macOS 15.3, Windows 11 24H2, Ubuntu 24.04…"
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: Shown at the top of Settings.
+      placeholder: "v0.5.5"
+    validations:
+      required: true
+  - type: input
+    id: immich-version
+    attributes:
+      label: Immich version
+      placeholder: "v3.3.4"
+  - type: input
+    id: camera
+    attributes:
+      label: Camera or card
+      description: Which camera wrote the card, if the problem is about finding or uploading files.
+      placeholder: "Sony A7 IV, 128 GB SDXC"
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: |
+        Settings → Open Log, or `app.log` from the folder listed in the
+        README ("If something goes wrong"). The log never contains your API
+        key, but it does contain your server address and file names: remove
+        anything you do not want to share.
+      render: text

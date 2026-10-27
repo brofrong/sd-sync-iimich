@@ -1,0 +1,31 @@
+# Security
+
+## Reporting a problem
+
+Please report security problems privately: on the repository's
+**Security** tab, click
+[**Report a vulnerability**](https://github.com/brofrong/sd-sync-iimich/security/advisories/new).
+Do not open a public issue for them. You will get an answer as soon as I
+can, and a fix goes out in a new release.
+
+Only the latest release is supported. The app updates itself, so fixes
+reach everyone who keeps updates on.
+
+## What the app does with your data
+
+- **API key.** Stored in plain text in `config.yaml` in your user's settings
+  folder (`~/.config/sd-sync-immich` on macOS and Linux,
+  `%APPDATA%\sd-sync-immich` on Windows). On macOS and Linux the file is
+  readable only by you. The window never gets the saved key back, the key is
+  never written to the log, and it is only sent to the server it was saved
+  for: testing another address needs that server's key.
+- **Network.** The app talks to your Immich server and to GitHub: the
+  GitHub API to check for a new version, and the release page to download
+  it. Nothing else, no analytics.
+- **Updates.** A downloaded update is checked against the SHA-256 in the
+  release's `checksums.txt` before it replaces the app. The builds are not
+  signed with an Apple or Microsoft certificate.
+- **Formatting the card.** Off by default. When turned on, the card is
+  formatted only after the app has checked that every photo and video on it
+  is in Immich, with a 30-second countdown that can be cancelled. Formatting
+  erases everything on the card.
