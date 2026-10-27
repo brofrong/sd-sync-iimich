@@ -1,151 +1,173 @@
 # SD Sync Immich
 
-Вставил SD-карту — фото уже в [Immich](https://immich.app).
+**English** · [Русский](README.ru.md)
 
-Маленькое приложение в menu bar (на Windows и Linux — в трее). Оно само
-замечает карту фотоаппарата и загружает в Immich только новые снимки. Больше
-не нужно вспоминать, какое фото с карты было загружено последним.
+Insert the SD card, the photos go to [Immich](https://immich.app).
 
-**[Скачать для своей системы →](https://brofrong.github.io/sd-sync-iimich/)**
-macOS 13+, Windows 10/11 и Linux x86_64 (Windows и Linux — бета). Нужен
-сервер Immich v3. Бесплатно, открытый код.
+A small app in the menu bar (the tray on Windows and Linux). It notices
+your camera's card by itself and uploads only the new shots to Immich. No
+more remembering which photo from the card you uploaded last.
 
-![Окно приложения во время загрузки карты](site/assets/status-ru.jpg)
+**[Download for your system →](https://brofrong.github.io/sd-sync-iimich/)**
+macOS 13+, Windows 10/11 and Linux x86_64 (Windows and Linux are betas).
+Needs an Immich v3 server. Free and open source.
 
-## Что умеет
+![The app window uploading a card](site/assets/status-en.jpg)
 
-- **Загружает само.** Вставили карту — загрузка началась. Ничего не нужно
-  нажимать.
-- **Помнит, что уже загружено.** У каждой карты свой прогресс: в следующий раз
-  уходят только новые снимки.
-- **Галерея прямо с карты.** Фото по дням, новые сверху, у каждого отметка: в
-  Immich, загружается, ждёт или ошибка. По клику фото открывается крупно,
-  листать — стрелками. Удобно, чтобы показать съёмку, пока она ещё грузится.
-- **Без дублей.** Сверяет дату файла и контрольную сумму, как
-  [immich-go](https://github.com/simulot/immich-go).
-- **Переживает обрывы.** Пропала сеть или сервер недоступен — приложение
-  остановится и продолжит с того же места, когда Immich снова на связи.
-- **Фото, RAW и видео.** Всё, что принимает Immich, вместе с XMP-файлами, в
-  несколько потоков. Само находит снимки на картах Canon, Nikon, Sony,
-  Fujifilm, Panasonic, Olympus, GoPro, DJI и других камер.
-- **Карта сразу готова.** После загрузки карта извлекается — её можно
-  вынимать. По желанию приложение её ещё и отформатирует, но только когда
-  проверит, что каждый файл есть в Immich.
-- **История.** Видно, когда и сколько загружено и что не получилось; файлы с
-  ошибками можно загрузить ещё раз одной кнопкой.
-- **Уведомления** о том, что загрузка закончилась, о проблемах с сервером или о
-  том, что вставлена другая карта. Каждый вид включается отдельно.
-- **Не мешает.** Может запускаться при входе в систему и обновляется само.
-- **8 языков:** русский, английский, немецкий, испанский, французский,
-  португальский, китайский и японский.
+## What it does
 
-![Галерея: фото с карты по дням](site/assets/gallery-ru.jpg)
+- **Uploads by itself.** Insert the card and the upload starts. Nothing to
+  click.
+- **Remembers what is uploaded.** Each card has its own progress: next time
+  only the new shots go up.
+- **A gallery right from the card.** Photos by day, newest first, each
+  marked: in Immich, uploading, waiting or failed. Click a photo to see it
+  large and flip through with the arrow keys. Handy for showing the shoot
+  while it is still uploading.
+- **No duplicates.** Checks the file date and checksum, as
+  [immich-go](https://github.com/simulot/immich-go) does.
+- **Survives interruptions.** Network gone or the server down? The app stops
+  and picks up where it left off when Immich is back.
+- **Photos, RAW and video.** Everything Immich takes, with XMP sidecars,
+  several files at once. Finds the shots on cards from Canon, Nikon, Sony,
+  Fujifilm, Panasonic, Olympus, GoPro, DJI and other cameras.
+- **Card ready to go.** After the upload the card is ejected, so you can
+  take it out. If you like, the app also formats it, but only after checking
+  that every file is in Immich.
+- **History.** When and how much was uploaded, and what failed; failed files
+  can be uploaded again with one click.
+- **Notifications** when an upload is done, when the server has a problem
+  or when another card is inserted. Each kind can be turned on separately.
+- **Stays out of the way.** Can start at login and updates itself.
+- **8 languages:** English, Russian, German, Spanish, French, Portuguese,
+  Chinese and Japanese.
 
-## Установка
+![The Gallery: the card's photos by day](site/assets/gallery-en.jpg)
 
-Самый простой путь — [страница загрузки](https://brofrong.github.io/sd-sync-iimich/):
-она сама предложит файл для вашей системы. Все файлы — на странице
-[Releases](https://github.com/brofrong/sd-sync-iimich/releases/latest).
+## How it differs from other ways to upload
+
+- **The Immich mobile app** backs up the photos on your phone. SD Sync
+  Immich is for the camera's card: no need to copy the shots to the phone
+  or the computer first.
+- **[immich-go](https://github.com/simulot/immich-go) and the
+  [Immich CLI](https://docs.immich.app/features/command-line-interface)** are
+  command-line tools: you run them and point them at a folder. They are great
+  for big imports such as a Google Photos takeout. SD Sync Immich is for
+  the everyday card after a shoot: it notices the card, uploads only what is
+  new on it, and ejects it when done.
+
+## Privacy
+
+The app talks only to your Immich server and to GitHub, to check for a new
+version and download it. No analytics, no accounts. The API key stays on
+your computer and is only sent to your server. Details are in
+[SECURITY.md](SECURITY.md).
+
+## Installing
+
+The easiest way is the [download page](https://brofrong.github.io/sd-sync-iimich/):
+it offers the file for your system. All files are on the
+[Releases](https://github.com/brofrong/sd-sync-iimich/releases/latest) page.
 
 ### macOS
 
-1. Скачайте **`SD-Sync-Immich.dmg`**, откройте его и перетащите
-   **SD Sync Immich** на папку **Applications**.
-2. Приложение не подписано Apple Developer ID, поэтому первый запуск macOS
-   заблокирует. Откройте **Системные настройки → Конфиденциальность и
-   безопасность** и нажмите **Всё равно открыть** у SD Sync Immich. Или в
-   Терминале:
+1. Download **`SD-Sync-Immich.dmg`**, open it and drag **SD Sync Immich**
+   onto the **Applications** folder.
+2. The app is not signed with an Apple Developer ID, so macOS blocks the
+   first launch. Open **System Settings → Privacy & Security** and click
+   **Open Anyway** next to SD Sync Immich. Or in Terminal:
 
    ```bash
    xattr -dr com.apple.quarantine /Applications/"SD Sync Immich.app"
    ```
 
-### Windows (бета)
+### Windows (beta)
 
-1. Скачайте и запустите **`SD-Sync-Immich-Setup-x64.exe`**. Права
-   администратора не нужны.
-2. Установщик не подписан, поэтому SmartScreen предупредит о нём: нажмите
-   **Подробнее → Выполнить в любом случае**. Edge может ещё при скачивании
-   сказать, что файл «скачивают нечасто»: **…** → **Сохранить**.
+1. Download and run **`SD-Sync-Immich-Setup-x64.exe`**. No administrator
+   rights needed.
+2. The installer is not signed, so SmartScreen warns about it: click
+   **More info → Run anyway**. Edge may also say while downloading that the
+   file "isn't commonly downloaded": **…** → **Keep**.
 
-Приложение живёт в трее (значок может быть спрятан под стрелкой «^» на панели
-задач).
+The app lives in the tray (the icon may be hidden under the "^" arrow on
+the taskbar).
 
-### Linux (бета)
+### Linux (beta)
 
-1. Скачайте **`SD-Sync-Immich-x86_64.AppImage`**, положите туда, где он будет
-   жить (например, в `~/Applications`), и запустите:
+1. Download **`SD-Sync-Immich-x86_64.AppImage`**, put it where it will live
+   (for example `~/Applications`) and run it:
 
    ```bash
    chmod +x SD-Sync-Immich-x86_64.AppImage
    ./SD-Sync-Immich-x86_64.AppImage
    ```
 
-2. Если AppImage ругается на FUSE, установите пакет `fuse3` (или `fuse`).
+2. If the AppImage complains about FUSE, install the `fuse3` (or `fuse`)
+   package.
 
-Подходят Ubuntu 22.04, Debian 12, Fedora 36 и новее. В GNOME для значка в трее
-нужно расширение
+Ubuntu 22.04, Debian 12, Fedora 36 and newer work. On GNOME the tray icon
+needs the
 [AppIndicator](https://extensions.gnome.org/extension/615/appindicator-support/)
-(в Ubuntu оно уже есть); KDE и другие рабочие столы показывают трей сами.
+extension (Ubuntu has it); KDE and other desktops show the tray themselves.
 
-## Первый запуск
+## First launch
 
-1. Откройте окно приложения: в menu bar → **Открыть SD Sync Immich** (на
-   Windows и Linux — кликом по значку в трее).
-2. **Настройки → Сервер:** адрес вашего Immich (например,
-   `https://immich.example.com`) и ключ API. Ключ создаётся в Immich:
-   **Account Settings → API Keys → New API Key**, с правом на загрузку.
-   Нажмите **Проверить подключение** и **Сохранить**.
-3. Вставьте карту → раздел **Карты** → **Выбрать**.
-4. Всё. Дальше загрузка начинается сама, как только карта вставлена.
+1. Open the app's window: in the menu bar → **Open SD Sync Immich** (on
+   Windows and Linux, click the tray icon).
+2. **Settings → Server:** your Immich address (for example
+   `https://immich.example.com`) and an API key. Create the key in Immich:
+   **Account Settings → API Keys → New API Key**, with the `asset.upload`
+   permission. Click **Test Connection** and **Save**.
+3. Insert the card → **Cards** → **Select**.
+4. That's it. From now on the upload starts by itself when the card is
+   inserted.
 
-Если хотите, чтобы приложение работало всегда, включите **Настройки →
-Автозапуск**.
+To keep the app running all the time, turn on **Settings → Open at Login**.
 
-## Карта после загрузки
+## The card after the upload
 
-В **Настройках → Карта** два переключателя:
+**Settings → Card** has two switches:
 
-- **Извлекать карту после загрузки** (включено). Когда всё загрузилось без
-  ошибок, карта извлекается — можно вынимать.
-- **Форматировать карту после загрузки** (выключено). Приложение проверяет,
-  что каждое фото и видео с карты есть в Immich, ждёт 30 секунд (можно
-  отменить) и форматирует карту. Если хоть один файл не найден, карта не
-  трогается, а приложение пишет почему.
+- **Eject the card after uploading** (on). When everything is uploaded
+  without errors, the card is ejected and can be taken out.
+- **Format the card after uploading** (off). The app checks that every
+  photo and video on the card is in Immich, waits 30 seconds (you can
+  cancel) and formats the card. If even one file is not found, the card is
+  left alone and the app says why.
 
-> **Внимание:** форматирование стирает с карты **всё**, не только фото и
-> видео. Фото, лежащие в корзине Immich, загруженными не считаются.
+> **Warning:** formatting erases **everything** on the card, not just the
+> photos and videos. Photos in the Immich trash do not count as uploaded.
 
-На Windows форматировать карту без прав администратора система не даёт, а на
-Linux — если просит пароль; тогда приложение просто сообщит об этом, и карту
-можно отформатировать в камере.
+On Windows the system does not let the app format a card without
+administrator rights, and on Linux when it asks for a password; then the
+app just says so, and you can format the card in the camera.
 
-## Если что-то не так
+## If something goes wrong
 
-Журнал работы открывается в окне: **Настройки → Открыть журнал**. Файлы
-настроек и журнала:
+The log opens in the window: **Settings → Open Log**. The settings and log
+files are here:
 
-| | Настройки и история | Журнал (`app.log`) |
+| | Settings and history | Log (`app.log`) |
 |---|---|---|
 | macOS | `~/.config/sd-sync-immich` | `~/Library/Logs/sd-sync-immich` |
 | Windows | `%APPDATA%\sd-sync-immich` | `%LOCALAPPDATA%\sd-sync-immich\logs` |
 | Linux | `~/.config/sd-sync-immich` | `~/.local/state/sd-sync-immich` |
 
-Удаление приложения эти папки не трогает. Удалить приложение: на macOS —
-перетащить в Корзину, на Windows — **Параметры → Приложения**, на Linux —
-удалить AppImage.
+Uninstalling the app leaves these folders. To uninstall: on macOS drag the
+app to the Trash, on Windows use **Settings → Apps**, on Linux delete the
+AppImage.
 
-Нашли ошибку? Создайте [issue](https://github.com/brofrong/sd-sync-iimich/issues/new):
-напишите систему, что делали и что произошло, и приложите `app.log`.
+Found a bug? [Open an issue](https://github.com/brofrong/sd-sync-iimich/issues/new/choose)
+with your system, what you did and what happened, and attach `app.log`.
 
-## Участие
+## Contributing
 
-Issues и pull requests приветствуются. Как собрать приложение, команды для
-командной строки и как устроены релизы — в [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Issues and pull requests are welcome. How to build the app and try the
+window in a browser is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Лицензия
+## License
 
-[MIT](LICENSE): можно свободно использовать, менять и распространять, в том
-числе в коммерческих целях, сохраняя уведомление об авторских правах.
+[MIT](LICENSE): free to use, change and share, including commercially, as
+long as the copyright notice stays.
 
-Проект не связан с командой Immich.
+Not affiliated with the Immich team.

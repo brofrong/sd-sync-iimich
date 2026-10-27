@@ -51,6 +51,14 @@
     "f.5.text": "Извлекается после загрузки. По желанию форматируется, когда каждый файл проверен в Immich.",
     "f.6.title": "Не мешает",
     "f.6.text": "Живёт в menu bar или трее, может запускаться при входе, обновляется само. 8 языков.",
+    "compare.title": "Чем отличается",
+    "compare.sub": "От инструментов Immich, которые у вас, возможно, уже есть.",
+    "c.1.title": "Мобильное приложение Immich",
+    "c.1.text": "Сохраняет фото с телефона. SD Sync Immich — для карты фотоаппарата: не нужно сначала копировать снимки на телефон.",
+    "c.2.title": "immich-go и Immich CLI",
+    "c.2.text": "Программы для командной строки, отлично подходят для больших импортов, например архива из Google Фото. SD Sync Immich — для обычной карты: вставили, и новое загрузилось.",
+    "c.3.title": "Ваши фото — только ваши",
+    "c.3.text": "Приложение общается только с вашим Immich и с GitHub ради обновлений. Без аналитики и аккаунтов.",
     "cta.title": "Бесплатно и с открытым кодом",
     "cta.text": "Если приложение экономит вам время, поставьте звезду на GitHub: так его находят другие пользователи Immich. Issues и pull requests приветствуются.",
     "cta.button": "Звезда на GitHub",
@@ -75,7 +83,7 @@
     "dl.linux.button": "Скачать AppImage",
     "dl.linux.1": "Сделайте файл исполняемым и запустите: <code>chmod +x SD-Sync-Immich-x86_64.AppImage</code>",
     "dl.linux.2": "В GNOME для значка в трее нужно расширение AppIndicator (в Ubuntu оно есть).",
-    "dl.more": "Контрольные суммы, бинарники для командной строки и старые версии — на <a href=\"https://github.com/brofrong/sd-sync-iimich/releases\">странице релизов GitHub</a>. Подробная инструкция — в <a href=\"https://github.com/brofrong/sd-sync-iimich#readme\">README</a>.",
+    "dl.more": "Контрольные суммы, бинарники для командной строки и старые версии — на <a href=\"https://github.com/brofrong/sd-sync-iimich/releases\">странице релизов GitHub</a>. Подробная инструкция — в <a href=\"https://github.com/brofrong/sd-sync-iimich/blob/main/README.ru.md\">README</a>.",
   };
 
   // The text the script writes itself, in both languages.
