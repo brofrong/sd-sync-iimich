@@ -44,9 +44,11 @@
   type Busy = "" | "test" | "save";
   let busy = $state<Busy>("");
   let urlError = $state(false);
-  // A server other than the saved one needs its own key: Go never sends
-  // the saved key to a newly typed host.
-  let keyRequired = $state(false);
+  // Why the key field needs a key: "key_required" for a server other than
+  // the saved one (Go never sends the saved key to a newly typed host),
+  // "key_missing" when there is no key at all.
+  type KeyError = "" | "key_required" | "key_missing";
+  let keyError = $state<KeyError>("");
   let result = $state<ServerCheckView | null>(null);
   let saveError = $state<string | null>(null);
   let saved = $state(false);
@@ -59,7 +61,7 @@
 
   function clearFeedback(): void {
     urlError = false;
-    keyRequired = false;
+    keyError = "";
     result = null;
     saveError = null;
     saved = false;
@@ -88,8 +90,8 @@
       if (r.code === "invalid_url") {
         urlError = true;
         urlInput?.focus();
-      } else if (r.code === "key_required") {
-        keyRequired = true;
+      } else if (r.code === "key_required" || r.code === "key_missing") {
+        keyError = r.code;
         keyInput?.focus();
       } else {
         result = r;
@@ -110,16 +112,17 @@
         urlInput?.focus();
         return;
       }
-      if (r.code === "key_required") {
-        keyRequired = true;
+      if (r.code === "key_required" || r.code === "key_missing") {
+        keyError = r.code;
         keyInput?.focus();
         return;
       }
       try {
         await backend.SaveServer(url, key);
       } catch (err) {
-        if (message(err) === "key_required") {
-          keyRequired = true;
+        const m = message(err);
+        if (m === "key_required" || m === "key_missing") {
+          keyError = m;
           keyInput?.focus();
         } else {
           saveError = message(err);
@@ -191,9 +194,9 @@
         autocomplete="off"
         autocapitalize="off"
         spellcheck="false"
-        placeholder={hasKey && !keyRequired ? t("server.key_saved_placeholder") : t("server.key_placeholder")}
-        aria-invalid={keyRequired}
-        aria-describedby={keyRequired ? "server-key-error" : "server-key-hint"}
+        placeholder={hasKey && keyError !== "key_required" ? t("server.key_saved_placeholder") : t("server.key_placeholder")}
+        aria-invalid={keyError !== ""}
+        aria-describedby={keyError ? "server-key-error" : "server-key-hint"}
         bind:this={keyInput}
         bind:value={key}
         oninput={clearFeedback}
@@ -211,9 +214,9 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d={showKey ? icons.eyeOff : icons.eye} /></svg>
       </button>
     </div>
-    {#if keyRequired}
+    {#if keyError}
       <p id="server-key-error" class="error-text" role="alert" in:fly={{ y: -4, duration: ms(220) }}>
-        {t("server.key_required")}
+        {keyError === "key_missing" ? t("server.key_missing") : t("server.key_required")}
       </p>
     {:else}
       <p id="server-key-hint" class="hint">{t("server.key_hint")}</p>
@@ -251,7 +254,9 @@
           {#if result.ok}
             <p class="result-title">{t("server.connected", { version: result.version })}</p>
           {:else}
-            <p class="result-title">{t(`status.${result.code}.title`)}</p>
+            <p class="result-title">
+              {result.code === "key_forbidden" ? t("server.key_forbidden") : t(`status.${result.code}.title`)}
+            </p>
             {#if resultDetail}<p class="detail-text">{resultDetail}</p>{/if}
           {/if}
         </div>

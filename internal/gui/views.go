@@ -90,9 +90,11 @@ type NotificationsView struct {
 }
 
 // ServerCheckView is the result of Service.TestServer. Code is "" when OK,
-// otherwise one of "auth_failed", "server_unreachable", "server_error",
-// "invalid_url" or "key_required" (a new host was tested without typing
-// its API key); Params fill the matching translated message.
+// otherwise one of "auth_failed", "key_forbidden" (the key lacks a
+// permission), "server_unreachable", "server_error", "invalid_url",
+// "key_required" (a new host was tested without typing its API key) or
+// "key_missing" (no key typed or saved); Params fill the matching
+// translated message.
 type ServerCheckView struct {
 	OK      bool              `json:"ok"`
 	Version string            `json:"version"`

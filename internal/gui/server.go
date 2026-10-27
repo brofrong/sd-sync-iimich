@@ -19,10 +19,15 @@ const serverCheckTimeout = 20 * time.Second
 
 // ServerCheckView codes that are not app status codes: checkInvalidURL for
 // a URL that normalizeServer rejects, checkKeyRequired for a server other
-// than the saved one tested or saved without typing its API key.
+// than the saved one tested or saved without typing its API key,
+// checkKeyMissing when no key is typed and none is saved, and
+// checkKeyForbidden when Immich takes the key but refuses it the upload
+// permission (403).
 const (
-	checkInvalidURL  = "invalid_url"
-	checkKeyRequired = "key_required"
+	checkInvalidURL   = "invalid_url"
+	checkKeyRequired  = "key_required"
+	checkKeyMissing   = "key_missing"
+	checkKeyForbidden = "key_forbidden"
 )
 
 // keyForServer returns the API key to use with serverURL (normalized):
@@ -79,16 +84,21 @@ func checkServer(ctx context.Context, serverURL, apiKey string) ServerCheckView 
 }
 
 // serverCheckResult maps the result of immich.Client.Check to a view:
-// 401/403 → auth_failed, any other HTTP status → server_error, anything
-// else (DNS, connection, timeout, bad response) → server_unreachable.
+// 401 → auth_failed and 403 → key_forbidden, both with Immich's own
+// message (for a 403 it names the missing permission), any other HTTP
+// status → server_error, anything else (DNS, connection, timeout, bad
+// response) → server_unreachable.
 func serverCheckResult(info immich.ServerInfo, err error, host string) ServerCheckView {
 	if err == nil {
 		return ServerCheckView{OK: true, Version: info.Version, Params: map[string]string{}}
 	}
 	var se *immich.StatusError
 	if errors.As(err, &se) {
-		if se.Code == http.StatusUnauthorized || se.Code == http.StatusForbidden {
-			return ServerCheckView{Code: string(app.CodeAuthFailed), Params: map[string]string{}}
+		switch se.Code {
+		case http.StatusUnauthorized:
+			return ServerCheckView{Code: string(app.CodeAuthFailed), Params: map[string]string{"detail": se.Message}}
+		case http.StatusForbidden:
+			return ServerCheckView{Code: checkKeyForbidden, Params: map[string]string{"detail": se.Message}}
 		}
 		return ServerCheckView{Code: string(app.CodeServerError), Params: map[string]string{
 			"status": strconv.Itoa(se.Code),

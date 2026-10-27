@@ -90,8 +90,14 @@ func TestServerCheckResult(t *testing.T) {
 		wantParams map[string]string
 	}{
 		{name: "ok", info: immich.ServerInfo{Version: "v1.2.3"}, wantOK: true, wantParams: map[string]string{}},
-		{name: "401", err: &immich.StatusError{Code: 401, Message: "Unauthorized"}, wantCode: "auth_failed", wantParams: map[string]string{}},
-		{name: "403", err: &immich.StatusError{Code: 403, Message: "Forbidden"}, wantCode: "auth_failed", wantParams: map[string]string{}},
+		{
+			name: "401", err: &immich.StatusError{Code: 401, Message: "401 Unauthorized: Invalid API key"}, wantCode: "auth_failed",
+			wantParams: map[string]string{"detail": "401 Unauthorized: Invalid API key"},
+		},
+		{
+			name: "403", err: &immich.StatusError{Code: 403, Message: "403 Forbidden: Missing required permission: asset.upload"}, wantCode: "key_forbidden",
+			wantParams: map[string]string{"detail": "403 Forbidden: Missing required permission: asset.upload"},
+		},
 		{
 			name: "500", err: &immich.StatusError{Code: 500, Message: "boom"}, wantCode: "server_error",
 			wantParams: map[string]string{"status": "500", "detail": "boom"},
@@ -174,5 +180,24 @@ func TestSaveServerRefusesNewHostWithoutKey(t *testing.T) {
 	}
 	if got := s.cfg.Get().Immich; got.URL != "https://immich.example" || got.APIKey != "secret" {
 		t.Fatalf("saved server = %q (key %q), want it unchanged", got.URL, got.APIKey)
+	}
+}
+
+func TestTestServerWithoutAnyKey(t *testing.T) {
+	s := savedServer(t, "", "")
+	got := s.TestServer("https://immich.example", "  ")
+	if got.Code != checkKeyMissing || got.OK {
+		t.Fatalf("TestServer(no key typed or saved) = %+v, want code %q", got, checkKeyMissing)
+	}
+}
+
+func TestSaveServerRefusesNoKeyAtAll(t *testing.T) {
+	s := savedServer(t, "", "")
+	err := s.SaveServer("https://immich.example", "")
+	if err == nil || err.Error() != checkKeyMissing {
+		t.Fatalf("SaveServer(no key typed or saved) error = %v, want %q", err, checkKeyMissing)
+	}
+	if got := s.cfg.Get().Immich.URL; got != "" {
+		t.Fatalf("saved URL = %q, want nothing saved", got)
 	}
 }

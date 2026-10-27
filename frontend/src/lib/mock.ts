@@ -27,7 +27,8 @@
 // "Retry failed files" works for a run of the selected, mounted card (the
 // scenario syncs again) and answers retry_unavailable otherwise, as Go.
 // In the server settings a URL containing "bad" is unreachable, the API key
-// "bad" is rejected, and a URL containing "readonly" fails to save.
+// "bad" is rejected, the key "readonly" lacks asset.upload, and a URL
+// containing "readonly" fails to save.
 import {
   AppInfoView,
   CardView,
@@ -687,11 +688,19 @@ export function createMockTransport(): Transport {
       if (!apiKey.trim() && state.server.hasKey && hostOf(url) !== hostOf(state.server.url)) {
         return delay(80, new ServerCheckView({ ok: false, code: "key_required", params: {} }));
       }
+      if (!apiKey.trim() && !state.server.hasKey) {
+        return delay(80, new ServerCheckView({ ok: false, code: "key_missing", params: {} }));
+      }
       if (url.includes("bad")) {
         return delay(600, new ServerCheckView({ ok: false, code: "server_unreachable", params: { host: url, detail: "no such host" } }));
       }
       if (apiKey === "bad") {
-        return delay(300, new ServerCheckView({ ok: false, code: "auth_failed", params: {} }));
+        return delay(300, new ServerCheckView({ ok: false, code: "auth_failed", params: { detail: "401 Unauthorized: Invalid API key" } }));
+      }
+      if (apiKey === "readonly") {
+        return delay(300, new ServerCheckView({
+          ok: false, code: "key_forbidden", params: { detail: "403 Forbidden: Missing required permission: asset.upload" },
+        }));
       }
       return delay(220, new ServerCheckView({ ok: true, version: "v1.122.3", code: "", params: {} }));
     },
@@ -701,6 +710,7 @@ export function createMockTransport(): Transport {
       if (!apiKey.trim() && state.server.hasKey && hostOf(url) !== hostOf(state.server.url)) {
         throw new Error("key_required");
       }
+      if (!apiKey.trim() && !state.server.hasKey) throw new Error("key_missing");
       if (url.includes("readonly")) {
         throw new Error("save server settings: open ~/.config/sd-sync-immich/config.yaml: permission denied");
       }
