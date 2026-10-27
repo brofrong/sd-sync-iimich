@@ -9,12 +9,15 @@
   // a red frame). Without the card it asks for it, or says another card is
   // plugged in and links to Cards. The list reloads on entry, when the
   // card or the status changes, and while syncing as files finish, at most
-  // every 2 s. Clicking a photo opens it in the viewer.
-  import { onDestroy, untrack } from "svelte";
+  // every 2 s. Clicking a photo opens it in the viewer; closing the viewer
+  // brings the last photo shown into view and focuses its tile.
+  import { onDestroy, tick, untrack } from "svelte";
   import type { List, Photo } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gallery";
   import Button from "../components/Button.svelte";
   import GlassCard from "../components/GlassCard.svelte";
-  import { appState, backend, parseTime, status } from "../lib/backend";
+  import PhotoViewer from "../components/PhotoViewer.svelte";
+  import { appState, backend, status } from "../lib/backend";
+  import { dayOf } from "../lib/days";
   import { formatDay, formatNumber, t } from "../lib/i18n";
   import { icons } from "../lib/icons";
 
@@ -31,8 +34,22 @@
   // Raw: thousands of photos are replaced wholesale, never mutated.
   let list = $state.raw<List | null | undefined>(undefined);
   let loadError = $state("");
-  // The photo the viewer shows (an index into list.photos).
+  // The photo the viewer opened with (an index into list.photos).
   let openIndex = $state<number | null>(null);
+  let days = $state<HTMLElement>();
+
+  /** closeViewer closes the viewer and focuses the tile of the photo it showed last. */
+  async function closeViewer(path?: string): Promise<void> {
+    openIndex = null;
+    if (!path) return;
+    await tick();
+    for (const tile of days?.querySelectorAll<HTMLElement>("[data-path]") ?? []) {
+      if (tile.dataset.path === path) {
+        tile.focus();
+        break;
+      }
+    }
+  }
 
   function message(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
@@ -129,12 +146,10 @@
     if (!list) return out;
     const now = new Date();
     list.photos.forEach((photo, index) => {
-      const at = parseTime(photo.takenAt);
-      const d = new Date(at);
-      const key = at > 0 ? new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() : 0;
+      const key = dayOf(photo.takenAt);
       let last = out[out.length - 1];
       if (!last || last.key !== key) {
-        last = { key, day: at > 0 ? formatDay(d, now) : "", items: [] };
+        last = { key, day: key > 0 ? formatDay(new Date(key), now) : "", items: [] };
         out.push(last);
       }
       last.items.push({ photo, index });
@@ -228,7 +243,7 @@
       {/if}
     </GlassCard>
 
-    <div class="days" bind:clientWidth={width}>
+    <div class="days" bind:clientWidth={width} bind:this={days}>
       {#each groups as group, g (group.key)}
         <section class="day" style:contain-intrinsic-block-size="auto {dayHeight(group.items.length)}px" aria-labelledby="gallery-day-{g}">
           <h3 id="gallery-day-{g}">
@@ -244,6 +259,7 @@
                   class="tile {s}"
                   title="{item.photo.name} — {statusLabel(s)}"
                   aria-label="{item.photo.name}, {statusLabel(s)}"
+                  data-path={item.photo.path}
                   onclick={() => (openIndex = item.index)}
                 >
                   <img src={item.photo.thumb} alt="" loading="lazy" decoding="async" draggable="false" />
@@ -251,9 +267,9 @@
                     {#if s === "in_immich"}
                       <svg viewBox="0 0 24 24"><path d={icons.check} /></svg>
                     {:else if s === "uploading"}
-                      <svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
+                      <svg viewBox="0 0 24 24"><path d={icons.arrowUp} /></svg>
                     {:else if s === "failed"}
-                      <svg viewBox="0 0 24 24"><path d="M12 6v7.5M12 18h.01" /></svg>
+                      <svg viewBox="0 0 24 24"><path d={icons.exclaim} /></svg>
                     {/if}
                   </span>
                 </button>
@@ -265,6 +281,10 @@
     </div>
   {/if}
 </div>
+
+{#if openIndex !== null}
+  <PhotoViewer {photos} index={openIndex} onclose={closeViewer} />
+{/if}
 
 <style>
   /* ---- Header ---- */
