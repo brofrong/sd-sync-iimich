@@ -272,7 +272,8 @@ func Run(a *app.App, cfg *config.Store, st *state.DB, version string, autostart 
 			notes.Service(),
 		},
 		Assets: application.AssetOptions{
-			Handler: application.AssetFileServerFS(assets),
+			Handler:    application.AssetFileServerFS(assets),
+			Middleware: svc.gallery.Middleware,
 		},
 		Mac: application.MacOptions{
 			ActivationPolicy: application.ActivationPolicyAccessory,

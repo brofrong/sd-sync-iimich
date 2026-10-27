@@ -17,6 +17,7 @@ import (
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/bundle"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/config"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/desktop"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/gallery"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/i18n"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/install"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
@@ -47,6 +48,7 @@ type Service struct {
 	version string
 	updater *update.Client
 	shell   *shell
+	gallery *gallery.Gallery
 
 	// executable is this program; bundlePath is the app bundle it runs
 	// from, "" when it runs outside one (a development build).
@@ -77,6 +79,7 @@ func newService(a *app.App, cfg *config.Store, st *state.DB, ver string, sh *she
 		version:         ver,
 		updater:         update.NewClient(ver),
 		shell:           sh,
+		gallery:         gallery.New(cfg, st),
 		systemLanguages: i18n.SystemLanguages(),
 		lastCode:        a.Status().Code,
 		notifier:        newNotifier(out),

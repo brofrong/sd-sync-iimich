@@ -496,6 +496,10 @@ export function createMockTransport(): Transport {
 
   const delay = <T>(ms: number, v: T) => new Promise<T>((r) => setTimeout(() => r(v), ms));
 
+  // Gallery and fullscreen are stubbed here; the gallery's sample data and
+  // fullscreen-driving UI are mocked where they are consumed.
+  let fullscreen = false;
+
   // As Go's normalizeServer.
   const normalizeUrl = (u: string) => u.trim().replace(/\/+$/, "").replace(/\/api$/, "").replace(/\/+$/, "");
   const validUrl = (u: string) => {
@@ -702,6 +706,11 @@ export function createMockTransport(): Transport {
       await delay(1500, null);
       if (query.get("update") === "manual") throw new Error("update_manual");
     },
+    Gallery: async () => null,
+    SetFullscreen: async (on) => {
+      fullscreen = on;
+    },
+    IsFullscreen: async () => fullscreen,
   };
 
   const section = query.get("section");
