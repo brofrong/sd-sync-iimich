@@ -90,7 +90,7 @@ func checkServer(ctx context.Context, serverURL, apiKey string) ServerCheckView 
 // response) → server_unreachable.
 func serverCheckResult(info immich.ServerInfo, err error, host string) ServerCheckView {
 	if err == nil {
-		return ServerCheckView{OK: true, Version: info.Version, Params: map[string]string{}}
+		return ServerCheckView{OK: true, Version: info.Version, Params: map[string]string{}, NoStack: !info.CanStack}
 	}
 	var se *immich.StatusError
 	if errors.As(err, &se) {

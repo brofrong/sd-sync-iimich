@@ -89,7 +89,7 @@ func TestServerCheckResult(t *testing.T) {
 		wantCode   string
 		wantParams map[string]string
 	}{
-		{name: "ok", info: immich.ServerInfo{Version: "v1.2.3"}, wantOK: true, wantParams: map[string]string{}},
+		{name: "ok", info: immich.ServerInfo{Version: "v1.2.3", CanStack: true}, wantOK: true, wantParams: map[string]string{}},
 		{
 			name: "401", err: &immich.StatusError{Code: 401, Message: "401 Unauthorized: Invalid API key"}, wantCode: "auth_failed",
 			wantParams: map[string]string{"detail": "401 Unauthorized: Invalid API key"},
@@ -199,5 +199,14 @@ func TestSaveServerRefusesNoKeyAtAll(t *testing.T) {
 	}
 	if got := s.cfg.Get().Immich.URL; got != "" {
 		t.Fatalf("saved URL = %q, want nothing saved", got)
+	}
+}
+
+func TestServerCheckResultWithoutStackPermission(t *testing.T) {
+	if got := serverCheckResult(immich.ServerInfo{Version: "v3.3.4"}, nil, "immich.example"); !got.OK || !got.NoStack {
+		t.Fatalf("serverCheckResult(cannot stack) = %+v, want OK with NoStack", got)
+	}
+	if got := serverCheckResult(immich.ServerInfo{Version: "v3.3.4", CanStack: true}, nil, "immich.example"); got.NoStack {
+		t.Fatalf("serverCheckResult(can stack) = %+v, want NoStack false", got)
 	}
 }

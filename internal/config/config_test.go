@@ -181,6 +181,19 @@ func TestLoadOldConfigGetsCardDefaults(t *testing.T) {
 	if !n.Enabled || !n.Done || !n.Errors || !n.OtherCard || !n.Server || !n.Card {
 		t.Errorf("Notifications = %+v, want all true", n)
 	}
+	if !cfg.Upload.StackRawJPEG {
+		t.Error("Upload.StackRawJPEG = false, want true")
+	}
+}
+
+func TestYAMLCanTurnOffRawJPEGStacks(t *testing.T) {
+	cfg := Default()
+	if err := yaml.Unmarshal([]byte("upload:\n  stack_raw_jpeg: false\n"), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Upload.StackRawJPEG {
+		t.Fatal("Upload.StackRawJPEG = true, want false")
+	}
 }
 
 func TestKnownMediaExtensions(t *testing.T) {

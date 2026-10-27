@@ -28,8 +28,8 @@ func TestSaveSettingsCardAndNotifications(t *testing.T) {
 	}
 	applySettings(&c, v)
 
-	if c.UI.Language != "de" || c.Upload.Concurrency != 4 || c.Scan.AutoPaths {
-		t.Errorf("general settings = %q/%d/%v, want de/4/false", c.UI.Language, c.Upload.Concurrency, c.Scan.AutoPaths)
+	if c.UI.Language != "de" || c.Upload.Concurrency != 4 || c.Scan.AutoPaths || c.Upload.StackRawJPEG {
+		t.Errorf("general settings = %q/%d/%v/%v, want de/4/false/false", c.UI.Language, c.Upload.Concurrency, c.Scan.AutoPaths, c.Upload.StackRawJPEG)
 	}
 	if want := (config.CardConfig{AutoEject: false, AutoFormat: true}); c.Card != want {
 		t.Errorf("Card = %+v, want %+v", c.Card, want)
@@ -47,6 +47,9 @@ func TestSettingsViewRoundTrip(t *testing.T) {
 	v := settingsView(c)
 	if !v.AutoFormat || v.AutoEject {
 		t.Errorf("settingsView card = %v/%v, want eject false, format true", v.AutoEject, v.AutoFormat)
+	}
+	if !v.StackRawJPEG {
+		t.Errorf("settingsView StackRawJPEG = false, want the default true")
 	}
 	got := config.Default()
 	applySettings(&got, v)

@@ -77,7 +77,7 @@
     try {
       return await backend.TestServer(url, key);
     } catch (err) {
-      return { ok: false, version: "", code: "failed", params: { detail: message(err) } };
+      return { ok: false, version: "", code: "failed", params: { detail: message(err) }, noStack: false };
     }
   }
 
@@ -253,6 +253,7 @@
         <div class="result-text">
           {#if result.ok}
             <p class="result-title">{t("server.connected", { version: result.version })}</p>
+            {#if result.noStack}<p class="detail-text">{t("server.no_stack")}</p>{/if}
           {:else}
             <p class="result-title">
               {result.code === "key_forbidden" ? t("server.key_forbidden") : t(`status.${result.code}.title`)}

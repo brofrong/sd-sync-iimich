@@ -49,8 +49,9 @@ type CardView struct {
 // SettingsView holds the editable settings. Language is the preference
 // ("" follows the system language). Concurrency is the number of parallel
 // uploads, 0 when each sync picks it automatically. AutoEject and
-// AutoFormat are what happens to the card after a sync; Notifications are
-// the notification switches.
+// AutoFormat are what happens to the card after a sync; StackRawJPEG
+// stacks RAW+JPEG pairs in Immich; Notifications are the notification
+// switches.
 //
 // Autostart (the LaunchAgent is installed) is changed with
 // Service.SetAutostart, not SaveSettings, which ignores it and
@@ -68,6 +69,7 @@ type SettingsView struct {
 	Language              string `json:"language"`
 	Concurrency           int    `json:"concurrency"`
 	AutoPaths             bool   `json:"autoPaths"`
+	StackRawJPEG          bool   `json:"stackRawJpeg"`
 	Autostart             bool   `json:"autostart"`
 	AutostartAvailable    bool   `json:"autostartAvailable"`
 	AutostartTranslocated bool   `json:"autostartTranslocated"`
@@ -94,12 +96,14 @@ type NotificationsView struct {
 // permission), "server_unreachable", "server_error", "invalid_url",
 // "key_required" (a new host was tested without typing its API key) or
 // "key_missing" (no key typed or saved); Params fill the matching
-// translated message.
+// translated message. NoStack is set when the check passed but the key
+// may not create stacks while stacking RAW+JPEG pairs is on.
 type ServerCheckView struct {
 	OK      bool              `json:"ok"`
 	Version string            `json:"version"`
 	Code    string            `json:"code"`
 	Params  map[string]string `json:"params"`
+	NoStack bool              `json:"noStack"`
 }
 
 // UpdateView is an available application update.

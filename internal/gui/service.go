@@ -394,7 +394,9 @@ func (s *Service) TestServer(url, apiKey string) ServerCheckView {
 	if key == "" {
 		return ServerCheckView{Code: checkKeyMissing, Params: map[string]string{}}
 	}
-	return checkServer(context.Background(), u, key)
+	v := checkServer(context.Background(), u, key)
+	v.NoStack = v.NoStack && s.cfg.Get().Upload.StackRawJPEG
+	return v
 }
 
 // SaveServer saves the server URL and, unless apiKey is empty, the key.
@@ -453,11 +455,12 @@ func validConcurrency(n int) bool {
 func settingsView(cfg config.Config) SettingsView {
 	n := cfg.Notifications
 	return SettingsView{
-		Language:    cfg.UI.Language,
-		Concurrency: settingsConcurrency(cfg),
-		AutoPaths:   cfg.Scan.AutoPaths,
-		AutoEject:   cfg.Card.AutoEject,
-		AutoFormat:  cfg.Card.AutoFormat,
+		Language:     cfg.UI.Language,
+		Concurrency:  settingsConcurrency(cfg),
+		AutoPaths:    cfg.Scan.AutoPaths,
+		StackRawJPEG: cfg.Upload.StackRawJPEG,
+		AutoEject:    cfg.Card.AutoEject,
+		AutoFormat:   cfg.Card.AutoFormat,
 
 		AutoFormatNeedsAdmin: eraseNeedsAdmin(),
 		Notifications: NotificationsView{
@@ -477,6 +480,7 @@ func applySettings(c *config.Config, v SettingsView) {
 	c.UI.Language = v.Language
 	c.Upload.Concurrency = v.Concurrency
 	c.Scan.AutoPaths = v.AutoPaths
+	c.Upload.StackRawJPEG = v.StackRawJPEG
 	c.Card = config.CardConfig{AutoEject: v.AutoEject, AutoFormat: v.AutoFormat}
 	n := v.Notifications
 	c.Notifications = config.NotifyConfig{
@@ -490,8 +494,8 @@ func applySettings(c *config.Config, v SettingsView) {
 }
 
 // SaveSettings saves the language, upload concurrency (0: automatic),
-// automatic path discovery, the card settings and the notification
-// switches.
+// automatic path discovery, stacking RAW+JPEG pairs, the card settings and
+// the notification switches.
 func (s *Service) SaveSettings(v SettingsView) error {
 	if v.Language != "" && !slices.Contains(i18n.Supported, v.Language) {
 		return fmt.Errorf("unsupported language %q", v.Language)
@@ -505,6 +509,7 @@ func (s *Service) SaveSettings(v SettingsView) error {
 	}
 	n := v.Notifications
 	logx.Info("settings saved", "language", v.Language, "concurrency", v.Concurrency, "auto_paths", v.AutoPaths,
+		"stack_raw_jpeg", v.StackRawJPEG,
 		"auto_eject", v.AutoEject, "auto_format", v.AutoFormat,
 		"notifications", n.Enabled, "notify_done", n.Done, "notify_errors", n.Errors,
 		"notify_other_card", n.OtherCard, "notify_server", n.Server, "notify_card", n.Card)

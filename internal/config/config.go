@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -49,6 +50,9 @@ type ScanConfig struct {
 type UploadConfig struct {
 	Concurrency        int `yaml:"concurrency"`         // 0 = auto (see AutoConcurrency)
 	CheckpointInterval int `yaml:"checkpoint_interval"` // flush WAL every N files (100–200, default 150)
+	// StackRawJPEG stacks a RAW and the JPEG or HEIF shot with it (same
+	// name, same folder) in Immich, the JPEG on top.
+	StackRawJPEG bool `yaml:"stack_raw_jpeg"`
 }
 
 type StateConfig struct {
@@ -101,6 +105,7 @@ func Default() Config {
 		Upload: UploadConfig{
 			Concurrency:        0,
 			CheckpointInterval: 0,
+			StackRawJPEG:       true,
 		},
 		State: StateConfig{
 			DBPath: "",
@@ -321,18 +326,32 @@ func KnownMediaExtensions() map[string]struct{} {
 	return set
 }
 
-var knownCameraExtensions = []string{
-	// Common still-image formats.
-	"avif", "bmp", "gif", "heic", "heif", "hif", "insp", "jpeg", "jpg", "jpe",
-	"jp2", "jxl", "mpo", "png", "tif", "tiff", "webp",
-	// RAW formats supported by Immich.
+// IsRawExtension reports whether ext (lowercase, without the dot) is a RAW
+// format Immich supports.
+func IsRawExtension(ext string) bool {
+	return slices.Contains(rawExtensions, ext)
+}
+
+// rawExtensions are the RAW formats supported by Immich.
+var rawExtensions = []string{
 	"3fr", "ari", "arw", "cap", "cin", "cr2", "cr3", "crw", "dcr", "dng",
 	"erf", "fff", "iiq", "k25", "kdc", "mrw", "nef", "nrw", "orf", "ori",
 	"pef", "raf", "raw", "rw2", "rwl", "sr2", "srf", "srw", "x3f",
-	// Video containers supported by Immich.
-	"3gp", "3gpp", "avi", "flv", "insv", "m2t", "m2ts", "m4v", "mkv",
-	"mov", "mp4", "mpe", "mpeg", "mpg", "mts", "mxf", "ts", "vob", "webm", "wmv",
 }
+
+var knownCameraExtensions = slices.Concat(
+	// Common still-image formats.
+	[]string{
+		"avif", "bmp", "gif", "heic", "heif", "hif", "insp", "jpeg", "jpg", "jpe",
+		"jp2", "jxl", "mpo", "png", "tif", "tiff", "webp",
+	},
+	rawExtensions,
+	// Video containers supported by Immich.
+	[]string{
+		"3gp", "3gpp", "avi", "flv", "insv", "m2t", "m2ts", "m4v", "mkv",
+		"mov", "mp4", "mpe", "mpeg", "mpg", "mts", "mxf", "ts", "vob", "webm", "wmv",
+	},
+)
 
 // ScanPaths returns custom scan roots plus known camera layouts when automatic
 // media discovery is enabled. Parent paths replace nested paths to avoid

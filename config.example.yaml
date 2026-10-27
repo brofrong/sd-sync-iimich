@@ -21,6 +21,7 @@ scan:
 upload:
   concurrency: 0           # 0 = auto (4 параллельные загрузки)
   checkpoint_interval: 150 # сброс прогресса на диск каждые N файлов (100–200)
+  stack_raw_jpeg: true     # собирать пары RAW+JPEG в стек в Immich (нужно право stack.create)
 
 state:
   db_path: "~/.config/sd-sync-immich/state.db"

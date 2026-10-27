@@ -21,7 +21,10 @@ type syncSession struct {
 	// about the files between the saved cursor and them — moving the
 	// cursor, in either direction, could skip files never uploaded.
 	keepCursor bool
-	mu         sync.Mutex
+	// assets maps the files of this session that are in Immich to their
+	// asset ids, for stacking RAW+JPEG pairs afterwards.
+	assets map[string]string
+	mu     sync.Mutex
 }
 
 func newSyncSession(st *state.DB, volumeUUID string, order []scanner.File) *syncSession {
@@ -30,7 +33,15 @@ func newSyncSession(st *state.DB, volumeUUID string, order []scanner.File) *sync
 		volumeUUID: volumeUUID,
 		order:      order,
 		completed:  make(map[string]struct{}),
+		assets:     make(map[string]string),
 	}
+}
+
+// rememberAsset notes the Immich asset id of a file synced in this session.
+func (s *syncSession) rememberAsset(relativePath, assetID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.assets[relativePath] = assetID
 }
 
 // recordSuccess records that f is in Immich (uploaded, or already there)

@@ -170,6 +170,9 @@ func TestCheckReturnsServerVersion(t *testing.T) {
 			}
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprintf(w, `{"results":[{"id":%q,"action":"accept"}]}`, body.Assets[0].ID)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/stacks":
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"message":"assetIds must contain at least 2 elements"}`)
 		default:
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -180,8 +183,8 @@ func TestCheckReturnsServerVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Check() error = %v", err)
 	}
-	if info.Version != "v2.3.1" {
-		t.Fatalf("Version = %q, want v2.3.1", info.Version)
+	if info.Version != "v2.3.1" || !info.CanStack {
+		t.Fatalf("info = %+v, want v2.3.1 that can stack", info)
 	}
 	if gotAPIKey != "key" {
 		t.Fatalf("bulk-upload-check x-api-key = %q, want %q", gotAPIKey, "key")
@@ -323,5 +326,79 @@ func TestCheckBoundsResponseBodies(t *testing.T) {
 				t.Fatalf("Check() error = %v; want a prompt error after reading a bounded body", err)
 			}
 		})
+	}
+}
+
+func TestCheckReportsKeyThatCannotStack(t *testing.T) {
+	c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/server/version":
+			fmt.Fprint(w, `{"major":3,"minor":3,"patch":4}`)
+		case "/api/assets/bulk-upload-check":
+			fmt.Fprint(w, `{"results":[]}`)
+		case "/api/stacks":
+			w.WriteHeader(http.StatusForbidden)
+			fmt.Fprint(w, `{"message":"Missing required permission: stack.create"}`)
+		}
+	})
+	info, err := c.Check(context.Background())
+	if err != nil {
+		t.Fatalf("Check() error = %v", err)
+	}
+	if info.CanStack {
+		t.Fatalf("CanStack = true, want false for a 403")
+	}
+}
+
+func TestCreateStackSendsAssetsInOrder(t *testing.T) {
+	var got struct {
+		AssetIDs []string `json:"assetIds"`
+	}
+	c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/stacks" || r.Header.Get("x-api-key") != "key" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("stacks body: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprint(w, `{"id":"stack-1","primaryAssetId":"jpg"}`)
+	})
+	if err := c.CreateStack(context.Background(), []string{"jpg", "raw"}); err != nil {
+		t.Fatalf("CreateStack() error = %v", err)
+	}
+	if len(got.AssetIDs) != 2 || got.AssetIDs[0] != "jpg" || got.AssetIDs[1] != "raw" {
+		t.Fatalf("assetIds = %v, want [jpg raw]", got.AssetIDs)
+	}
+}
+
+func TestCreateStackReturnsStatusError(t *testing.T) {
+	c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"message":"Missing required permission: stack.create"}`)
+	})
+	err := c.CreateStack(context.Background(), []string{"a", "b"})
+	var se *StatusError
+	if !errors.As(err, &se) || se.Code != http.StatusForbidden {
+		t.Fatalf("CreateStack() error = %v, want *StatusError with 403", err)
+	}
+}
+
+func TestCheckBoundsStackProbeBody(t *testing.T) {
+	c := newTLSClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/server/version":
+			fmt.Fprint(w, `{"major":3,"minor":3,"patch":4}`)
+		case "/api/assets/bulk-upload-check":
+			fmt.Fprint(w, `{"results":[]}`)
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+			endless(w)
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := c.Check(ctx); err != nil || ctx.Err() != nil {
+		t.Fatalf("Check() error = %v; want it to stop reading the stack probe's endless body", err)
 	}
 }

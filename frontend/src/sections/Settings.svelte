@@ -59,6 +59,7 @@
   let auto = $state(true);
   let concurrency = $state(DEFAULT_CONCURRENCY);
   let autoPaths = $state(true);
+  let stackRawJpeg = $state(true);
   let autostart = $state(false);
   let autoEject = $state(true);
   let autoFormat = $state(false);
@@ -85,6 +86,7 @@
     auto = s.concurrency <= 0;
     concurrency = s.concurrency >= 1 && s.concurrency <= MAX_CONCURRENCY ? s.concurrency : DEFAULT_CONCURRENCY;
     autoPaths = s.autoPaths;
+    stackRawJpeg = s.stackRawJpeg;
     autostart = s.autostart;
     autoEject = s.autoEject;
     autoFormat = s.autoFormat;
@@ -116,6 +118,7 @@
           language,
           concurrency: auto ? 0 : concurrency,
           autoPaths,
+          stackRawJpeg,
           autoEject,
           autoFormat,
           notifications: new NotificationsView(notifications),
@@ -412,6 +415,22 @@
         describedby="set-auto-paths-hint"
         onchange={(v) => {
           autoPaths = v;
+          save();
+        }}
+      />
+    </div>
+
+    <div class="row">
+      <div class="text">
+        <label for="set-stack-raw-jpeg">{t("settings.stack_raw_jpeg")}</label>
+        <p class="hint" id="set-stack-raw-jpeg-hint">{t("settings.stack_raw_jpeg_hint")}</p>
+      </div>
+      <Switch
+        id="set-stack-raw-jpeg"
+        checked={stackRawJpeg}
+        describedby="set-stack-raw-jpeg-hint"
+        onchange={(v) => {
+          stackRawJpeg = v;
           save();
         }}
       />

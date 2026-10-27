@@ -31,6 +31,8 @@ Needs an Immich v3 server. Free and open source.
 - **Photos, RAW and video.** Everything Immich takes, with XMP sidecars,
   several files at once. Finds the shots on cards from Canon, Nikon, Sony,
   Fujifilm, Panasonic, Olympus, GoPro, DJI and other cameras.
+- **RAW+JPEG as one photo.** A RAW and the JPEG or HEIF shot with it are
+  stacked in Immich, the JPEG on top. Can be turned off in Settings.
 - **Card ready to go.** After the upload the card is ejected, so you can
   take it out. If you like, the app also formats it, but only after checking
   that every file is in Immich.
@@ -117,7 +119,8 @@ extension (Ubuntu has it); KDE and other desktops show the tray themselves.
 2. **Settings → Server:** your Immich address (for example
    `https://immich.example.com`) and an API key. Create the key in Immich:
    **Account Settings → API Keys → New API Key**, with the `asset.upload`
-   permission. Click **Test Connection** and **Save**.
+   and `stack.create` permissions (the second one stacks RAW+JPEG pairs).
+   Click **Test Connection** and **Save**.
 3. Insert the card → **Cards** → **Select**.
 4. That's it. From now on the upload starts by itself when the card is
    inserted.

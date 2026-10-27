@@ -344,9 +344,12 @@ func (c *Client) Ping(ctx context.Context) error {
 	return nil
 }
 
-// ServerInfo describes the Immich server a Client is pointed at.
+// ServerInfo describes the Immich server a Client is pointed at. CanStack
+// is false when the API key may not create stacks (no stack.create), so
+// RAW+JPEG pairs cannot be stacked.
 type ServerInfo struct {
-	Version string
+	Version  string
+	CanStack bool
 }
 
 type serverVersionResponse struct {
@@ -404,7 +407,65 @@ func (c *Client) Check(ctx context.Context) (ServerInfo, error) {
 	if resp.StatusCode != http.StatusOK {
 		return ServerInfo{}, &StatusError{Code: resp.StatusCode, Message: formatAPIError(resp.Status, body)}
 	}
+
+	info.CanStack, err = c.canStack(ctx)
+	if err != nil {
+		return ServerInfo{}, err
+	}
 	return info, nil
+}
+
+// canStack asks whether the API key may create stacks by creating one of no
+// assets: Immich checks the permission before the body, so a key without
+// stack.create gets 403 and any other key a 400 for the empty list. Only a
+// 403 means no.
+func (c *Client) canStack(ctx context.Context) (bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/stacks", strings.NewReader(`{"assetIds":[]}`))
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", c.APIKey)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return false, err
+	}
+	_, err = io.Copy(io.Discard, io.LimitReader(resp.Body, maxCheckBody))
+	resp.Body.Close()
+	if err != nil {
+		return false, err
+	}
+	return resp.StatusCode != http.StatusForbidden, nil
+}
+
+// CreateStack stacks the assets in Immich, the first one on top. A key
+// without stack.create gets a *StatusError with 403.
+func (c *Client) CreateStack(ctx context.Context, assetIDs []string) error {
+	payload, err := json.Marshal(struct {
+		AssetIDs []string `json:"assetIds"`
+	}{AssetIDs: assetIDs})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/stacks", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", c.APIKey)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCheckBody))
+	resp.Body.Close()
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return &StatusError{Code: resp.StatusCode, Message: formatAPIError(resp.Status, body)}
+	}
+	return nil
 }
 
 // BulkCheckAsset is one asset to ask Immich about via BulkUploadCheck: ID is

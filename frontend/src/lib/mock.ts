@@ -27,8 +27,8 @@
 // "Retry failed files" works for a run of the selected, mounted card (the
 // scenario syncs again) and answers retry_unavailable otherwise, as Go.
 // In the server settings a URL containing "bad" is unreachable, the API key
-// "bad" is rejected, the key "readonly" lacks asset.upload, and a URL
-// containing "readonly" fails to save.
+// "bad" is rejected, the key "readonly" lacks asset.upload, "nostack" lacks
+// stack.create, and a URL containing "readonly" fails to save.
 import {
   AppInfoView,
   CardView,
@@ -430,6 +430,7 @@ export function createMockTransport(): Transport {
     language: query.get("lang") ?? "",
     concurrency: 0,
     autoPaths: true,
+    stackRawJpeg: true,
     autostart: inBundle,
     autostartAvailable: inBundle,
     autostartTranslocated: translocated,
@@ -696,6 +697,9 @@ export function createMockTransport(): Transport {
       }
       if (apiKey === "bad") {
         return delay(300, new ServerCheckView({ ok: false, code: "auth_failed", params: { detail: "401 Unauthorized: Invalid API key" } }));
+      }
+      if (apiKey === "nostack") {
+        return delay(220, new ServerCheckView({ ok: true, version: "v3.3.4", code: "", params: {}, noStack: true }));
       }
       if (apiKey === "readonly") {
         return delay(300, new ServerCheckView({

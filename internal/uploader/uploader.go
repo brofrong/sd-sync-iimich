@@ -66,12 +66,14 @@ func (s *Service) rememberWorkers(n int) {
 // Result counts the files of a sync: Uploaded were stored by Immich,
 // Duplicates it already had, Skipped were not sent (synced before, or left
 // over when the sync stopped). Bytes is the size of the uploaded ones.
+// Stacks counts the RAW+JPEG pairs stacked in Immich.
 type Result struct {
 	Uploaded   int
 	Duplicates int
 	Skipped    int
 	Errors     int
 	Bytes      int64
+	Stacks     int
 	// ErrorSummary counts failures by kind (see the errorKind* constants),
 	// e.g. {"rejected": 2, "network": 1}.
 	ErrorSummary map[string]int
@@ -185,7 +187,11 @@ func (s *Service) Sync(ctx context.Context, vol volume.Info, opts SyncOptions, o
 		}
 	}
 	checkpoint := newSyncCheckpoint(s.State, session, cfg.EffectiveCheckpointInterval())
-	return s.uploadAll(ctx, vol.UUID, client, workers, auto, len(files), skipped, candidates, prog, session, checkpoint)
+	res, err := s.uploadAll(ctx, vol.UUID, client, workers, auto, len(files), skipped, candidates, prog, session, checkpoint)
+	if err == nil && cfg.Upload.StackRawJPEG {
+		res.Stacks = s.stackPairs(ctx, client, vol.UUID, rawJPEGGroups(files), session)
+	}
+	return res, err
 }
 
 func (s *Service) uploadAll(
@@ -367,6 +373,9 @@ func (s *Service) syncOne(
 	}
 
 	checkpoint.onFileSaved()
+	if resp != nil && resp.ID != "" {
+		session.rememberAsset(f.RelativePath, resp.ID)
+	}
 	if resp != nil && resp.Status == "duplicate" {
 		logx.Debug("sync: already on server", "file", f.RelativePath)
 		return outcomeDuplicate
