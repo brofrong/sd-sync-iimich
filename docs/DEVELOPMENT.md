@@ -89,6 +89,36 @@ Cask лежит в отдельном репозитории
 кнопке **Run workflow**. После релиза ничего делать не нужно, а чтобы cask
 обновился сразу: `gh workflow run bump.yml -R brofrong/homebrew-tap`.
 
+## Flatpak
+
+Всё для Flatpak лежит в `packaging/flatpak/`: манифест, `.desktop`,
+metainfo и `node-sources.json`. Сборка идёт без сети, как на Flathub:
+
+- Go-модули берутся из `vendor/`. В CI перед сборкой выполняется
+  `go mod vendor`, а для Flathub каждый релиз прикладывает архив
+  `sd-sync-immich-vendor.tar.xz`.
+- npm-пакеты берутся из `node-sources.json`. После каждого изменения
+  `frontend/package-lock.json` его нужно перегенерировать:
+
+  ```bash
+  pip install "git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node"
+  flatpak-node-generator npm frontend/package-lock.json -o packaging/flatpak/node-sources.json
+  ```
+
+- TypeScript-привязки (`frontend/bindings`) лежат в git: Wails CLI в такой
+  сборке не запускается. `scripts/build-frontend.sh` их обновляет, а CI
+  проверяет, что они закоммичены свежими.
+
+Workflow `flatpak.yml` собирает бандл и прогоняет `flatpak-builder-lint`,
+когда меняется упаковка или зависимости; его можно запустить и вручную.
+Бандл остаётся артефактом запуска.
+
+Во Flatpak приложение не проверяет обновления: его обновляет Flatpak.
+Автозапуск включается через портал Background, а UUID и метки карт
+берутся у UDisks2 (в песочнице нет `/dev/disk`).
+
+Перед каждым релизом в metainfo добавляется строка `<release>`.
+
 ## Обновление с v0.3.0
 
 Ничего делать не нужно: v0.3.0 скачает обновление как обычно, а новая версия
