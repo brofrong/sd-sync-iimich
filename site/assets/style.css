@@ -164,6 +164,11 @@ footer a { color: var(--text-2); }
 .system ol { grid-column: 2 / 4; margin: 10px 0 0; padding-left: 20px; color: var(--text-2); font-size: 15px; }
 .system ol li { margin: 3px 0; }
 .system code { font: 13px ui-monospace, "SF Mono", Menlo, monospace; background: rgba(255, 255, 255, 0.08); padding: 1px 5px; border-radius: 5px; }
+.system .alt { grid-column: 2 / 4; margin-top: 6px; color: var(--text-2); font-size: 15px; }
+.system .alt p { margin: 0 0 6px; }
+.system .alt a { color: var(--accent-soft); }
+.system pre { margin: 0; padding: 10px 14px; border-radius: 10px; background: rgba(0, 0, 0, 0.35); overflow-x: auto; }
+.system pre code { background: none; padding: 0; line-height: 1.6; }
 .more { color: var(--text-3); font-size: 15px; margin: 0 0 64px; }
 
 [hidden] { display: none !important; }
@@ -179,7 +184,7 @@ footer a { color: var(--text-2); }
   .system { grid-template-columns: 44px 1fr; }
   .system .os-icon { width: 44px; height: 44px; }
   .system .button { grid-column: 1 / 3; text-align: center; margin-top: 8px; }
-  .system ol { grid-column: 1 / 3; }
+  .system ol, .system .alt { grid-column: 1 / 3; }
 }
 
 @media (max-width: 560px) {

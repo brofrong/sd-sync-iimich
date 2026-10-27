@@ -83,6 +83,14 @@ it offers the file for your system. All files are on the
    xattr -dr com.apple.quarantine /Applications/"SD Sync Immich.app"
    ```
 
+Or with [Homebrew](https://brew.sh) instead of step 1 (step 2 is the same):
+
+```bash
+brew tap brofrong/tap
+brew trust --cask brofrong/tap/sd-sync-immich
+brew install --cask sd-sync-immich
+```
+
 ### Windows (beta)
 
 1. Download and run **`SD-Sync-Immich-Setup-x64.exe`**. No administrator

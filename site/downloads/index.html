@@ -50,6 +50,12 @@
           <li data-i18n="dl.mac.1">Open the .dmg and drag SD Sync Immich onto the Applications folder.</li>
           <li data-i18n="dl.mac.2">The app is not signed with an Apple Developer ID, so macOS blocks the first launch: open <b>System Settings → Privacy &amp; Security</b> and click <b>Open Anyway</b> next to SD Sync Immich.</li>
         </ol>
+        <div class="alt">
+          <p data-i18n="dl.mac.brew">Or with <a href="https://brew.sh">Homebrew</a>, then the same step 2:</p>
+          <pre><code>brew tap brofrong/tap
+brew trust --cask brofrong/tap/sd-sync-immich
+brew install --cask sd-sync-immich</code></pre>
+        </div>
       </div>
 
       <div class="system" data-os="windows">

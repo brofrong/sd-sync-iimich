@@ -77,6 +77,18 @@ Windows — `%APPDATA%\sd-sync-immich`; пример — [`config.example.yaml`]
 /Applications/"SD Sync Immich.app"/Contents/MacOS/sd-sync-immich uninstall
 ```
 
+Установленное через Homebrew удаляется `brew uninstall --cask sd-sync-immich`
+(вместе с LaunchAgent), с `--zap` — ещё и настройки, история и журнал.
+
+## Homebrew
+
+Cask лежит в отдельном репозитории
+[brofrong/homebrew-tap](https://github.com/brofrong/homebrew-tap). В нём
+записаны версия и SHA-256 DMG из `checksums.txt` последнего релиза; их
+обновляет workflow `bump.yml` того же репозитория — каждые 6 часов и по
+кнопке **Run workflow**. После релиза ничего делать не нужно, а чтобы cask
+обновился сразу: `gh workflow run bump.yml -R brofrong/homebrew-tap`.
+
 ## Обновление с v0.3.0
 
 Ничего делать не нужно: v0.3.0 скачает обновление как обычно, а новая версия

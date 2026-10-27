@@ -75,6 +75,7 @@
     "dl.mac.button": "Скачать .dmg",
     "dl.mac.1": "Откройте .dmg и перетащите SD Sync Immich на папку «Программы».",
     "dl.mac.2": "Приложение не подписано Apple Developer ID, поэтому первый запуск macOS заблокирует: откройте <b>Системные настройки → Конфиденциальность и безопасность</b> и нажмите <b>Всё равно открыть</b> у SD Sync Immich.",
+    "dl.mac.brew": "Или через <a href=\"https://brew.sh\">Homebrew</a>, а затем тот же шаг 2:",
     "dl.win.meta": "Windows 10 или 11 · x64",
     "dl.win.button": "Скачать установщик",
     "dl.win.1": "Запустите установщик. Права администратора не нужны.",
@@ -237,7 +238,8 @@
     });
     if (github.version) {
       var date = github.date ? github.date.toLocaleDateString(lang, { day: "numeric", month: "long", year: "numeric" }) : "";
-      document.getElementById("release-line").textContent = t("release", { v: github.version, date: date });
+      // "{date}." would end a Russian date ("27 октября 2026 г.") with two dots.
+      document.getElementById("release-line").textContent = t("release", { v: github.version, date: date }).replace(/\.\.$/, ".");
     }
     each("[data-file]", function (el) {
       var size = github.sizes[el.dataset.file];

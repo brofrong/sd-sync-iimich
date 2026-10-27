@@ -83,6 +83,14 @@ macOS 13+, Windows 10/11 и Linux x86_64 (Windows и Linux — бета). Нуж
    xattr -dr com.apple.quarantine /Applications/"SD Sync Immich.app"
    ```
 
+Или через [Homebrew](https://brew.sh) вместо шага 1 (шаг 2 тот же):
+
+```bash
+brew tap brofrong/tap
+brew trust --cask brofrong/tap/sd-sync-immich
+brew install --cask sd-sync-immich
+```
+
 ### Windows (бета)
 
 1. Скачайте и запустите **`SD-Sync-Immich-Setup-x64.exe`**. Права
