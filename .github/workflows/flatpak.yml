@@ -49,3 +49,13 @@ jobs:
           bundle: SD-Sync-Immich.flatpak
           manifest-path: packaging/flatpak/io.github.brofrong.SDSyncImmich.yml
           cache-key: flatpak-builder-${{ github.sha }}
+
+      # Flathub's checks, on the manifest and on the built repository.
+      - name: Lint
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub org.flatpak.Builder
+          lint() { flatpak run --command=flatpak-builder-lint org.flatpak.Builder "$@"; }
+          lint --exceptions manifest packaging/flatpak/io.github.brofrong.SDSyncImmich.yml || status=1
+          lint --exceptions repo repo || status=1
+          exit "${status:-0}"
