@@ -122,6 +122,59 @@ func TestHandlerCachesThumbnails(t *testing.T) {
 	}
 }
 
+// TestHandlerNeverAnswersConditionally: Wails turns a 304 into a 500 on
+// Windows (WebView2), so revalidating a cached image must get the image
+// again, and the answers carry no validators to revalidate with.
+func TestHandlerNeverAnswersConditionally(t *testing.T) {
+	g, _ := newTestGallery(t)
+	vol := newCard(t, "CARD-A")
+	data := photoWithThumb(t)
+	putFile(t, vol, "DSC00001.JPG", data, base)
+	h := serveMux(g)
+	p := mustList(t, g, vol).Photos[0]
+	later := base.Add(time.Hour).UTC().Format(http.TimeFormat)
+	earlier := base.Add(-time.Hour).UTC().Format(http.TimeFormat)
+
+	for _, path := range []string{p.Thumb, p.Src} {
+		w := get(h, path)
+		if lm := w.Header().Get("Last-Modified"); lm != "" {
+			t.Errorf("GET %s Last-Modified = %q, want none", path, lm)
+		}
+		if et := w.Header().Get("ETag"); et != "" {
+			t.Errorf("GET %s ETag = %q, want none", path, et)
+		}
+		for _, hdr := range [][2]string{
+			{"If-Modified-Since", later},
+			{"If-None-Match", "*"},
+			{"If-Unmodified-Since", earlier},
+			{"If-Match", `"x"`},
+		} {
+			w := get(h, path, hdr[0], hdr[1])
+			if w.Code != http.StatusOK || w.Body.Len() == 0 {
+				t.Errorf("GET %s with %s: %s = %d with %d bytes, want 200 and the image", path, hdr[0], hdr[1], w.Code, w.Body.Len())
+			}
+		}
+	}
+	w := get(h, p.Src, "Range", "bytes=2-11", "If-Range", later)
+	if w.Code != http.StatusPartialContent || !bytes.Equal(w.Body.Bytes(), data[2:12]) {
+		t.Errorf("ranged GET with If-Range = %d, want 206 with the range", w.Code)
+	}
+}
+
+// TestGenerationsDifferAcrossLaunches: the window's HTTP cache outlives the
+// app, so a new Gallery must not reuse the ids of the last launch.
+func TestGenerationsDifferAcrossLaunches(t *testing.T) {
+	first, _ := newTestGallery(t)
+	second, _ := newTestGallery(t)
+	vol := newCard(t, "CARD-A")
+	putFile(t, vol, "DSC00001.JPG", []byte("jpeg"), base)
+	a := genOf(t, mustList(t, first, vol).Photos[0])
+	b := genOf(t, mustList(t, second, vol).Photos[0])
+	if a == b {
+		t.Errorf("two Gallery instances both started at generation %d", a)
+	}
+}
+
 func TestHandlerRejectsUnknownIDs(t *testing.T) {
 	g, _ := newTestGallery(t)
 	a := newCard(t, "CARD-A")

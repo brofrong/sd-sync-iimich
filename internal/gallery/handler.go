@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
 )
@@ -17,9 +18,17 @@ const (
 	// routePrefix starts every URL the gallery serves.
 	routePrefix = "/gallery/"
 	// cacheControl lets the window keep images: an id never names another
-	// file within its generation.
+	// file within its generation, and generations do not repeat across
+	// launches (New seeds them), while the window's HTTP cache outlives the
+	// app.
 	cacheControl = "private, max-age=3600"
 )
+
+// conditionalHeaders are the request headers that could make
+// http.ServeContent answer 304 or 412. They are dropped: Wails answers a
+// 304 with a 500 on Windows (WebView2), and an id's content never changes,
+// so a cached image is fetched again in full rather than revalidated.
+var conditionalHeaders = []string{"If-Modified-Since", "If-None-Match", "If-Match", "If-Unmodified-Since", "If-Range"}
 
 // Middleware serves "/gallery/thumb/<gen>/<i>" (a JPEG thumbnail) and
 // "/gallery/photo/<gen>/<i>" (the photo file, with Range support) for the
@@ -170,13 +179,18 @@ func (g *Gallery) servePhoto(w http.ResponseWriter, r *http.Request, gen uint64,
 	g.writeImage(w, r, f, file)
 }
 
-// writeImage answers with the JPEG in content, honouring Range and
-// conditional requests.
+// writeImage answers with the JPEG in content, honouring Range. It never
+// answers conditionally (see conditionalHeaders) and sends no
+// Last-Modified or ETag to revalidate with.
 func (g *Gallery) writeImage(w http.ResponseWriter, r *http.Request, f photoFile, content io.ReadSeeker) {
 	h := w.Header()
 	h.Set("Content-Type", "image/jpeg")
 	h.Set("Cache-Control", cacheControl)
-	http.ServeContent(w, r, f.name, f.mtime, content)
+	r = r.Clone(r.Context())
+	for _, k := range conditionalHeaders {
+		r.Header.Del(k)
+	}
+	http.ServeContent(w, r, f.name, time.Time{}, content)
 }
 
 // errChanged reports a file that is no longer the one scanned: another card

@@ -2,6 +2,7 @@ package gallery
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"path"
 	"sort"
 	"strings"
@@ -109,11 +110,15 @@ type Gallery struct {
 }
 
 // New returns a Gallery reading the scan settings from cfg and the photos'
-// sync state from st.
+// sync state from st. Its generations start at a random number, so ids do
+// not repeat those of an earlier launch, which the window may still have
+// cached.
 func New(cfg *config.Store, st *state.DB) *Gallery {
 	return &Gallery{
-		cfg:       cfg,
-		st:        st,
+		cfg: cfg,
+		st:  st,
+		// Below 2^52: plenty of room to count up, and exact as a float.
+		gen:       rand.Uint64N(1 << 52),
 		reads:     make(chan struct{}, maxReads),
 		now:       time.Now,
 		thumbnail: Thumbnail,
