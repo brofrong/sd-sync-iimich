@@ -102,6 +102,9 @@ type Progress struct {
 	Uploaded   int `json:"uploaded"`
 	Duplicates int `json:"duplicates"`
 	Errors     int `json:"errors"`
+	// InFlight lists the relative paths of files currently being uploaded,
+	// sorted.
+	InFlight []string `json:"inFlight"`
 }
 
 // progressFrom converts the uploader's progress of a sync.
@@ -117,6 +120,7 @@ func progressFrom(p uploader.Progress) *Progress {
 		Uploaded:    p.Uploaded,
 		Duplicates:  p.Duplicates,
 		Errors:      p.Errors,
+		InFlight:    p.InFlight,
 	}
 }
 

@@ -1,6 +1,8 @@
 package uploader
 
 import (
+	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -25,6 +27,11 @@ type syncProgress struct {
 	onProgress ProgressFunc
 	eta        *etaTracker
 	start      time.Time
+
+	// inFlightMu protects inFlight, the set of files currently being
+	// uploaded by the worker pool.
+	inFlightMu sync.Mutex
+	inFlight   map[string]bool
 }
 
 func newSyncProgress(total int, totalBytes int64, onProgress ProgressFunc) *syncProgress {
@@ -34,6 +41,7 @@ func newSyncProgress(total int, totalBytes int64, onProgress ProgressFunc) *sync
 		onProgress: onProgress,
 		eta:        newETATracker(),
 		start:      time.Now(),
+		inFlight:   make(map[string]bool),
 	}
 }
 
@@ -41,8 +49,20 @@ func (p *syncProgress) reportStart() {
 	p.emit(0, 0, "")
 }
 
+// started records that file is now being uploaded, so it shows up in the
+// in-flight set reported with the next progress update, until done removes
+// it.
+func (p *syncProgress) started(file string) {
+	p.inFlightMu.Lock()
+	p.inFlight[file] = true
+	p.inFlightMu.Unlock()
+	p.emit(int(p.doneCount.Load()), p.doneBytes.Load(), "")
+}
+
 // done records one more processed file with its size and how it ended, so
 // the progress bar and byte-rate estimate advance through the whole batch.
+// It removes file from the in-flight set before reporting, since it is no
+// longer being uploaded.
 func (p *syncProgress) done(size int64, file string, o outcome) {
 	switch o {
 	case outcomeUploaded:
@@ -52,6 +72,9 @@ func (p *syncProgress) done(size int64, file string, o outcome) {
 	default:
 		p.failed.Add(1)
 	}
+	p.inFlightMu.Lock()
+	delete(p.inFlight, file)
+	p.inFlightMu.Unlock()
 	cur := int(p.doneCount.Add(1))
 	doneBytes := p.doneBytes.Add(size)
 	p.emit(cur, doneBytes, file)
@@ -65,6 +88,13 @@ func (p *syncProgress) emit(current int, doneBytes int64, file string) {
 	if elapsed := time.Since(p.start).Seconds(); elapsed > 0 {
 		bytesPerSec = float64(doneBytes) / elapsed
 	}
+	p.inFlightMu.Lock()
+	inFlight := make([]string, 0, len(p.inFlight))
+	for f := range p.inFlight {
+		inFlight = append(inFlight, f)
+	}
+	p.inFlightMu.Unlock()
+	sort.Strings(inFlight)
 	p.onProgress(Progress{
 		Phase:       "syncing",
 		Current:     current,
@@ -77,5 +107,6 @@ func (p *syncProgress) emit(current int, doneBytes int64, file string) {
 		Uploaded:    int(p.uploaded.Load()),
 		Duplicates:  int(p.duplicates.Load()),
 		Errors:      int(p.failed.Load()),
+		InFlight:    inFlight,
 	})
 }

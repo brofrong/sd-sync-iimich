@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"reflect"
 	"testing"
 	"time"
 
@@ -276,13 +277,15 @@ func TestProgressFromCarriesCounts(t *testing.T) {
 		Phase: "syncing", Current: 7, Total: 10, ETA: 90 * time.Second, File: "DCIM/7.JPG",
 		BytesDone: 70, BytesTotal: 100, BytesPerSec: 5,
 		Uploaded: 4, Duplicates: 2, Errors: 1,
+		InFlight: []string{"DCIM/8.JPG", "DCIM/9.JPG"},
 	})
 	want := &Progress{
 		Current: 7, Total: 10, ETASeconds: 90, File: "DCIM/7.JPG",
 		BytesDone: 70, BytesTotal: 100, BytesPerSec: 5,
 		Uploaded: 4, Duplicates: 2, Errors: 1,
+		InFlight: []string{"DCIM/8.JPG", "DCIM/9.JPG"},
 	}
-	if *got != *want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("progressFrom = %+v, want %+v", *got, *want)
 	}
 }

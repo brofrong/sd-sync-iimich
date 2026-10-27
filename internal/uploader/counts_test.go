@@ -86,6 +86,9 @@ func TestUploadAllCountsDuplicatesApart(t *testing.T) {
 	if last.Current != 4 || last.Uploaded != 2 || last.Duplicates != 1 || last.Errors != 1 {
 		t.Fatalf("last progress = %+v, want 4 done: 2 uploaded, 1 duplicate, 1 error", last)
 	}
+	if len(last.InFlight) != 0 {
+		t.Fatalf("last.InFlight = %v, want empty (all files are done)", last.InFlight)
+	}
 
 	// Uploads and duplicates are in Immich: both are recorded as uploaded,
 	// the rejected file is not.

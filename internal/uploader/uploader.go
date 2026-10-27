@@ -30,6 +30,9 @@ type Progress struct {
 	Uploaded   int
 	Duplicates int
 	Errors     int
+	// InFlight lists the relative paths of files currently being uploaded,
+	// sorted.
+	InFlight []string
 }
 
 type ProgressFunc func(Progress)
@@ -243,6 +246,7 @@ func (s *Service) uploadAll(
 					lim.release()
 					return
 				}
+				prog.started(f.RelativePath)
 				o := s.syncOne(ctx, abort, volumeUUID, client, f, session, checkpoint, &bytesUploaded, &congestion, tally, failures)
 				prog.done(f.Size, f.RelativePath, o)
 				lim.release()
