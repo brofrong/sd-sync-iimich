@@ -28,10 +28,13 @@ type syncProgress struct {
 	eta        *etaTracker
 	start      time.Time
 
-	// inFlightMu protects inFlight, the set of files currently being
-	// uploaded by the worker pool.
+	// inFlightMu protects inFlight (the set of files currently being
+	// uploaded by the worker pool) and lastFile (the most recently
+	// completed one, so started() can keep reporting it instead of
+	// blanking Progress.File while the next file is still in flight).
 	inFlightMu sync.Mutex
 	inFlight   map[string]bool
+	lastFile   string
 }
 
 func newSyncProgress(total int, totalBytes int64, onProgress ProgressFunc) *syncProgress {
@@ -51,18 +54,21 @@ func (p *syncProgress) reportStart() {
 
 // started records that file is now being uploaded, so it shows up in the
 // in-flight set reported with the next progress update, until done removes
-// it.
+// it. The emitted Progress.File stays at the last completed file's name
+// (as it was before this method existed) rather than going blank while
+// file is still uploading.
 func (p *syncProgress) started(file string) {
 	p.inFlightMu.Lock()
 	p.inFlight[file] = true
+	last := p.lastFile
 	p.inFlightMu.Unlock()
-	p.emit(int(p.doneCount.Load()), p.doneBytes.Load(), "")
+	p.emit(int(p.doneCount.Load()), p.doneBytes.Load(), last)
 }
 
 // done records one more processed file with its size and how it ended, so
 // the progress bar and byte-rate estimate advance through the whole batch.
-// It removes file from the in-flight set before reporting, since it is no
-// longer being uploaded.
+// It removes file from the in-flight set and records it as the last
+// completed file before reporting, since it is no longer being uploaded.
 func (p *syncProgress) done(size int64, file string, o outcome) {
 	switch o {
 	case outcomeUploaded:
@@ -74,6 +80,7 @@ func (p *syncProgress) done(size int64, file string, o outcome) {
 	}
 	p.inFlightMu.Lock()
 	delete(p.inFlight, file)
+	p.lastFile = file
 	p.inFlightMu.Unlock()
 	cur := int(p.doneCount.Add(1))
 	doneBytes := p.doneBytes.Add(size)

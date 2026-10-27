@@ -30,3 +30,25 @@ func TestProgressReportsInFlight(t *testing.T) {
 		t.Fatalf("Current after done(a) = %d, want 1", last.Current)
 	}
 }
+
+// TestProgressKeepsLastFileWhileNextStarts checks that Progress.File still
+// names the last *completed* file while the next one is uploading, instead
+// of going blank: started() must not blank it, only done() changes it.
+func TestProgressKeepsLastFileWhileNextStarts(t *testing.T) {
+	var last Progress
+	onProgress := func(p Progress) {
+		last = p
+	}
+
+	prog := newSyncProgress(2, 200, onProgress)
+
+	prog.done(100, "a", outcomeUploaded)
+	prog.started("b")
+
+	if last.File != "a" {
+		t.Fatalf("File after done(a), started(b) = %q, want %q", last.File, "a")
+	}
+	if !reflect.DeepEqual(last.InFlight, []string{"b"}) {
+		t.Fatalf("InFlight after done(a), started(b) = %v, want [b]", last.InFlight)
+	}
+}
