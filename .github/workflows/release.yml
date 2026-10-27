@@ -175,13 +175,24 @@ jobs:
       - name: Build release
         run: scripts/build-linux.sh "$VERSION" dist
 
+      # The Go modules for the Flathub build, which is offline (see
+      # packaging/flatpak). Sorted, with fixed owners and times, so the
+      # same go.sum gives the same archive.
+      - name: Vendor Go modules
+        run: |
+          go mod vendor
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 \
+            -cJf dist/sd-sync-immich-vendor.tar.xz vendor
+
       # The in-app updater downloads the AppImage by this name.
       - name: Upload files
         uses: actions/upload-artifact@v4
         with:
           name: release-linux
           if-no-files-found: error
-          path: dist/SD-Sync-Immich-x86_64.AppImage
+          path: |
+            dist/SD-Sync-Immich-x86_64.AppImage
+            dist/sd-sync-immich-vendor.tar.xz
 
   release:
     name: Release
@@ -213,6 +224,7 @@ jobs:
             SD-Sync-Immich.dmg \
             SD-Sync-Immich-Setup-x64.exe \
             SD-Sync-Immich-x86_64.AppImage \
+            sd-sync-immich-vendor.tar.xz \
             > checksums.txt
           cat checksums.txt
 
@@ -230,6 +242,7 @@ jobs:
             dist/SD-Sync-Immich.dmg
             dist/SD-Sync-Immich-Setup-x64.exe
             dist/SD-Sync-Immich-x86_64.AppImage
+            dist/sd-sync-immich-vendor.tar.xz
             dist/checksums.txt
 
       # sd-sync-immich, the zip and checksums.txt keep their names (v0.3.0's
@@ -250,4 +263,5 @@ jobs:
             dist/SD-Sync-Immich.dmg
             dist/SD-Sync-Immich-Setup-x64.exe
             dist/SD-Sync-Immich-x86_64.AppImage
+            dist/sd-sync-immich-vendor.tar.xz
             dist/checksums.txt

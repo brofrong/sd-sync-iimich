@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=SD Sync Immich
+Comment=Upload new photos from a camera card to Immich
+Exec=sd-sync-immich
+Icon=io.github.brofrong.SDSyncImmich
+Terminal=false
+Categories=Graphics;Photography;
+Keywords=Immich;SD;card;camera;photo;backup;upload;
+StartupWMClass=sd-sync-immich

@@ -1,0 +1,67 @@
+# Flatpak manifest. Built offline, as Flathub builds: the Go modules come
+# from vendor/ (`go mod vendor`; for Flathub, the release's
+# sd-sync-immich-vendor.tar.xz) and the npm packages from node-sources.json
+# (flatpak-node-generator npm frontend/package-lock.json). The TypeScript
+# bindings are committed, as the Wails CLI that generates them is not part
+# of the build. See docs/DEVELOPMENT.md ("Flatpak").
+id: io.github.brofrong.SDSyncImmich
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.golang
+  - org.freedesktop.Sdk.Extension.node22
+command: sd-sync-immich
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # The camera cards the desktop mounts, read only: the app only reads
+  # them; ejecting and formatting go through UDisks2.
+  - --filesystem=/run/media:ro
+  - --filesystem=/media:ro
+  # Ejects and formats cards, and finds their UUIDs and labels.
+  - --system-talk-name=org.freedesktop.UDisks2
+  # Keeps the system awake while a card uploads.
+  - --system-talk-name=org.freedesktop.login1
+  # The tray icon.
+  - --talk-name=org.kde.StatusNotifierWatcher
+  # Reads back the login item the Background portal writes.
+  - --filesystem=xdg-config/autostart:ro
+modules:
+  - name: sd-sync-immich
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/golang/bin:/usr/lib/sdk/node22/bin
+      env:
+        CGO_ENABLED: '1'
+        GOFLAGS: -mod=vendor -trimpath
+        GOTOOLCHAIN: local
+        GOCACHE: /run/build/sd-sync-immich/.gocache
+        npm_config_cache: /run/build/sd-sync-immich/flatpak-node/npm-cache
+        npm_config_offline: 'true'
+        SDSYNC_VERSION: dev
+    build-commands:
+      - cd frontend && npm ci --no-audit --no-fund && npm run build
+      - go build -tags production,gtk3 -ldflags "-s -w -X github.com/dmitiigorshkov/sd-sync-immich/internal/version.Current=${SDSYNC_VERSION}"
+        -o "${FLATPAK_DEST}/bin/sd-sync-immich" ./cmd/sd-sync-immich
+      - install -Dm644 packaging/flatpak/${FLATPAK_ID}.desktop "${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop"
+      - install -Dm644 packaging/flatpak/${FLATPAK_ID}.metainfo.xml "${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml"
+      - install -Dm644 build/icon/app.svg "${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/${FLATPAK_ID}.svg"
+      - install -Dm644 build/linux/sd-sync-immich.png "${FLATPAK_DEST}/share/icons/hicolor/512x512/apps/${FLATPAK_ID}.png"
+      - install -Dm644 LICENSE "${FLATPAK_DEST}/share/licenses/${FLATPAK_ID}/LICENSE"
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - .git
+          - dist
+          - frontend/node_modules
+          - frontend/dist/assets
+          - frontend/dist/index.html
+          - .flatpak-builder
+          - flatpak-build
+          - repo
+      - node-sources.json

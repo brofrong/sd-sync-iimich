@@ -42,7 +42,10 @@ go.work.sum
 frontend/dist/*
 !frontend/dist/.gitkeep
 frontend/node_modules/
-frontend/bindings/
+
+# Flatpak builds (see packaging/flatpak)
+.flatpak-builder/
+flatpak-build/
 
 # Release builds (scripts/build-app.sh <version> dist and the Linux and
 # Windows scripts)

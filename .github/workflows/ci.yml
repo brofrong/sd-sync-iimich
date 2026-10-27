@@ -43,6 +43,16 @@ jobs:
       - name: Build frontend
         run: scripts/build-frontend.sh
 
+      # The TypeScript bindings are committed (the Flatpak build cannot run
+      # the Wails CLI): the ones just generated must match.
+      - name: Bindings up to date
+        run: |
+          if [ -n "$(git status --porcelain frontend/bindings)" ]; then
+            git status --porcelain frontend/bindings
+            echo "frontend/bindings is out of date: run scripts/build-frontend.sh and commit it" >&2
+            exit 1
+          fi
+
       - name: Check frontend
         working-directory: frontend
         run: npm run check

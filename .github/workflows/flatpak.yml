@@ -1,0 +1,51 @@
+name: Flatpak
+
+# Builds the Flatpak from packaging/flatpak offline, as Flathub would, and
+# keeps the bundle as an artifact to try out. Runs when the packaging or
+# the dependencies change, and on demand.
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - packaging/flatpak/**
+      - go.mod
+      - go.sum
+      - frontend/package-lock.json
+      - .github/workflows/flatpak.yml
+  workflow_dispatch:
+
+jobs:
+  flatpak:
+    name: Flatpak
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
+      options: --privileged
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # The build is offline: the Go modules come from vendor/.
+      - name: Vendor Go modules
+        run: go mod vendor
+
+      - name: Set the version
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          version=$(git describe --tags --always)
+          sed -i "s/SDSYNC_VERSION: dev/SDSYNC_VERSION: $version/" packaging/flatpak/io.github.brofrong.SDSyncImmich.yml
+
+      - name: Build
+        uses: flathub-infra/flatpak-github-actions/flatpak-builder@933e9e8ca36e85046ebca8e211f0785c6becac40
+        with:
+          bundle: SD-Sync-Immich.flatpak
+          manifest-path: packaging/flatpak/io.github.brofrong.SDSyncImmich.yml
+          cache-key: flatpak-builder-${{ github.sha }}
