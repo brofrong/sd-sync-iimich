@@ -248,6 +248,7 @@
   "settings.version": "版本 {version}",
   "settings.check_updates": "检查更新",
   "settings.up_to_date": "已是最新版本。",
+  "settings.last_checked": "{when}检查过",
   "settings.check_failed": "无法检查更新：{detail}",
   "settings.update_available": "有新版本 {version} 可用",
   "settings.install": "安装更新",

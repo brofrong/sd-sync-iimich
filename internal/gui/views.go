@@ -1,6 +1,8 @@
 package gui
 
 import (
+	"time"
+
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/app"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/update"
 )
@@ -17,6 +19,9 @@ type StateView struct {
 	Version  string       `json:"version"`
 	// Update is the available update, or nil when none is known.
 	Update *UpdateView `json:"update"`
+	// UpdateCheckedAt is when the last update check succeeded, nil before
+	// the first one.
+	UpdateCheckedAt *time.Time `json:"updateCheckedAt"`
 }
 
 // ServerView is the configured Immich server. The API key itself is never

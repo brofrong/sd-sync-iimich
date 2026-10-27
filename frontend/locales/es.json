@@ -248,6 +248,7 @@
   "settings.version": "Versión {version}",
   "settings.check_updates": "Buscar actualizaciones",
   "settings.up_to_date": "Tienes la última versión.",
+  "settings.last_checked": "Comprobado {when}",
   "settings.check_failed": "No se pudieron buscar actualizaciones: {detail}",
   "settings.update_available": "La versión {version} está disponible",
   "settings.install": "Instalar actualización",

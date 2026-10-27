@@ -1,5 +1,9 @@
 <script lang="ts">
-  // The Settings section: the Immich server (ServerSettings), then
+  // The Settings section: updates first (the running version, when the
+  // last check was, a manual check, and the available update's notes with
+  // an Install button that asks first; the app restarts after it; opening
+  // Settings checks by itself when the last check is over
+  // AUTO_CHECK_AFTER old), then the Immich server (ServerSettings),
   // language, parallel uploads, automatic camera
   // paths and autostart (each saved as soon as it changes; Go answers with
   // a "state" event, which also switches the UI language; autostart is
@@ -7,19 +11,16 @@
   // the card after a sync (turning auto-format on asks first, in the row,
   // and its button only works after a countdown),
   // the notification switches (the kinds are disabled while notifications
-  // are off), then updates: the
-  // running version, a manual check, and the available update's notes
-  // with an Install button that asks first (the app restarts after it),
-  // and last a button that opens the log panel.
-  import { onDestroy } from "svelte";
+  // are off), and last a button that opens the log panel.
+  import { onDestroy, onMount } from "svelte";
   import { fade, fly, slide } from "svelte/transition";
   import { NotificationsView, SettingsView, type UpdateView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
   import Button from "../components/Button.svelte";
   import GlassCard from "../components/GlassCard.svelte";
   import ServerSettings from "../components/ServerSettings.svelte";
   import Switch from "../components/Switch.svelte";
-  import { appInfo, appState, backend } from "../lib/backend";
-  import { formatNumber, languageNames, supported, t } from "../lib/i18n";
+  import { appInfo, appState, backend, parseTime } from "../lib/backend";
+  import { formatNumber, formatRelative, languageNames, supported, t } from "../lib/i18n";
   import { icons } from "../lib/icons";
   import { logsOpen, reducedMotion } from "../lib/stores";
 
@@ -194,22 +195,43 @@
   const fill = $derived(((concurrency - 1) / (MAX_CONCURRENCY - 1)) * 100);
 
   // ---- Updates ---------------------------------------------------------------------
-  type Check = "idle" | "checking" | "current" | "failed";
+  // Go checks at launch and every 12 hours; opening Settings checks too
+  // when the last check is older than this.
+  const AUTO_CHECK_AFTER = 10 * 60 * 1000;
+
+  type Check = "idle" | "checking" | "failed";
   let check = $state<Check>("idle");
   let checkError = $state("");
   let found = $state<UpdateView | null>(null);
   const update = $derived($appState.update ?? found);
+  // When the last check succeeded (0: never); "now" ticks so "Checked 5
+  // minutes ago" stays true while Settings is open.
+  const checkedAt = $derived(parseTime($appState.updateCheckedAt));
+  let now = $state(Date.now());
+  const clock = setInterval(() => (now = Date.now()), 30_000);
 
-  async function checkUpdates(): Promise<void> {
+  /** Checks for updates; a failed automatic check stays quiet. */
+  async function checkUpdates(auto = false): Promise<void> {
     check = "checking";
     try {
       found = await backend.CheckForUpdates();
-      check = found ? "idle" : "current";
+      check = "idle";
     } catch (err) {
+      if (auto) {
+        // Development builds are never checked, and the next manual
+        // check reports a network problem.
+        console.warn("automatic update check failed", err);
+        check = "idle";
+        return;
+      }
       checkError = t("settings.check_failed", { detail: message(err) });
       check = "failed";
     }
   }
+
+  onMount(() => {
+    if (Date.now() - checkedAt > AUTO_CHECK_AFTER) checkUpdates(true);
+  });
 
   let confirming = $state(false);
   let installing = $state(false);
@@ -237,6 +259,7 @@
   onDestroy(() => {
     clearTimeout(savedTimer);
     clearInterval(confirmTimer);
+    clearInterval(clock);
   });
 </script>
 
@@ -255,6 +278,63 @@
 {/snippet}
 
 <div class="section">
+  <GlassCard tone={update ? "accent" : "idle"} padding="16px 18px 18px">
+    <h2 class="eyebrow">{t("settings.updates")}</h2>
+
+    <div class="version-row">
+      <div class="text">
+        <div class="app-version">{t("settings.version", { version: $appState.version || "—" })}</div>
+        <div class="check-result" aria-live="polite">
+          {#if check === "failed"}
+            <p class="error-text" in:fly={{ y: 4, duration: ms(250) }}>{checkError}</p>
+          {:else if checkedAt && !update}
+            <p class="ok-text" in:fly={{ y: 4, duration: ms(250) }}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.check} /></svg>{t("settings.up_to_date")}
+            </p>
+          {/if}
+          {#if checkedAt}
+            <p class="hint">
+              {t("settings.last_checked", { when: formatRelative(new Date(checkedAt), new Date(Math.max(now, checkedAt))) })}
+            </p>
+          {/if}
+        </div>
+      </div>
+      <Button busy={check === "checking"} disabled={installing} onclick={() => checkUpdates()}>{t("settings.check_updates")}</Button>
+    </div>
+
+    {#if update}
+      <div class="update" transition:slide={{ duration: ms(350) }}>
+        <div class="update-head">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.download} /></svg>
+          <h3>{t("settings.update_available", { version: update.version })}</h3>
+        </div>
+        {#if update.notes.trim()}
+          <!-- Plain text: Svelte escapes it; pre-wrap keeps the line breaks. -->
+          <div class="notes">{update.notes.trim()}</div>
+        {/if}
+
+        {#if installing}
+          <p class="installing" role="status"><span class="spinner" aria-hidden="true"></span>{t("settings.installing")}</p>
+        {:else if confirming}
+          <div class="confirm" in:fly={{ y: 4, duration: ms(250) }}>
+            <p>{t("settings.install_confirm", { version: update.version })}</p>
+            <div class="buttons">
+              <Button variant="primary" onclick={install}>{t("settings.install_now")}</Button>
+              <Button onclick={() => (confirming = false)}>{t("settings.cancel")}</Button>
+            </div>
+          </div>
+        {:else}
+          <div class="buttons">
+            <Button variant="primary" onclick={() => (confirming = true)}>{t("settings.install")}</Button>
+          </div>
+        {/if}
+        {#if installError}
+          <p class="error-text" role="alert">{installError}</p>
+        {/if}
+      </div>
+    {/if}
+  </GlassCard>
+
   <ServerSettings />
 
   <GlassCard padding="16px 18px 6px">
@@ -464,58 +544,6 @@
     </ul>
 
     {@render feedback("notify")}
-  </GlassCard>
-
-  <GlassCard tone={update ? "accent" : "idle"} padding="16px 18px 18px">
-    <h2 class="eyebrow">{t("settings.updates")}</h2>
-
-    <div class="version-row">
-      <div class="text">
-        <div class="app-version">{t("settings.version", { version: $appState.version || "—" })}</div>
-        <div class="check-result" aria-live="polite">
-          {#if check === "current"}
-            <p class="ok-text" in:fly={{ y: 4, duration: ms(250) }}>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.check} /></svg>{t("settings.up_to_date")}
-            </p>
-          {:else if check === "failed"}
-            <p class="error-text" in:fly={{ y: 4, duration: ms(250) }}>{checkError}</p>
-          {/if}
-        </div>
-      </div>
-      <Button busy={check === "checking"} disabled={installing} onclick={checkUpdates}>{t("settings.check_updates")}</Button>
-    </div>
-
-    {#if update}
-      <div class="update" transition:slide={{ duration: ms(350) }}>
-        <div class="update-head">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.download} /></svg>
-          <h3>{t("settings.update_available", { version: update.version })}</h3>
-        </div>
-        {#if update.notes.trim()}
-          <!-- Plain text: Svelte escapes it; pre-wrap keeps the line breaks. -->
-          <div class="notes">{update.notes.trim()}</div>
-        {/if}
-
-        {#if installing}
-          <p class="installing" role="status"><span class="spinner" aria-hidden="true"></span>{t("settings.installing")}</p>
-        {:else if confirming}
-          <div class="confirm" in:fly={{ y: 4, duration: ms(250) }}>
-            <p>{t("settings.install_confirm", { version: update.version })}</p>
-            <div class="buttons">
-              <Button variant="primary" onclick={install}>{t("settings.install_now")}</Button>
-              <Button onclick={() => (confirming = false)}>{t("settings.cancel")}</Button>
-            </div>
-          </div>
-        {:else}
-          <div class="buttons">
-            <Button variant="primary" onclick={() => (confirming = true)}>{t("settings.install")}</Button>
-          </div>
-        {/if}
-        {#if installError}
-          <p class="error-text" role="alert">{installError}</p>
-        {/if}
-      </div>
-    {/if}
   </GlassCard>
 
   <GlassCard padding="16px 18px 6px">

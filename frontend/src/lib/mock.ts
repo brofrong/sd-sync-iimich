@@ -359,6 +359,7 @@ export function createMockTransport(): Transport {
     settings,
     version: "0.4.0",
     update: null,
+    updateCheckedAt: null,
   });
   // Pinned onboarding and card codes need a matching configuration.
   // The mounted removable volumes; the selected card is state.card.
@@ -683,7 +684,11 @@ export function createMockTransport(): Transport {
     Quit: async () => console.info("[mock] Quit"),
     CheckForUpdates: async () => {
       await delay(900, null);
-      if (query.get("update") === "none") return null;
+      state.updateCheckedAt = new Date().toISOString();
+      if (query.get("update") === "none") {
+        pushState();
+        return null;
+      }
       const u = new UpdateView({
         version: "v0.5.0",
         notes: sampleNotes,

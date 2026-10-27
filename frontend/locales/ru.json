@@ -248,6 +248,7 @@
   "settings.version": "Версия {version}",
   "settings.check_updates": "Проверить обновления",
   "settings.up_to_date": "У вас последняя версия.",
+  "settings.last_checked": "Проверено {when}",
   "settings.check_failed": "Не удалось проверить обновления: {detail}",
   "settings.update_available": "Доступна версия {version}",
   "settings.install": "Установить обновление",

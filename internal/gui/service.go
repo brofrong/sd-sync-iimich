@@ -57,10 +57,13 @@ type Service struct {
 	status          *throttle
 	notifier        *notifier
 
-	mu       sync.Mutex
-	cat      *i18n.Catalog
-	release  *update.Release
-	lastCode app.Code
+	mu      sync.Mutex
+	cat     *i18n.Catalog
+	release *update.Release
+	// updateChecked is when the last update check succeeded (zero before
+	// the first one).
+	updateChecked time.Time
+	lastCode      app.Code
 
 	checkMu   sync.Mutex
 	installMu sync.Mutex
@@ -204,6 +207,11 @@ func (s *Service) State() StateView {
 	s.mu.Lock()
 	lang := s.cat.Lang()
 	rel := s.release
+	var checked *time.Time
+	if !s.updateChecked.IsZero() {
+		t := s.updateChecked
+		checked = &t
+	}
 	s.mu.Unlock()
 	return StateView{
 		Status:   s.app.Status(),
@@ -212,10 +220,11 @@ func (s *Service) State() StateView {
 			URL:    cfg.Immich.URL,
 			HasKey: strings.TrimSpace(cfg.Immich.APIKey) != "",
 		},
-		Card:     s.selectedCard(cfg),
-		Settings: s.autostartSettings(settingsView(cfg)),
-		Version:  s.version,
-		Update:   updateView(rel),
+		Card:            s.selectedCard(cfg),
+		Settings:        s.autostartSettings(settingsView(cfg)),
+		Version:         s.version,
+		Update:          updateView(rel),
+		UpdateCheckedAt: checked,
 	}
 }
 
@@ -692,12 +701,11 @@ func (s *Service) checkForUpdates(ctx context.Context) (*update.Release, error) 
 	}
 
 	s.mu.Lock()
-	changed := (rel == nil) != (s.release == nil) || (rel != nil && rel.Version != s.release.Version)
 	s.release = rel
+	s.updateChecked = time.Now()
 	s.mu.Unlock()
-	if changed {
-		s.stateChanged()
-	}
+	// Even with the same answer: the window shows when the check was.
+	s.stateChanged()
 	return rel, nil
 }
 

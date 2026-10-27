@@ -248,6 +248,7 @@
   "settings.version": "バージョン {version}",
   "settings.check_updates": "アップデートを確認",
   "settings.up_to_date": "最新のバージョンです。",
+  "settings.last_checked": "{when}に確認",
   "settings.check_failed": "アップデートを確認できませんでした: {detail}",
   "settings.update_available": "バージョン {version} が利用できます",
   "settings.install": "アップデートをインストール",
