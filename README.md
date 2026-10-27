@@ -2,6 +2,9 @@
 
 Приложение в menu bar macOS (и в трее Windows и Linux — бета): ждёт подключения выбранной SD-карты и загружает новые фото/видео в [Immich](https://immich.app).
 
+**Скачать:** [brofrong.github.io/sd-sync-iimich](https://brofrong.github.io/sd-sync-iimich/) —
+страница сама предложит файл для вашей системы.
+
 **Требования:** macOS 13+ (Apple Silicon или Intel), Immich v3. Windows 10/11 (x64)
 и Linux (x86_64) — бета, см. [Windows и Linux (бета)](#windows-и-linux-бета).
 
@@ -113,6 +116,16 @@ dist/sd-sync-immich install
 scripts/build-frontend.sh
 CGO_ENABLED=1 go build -o sd-sync-immich ./cmd/sd-sync-immich
 ```
+
+### Сайт
+
+Страница [brofrong.github.io/sd-sync-iimich](https://brofrong.github.io/sd-sync-iimich/)
+лежит в `site/` (обычный HTML, без сборки) и публикуется на GitHub Pages
+при пуше в `main` (`.github/workflows/pages.yml`). Версию, размеры файлов и
+число звёзд она берёт из GitHub при открытии, ссылки ведут на последний
+релиз — после релиза её трогать не нужно. Скриншоты в `site/assets` сняты с
+браузерной версии окна: `VITE_MOCK=1 npx vite` в `frontend/`, адрес вида
+`/?lang=ru&section=gallery&state=done&update=none&numbers=off`, окно 960×620.
 
 ### Удаление
 

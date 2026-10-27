@@ -18,7 +18,8 @@
 //   ?history=none   no sync runs yet
 //   ?gallery=none   Gallery finds no card (as when it is not plugged in);
 //                   ?gallery=empty a card without photos, ?gallery=error
-//                   a failing Gallery call
+//                   a failing Gallery call; ?numbers=off pictures without
+//                   their numbers
 //   ?expand=<id>    expand the failed files of run <id> in History
 //   ?os=<system>    the system AppInfo reports: macos (default), windows or
 //                   linux; Windows and Linux are betas (the sidebar badge)
@@ -203,6 +204,9 @@ function inFlightAt(fraction: number): string[] {
   return out;
 }
 
+// ?numbers=off drops the numbers from the pictures, for screenshots.
+const numbered = new URLSearchParams(location.search).get("numbers") !== "off";
+
 /** A stand-in picture: a gradient landscape with the photo's number. */
 function picture(k: number, width: number): string {
   const hue = (k * 47) % 360;
@@ -213,8 +217,11 @@ function picture(k: number, width: number): string {
     `</linearGradient></defs><rect width='300' height='200' fill='url(#g)'/>` +
     `<circle cx='228' cy='58' r='22' fill='rgba(255,255,255,.3)'/>` +
     `<path d='M0 200L78 122l58 44 72-68 92 78v24z' fill='rgba(0,0,0,.28)'/>` +
-    `<text x='150' y='116' font-family='-apple-system,Helvetica,sans-serif' font-size='44' font-weight='700' ` +
-    `fill='rgba(255,255,255,.9)' text-anchor='middle'>${k + 1}</text></svg>`;
+    (numbered
+      ? `<text x='150' y='116' font-family='-apple-system,Helvetica,sans-serif' font-size='44' font-weight='700' ` +
+        `fill='rgba(255,255,255,.9)' text-anchor='middle'>${k + 1}</text>`
+      : "") +
+    `</svg>`;
   return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
 }
 
