@@ -133,9 +133,16 @@
     lastInFlight = now;
     if (gone.length > 0) untrack(() => (finished = new Set([...finished, ...gone])));
   });
+  // Once the sync ends (done, stopped, or its last file failed), the list
+  // asked for on that change shows the final statuses: nothing is
+  // uploading any more.
+  $effect(() => {
+    if (code !== "syncing") untrack(() => finished.size > 0 && (finished = new Set()));
+  });
 
   function statusOf(p: Photo): TileStatus {
-    if (p.status !== "in_immich" && (inFlight.has(p.path) || finished.has(p.path))) return "uploading";
+    const uploading = code === "syncing" && (inFlight.has(p.path) || finished.has(p.path));
+    if (p.status !== "in_immich" && uploading) return "uploading";
     if (p.status === "in_immich" || p.status === "failed") return p.status;
     return "waiting";
   }
