@@ -109,8 +109,7 @@ func (g *Gallery) serveThumb(w http.ResponseWriter, r *http.Request, gen uint64,
 			return
 		}
 		var err error
-		data, err = g.makeThumb(gen, i, f)
-		g.release()
+		data, err = g.makeThumbHoldingSlot(gen, i, f)
 		if err != nil {
 			g.readFailed(gen, f, err)
 			http.NotFound(w, r)
@@ -118,6 +117,14 @@ func (g *Gallery) serveThumb(w http.ResponseWriter, r *http.Request, gen uint64,
 		}
 	}
 	g.writeImage(w, r, f, bytes.NewReader(data))
+}
+
+// makeThumbHoldingSlot is makeThumb for a caller holding a read slot: the
+// slot is released however makeThumb returns, even by panicking, so a bug
+// cannot use up the slots and block every image.
+func (g *Gallery) makeThumbHoldingSlot(gen uint64, i int, f photoFile) ([]byte, error) {
+	defer g.release()
+	return g.makeThumb(gen, i, f)
 }
 
 // makeThumb returns photo i's thumbnail, made by another request while this

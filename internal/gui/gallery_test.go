@@ -1,6 +1,9 @@
 package gui
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -70,6 +73,48 @@ func TestServiceGalleryWithoutMountedTarget(t *testing.T) {
 	got, err := s.Gallery()
 	if err != nil || got != nil {
 		t.Fatalf("Gallery() = %+v, %v; want nil, nil", got, err)
+	}
+}
+
+// TestStatusWithoutCardClearsGallery: once the mounted card is gone, the
+// next status drops the gallery's scan and thumbnails, even if the window
+// never asks for the gallery again (they hold up to 128 MB).
+func TestStatusWithoutCardClearsGallery(t *testing.T) {
+	g := newTestGallery(t)
+	vol := volume.Info{Name: "CARD", MountPoint: t.TempDir(), UUID: "VOL-UUID", Removable: true}
+	dir := filepath.Join(vol.MountPoint, "DCIM", "100MSDCF")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "DSC00001.JPG"), []byte("jpeg"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	list, err := g.List(vol)
+	if err != nil || len(list.Photos) != 1 {
+		t.Fatalf("List = %+v, %v; want one photo", list, err)
+	}
+	h := g.Middleware(http.NotFoundHandler())
+	src := list.Photos[0].Src
+	get := func() int {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://wails.localhost"+src, nil))
+		return w.Code
+	}
+	if code := get(); code != http.StatusOK {
+		t.Fatalf("GET %s before = %d, want 200", src, code)
+	}
+
+	discard := func(app.Status) {}
+	s := &Service{
+		app:     &app.App{}, // no mounted target
+		gallery: g,
+		shell:   &shell{tray: &trayMenu{line: newThrottle(0, discard)}},
+		status:  newThrottle(0, discard),
+	}
+	s.onStatus(app.Status{})
+
+	if code := get(); code != http.StatusNotFound {
+		t.Errorf("GET %s after a status without card = %d, want 404 (gallery cleared)", src, code)
 	}
 }
 

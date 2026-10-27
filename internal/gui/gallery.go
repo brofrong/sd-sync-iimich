@@ -9,7 +9,8 @@ import (
 // mounted card (nil when none is mounted, selected or not): nil, nil
 // without target, g.List(*target) with it. Losing the mounted card clears
 // g's cached scan, so a stale generation is never served once a different
-// card is mounted next.
+// card is mounted next (Service.onStatus clears it too, without waiting
+// for the window to ask).
 func galleryFor(target *volume.Info, g *gallery.Gallery) (*gallery.List, error) {
 	if target == nil {
 		g.Clear()

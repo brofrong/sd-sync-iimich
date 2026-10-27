@@ -143,6 +143,12 @@ func (s *Service) onStatus(st app.Status) {
 	s.mu.Unlock()
 	changed := prev != st.Code
 
+	// The App publishes a status after its mounted target goes away
+	// (removed, ejected, deselected): drop the gallery's thumbnails then,
+	// rather than when the window next asks for the gallery.
+	if s.app.MountedTarget() == nil {
+		s.gallery.Clear()
+	}
 	s.forwardStatus(st, changed)
 	s.shell.tray.showProgress(st)
 	if !changed {

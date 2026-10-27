@@ -358,3 +358,24 @@ func TestHandlerGivesUpWhenClientLeaves(t *testing.T) {
 		t.Errorf("abandoned request = 200")
 	}
 }
+
+func TestHandlerReleasesReadSlotOnPanic(t *testing.T) {
+	g, _ := newTestGallery(t)
+	vol := newCard(t, "CARD-A")
+	putFile(t, vol, "DSC00001.JPG", photoWithThumb(t), base)
+	g.thumbnail = func(string) ([]byte, error) { panic("thumbnail bug") }
+	h := serveMux(g)
+	p := mustList(t, g, vol).Photos[0]
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("the thumbnail's panic did not reach the server")
+			}
+		}()
+		get(h, p.Thumb)
+	}()
+	if n := len(g.reads); n != 0 {
+		t.Errorf("%d read slots held after the panic, want 0", n)
+	}
+}

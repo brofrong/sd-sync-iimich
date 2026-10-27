@@ -67,11 +67,15 @@
     timer = undefined;
     lastLoad = Date.now();
     const n = ++seq;
+    // The files that had finished when this list was asked for: it shows
+    // their status, so they stop showing as uploading once it arrives.
+    const settled = finished;
     backend.Gallery().then(
       (l) => {
         if (n !== seq) return;
         list = l;
         loadError = "";
+        if (settled.size > 0) finished = new Set([...finished].filter((p) => !settled.has(p)));
       },
       (err) => {
         if (n !== seq) return;
@@ -117,8 +121,21 @@
   const inFlightKey = $derived(($status.progress?.inFlight ?? []).join("\n"));
   const inFlight = $derived(new Set(inFlightKey ? inFlightKey.split("\n") : []));
 
+  // The files that left inFlight (finished uploading, or failed) since the
+  // list was last asked for. The list showing their new status may be up
+  // to 2 s away, so until it arrives they stay "uploading" rather than
+  // dropping back to "waiting" first.
+  let finished = $state.raw(new Set<string>());
+  let lastInFlight = new Set<string>();
+  $effect(() => {
+    const now = inFlight;
+    const gone = [...lastInFlight].filter((p) => !now.has(p));
+    lastInFlight = now;
+    if (gone.length > 0) untrack(() => (finished = new Set([...finished, ...gone])));
+  });
+
   function statusOf(p: Photo): TileStatus {
-    if (p.status !== "in_immich" && inFlight.has(p.path)) return "uploading";
+    if (p.status !== "in_immich" && (inFlight.has(p.path) || finished.has(p.path))) return "uploading";
     if (p.status === "in_immich" || p.status === "failed") return p.status;
     return "waiting";
   }

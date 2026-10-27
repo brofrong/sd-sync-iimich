@@ -99,9 +99,14 @@
 
   // The photos either side, fetched ahead once the user lingers a moment
   // (holding an arrow key down does not fetch every photo it passes).
+  // Keyed on the two URLs, not on photos: the list is a new array on every
+  // reload during a sync, and the same neighbours need no new fetch.
   let ahead: HTMLImageElement[] = [];
+  const aroundKey = $derived(
+    [photos[current - 1]?.src, photos[current + 1]?.src].filter(Boolean).join("|"),
+  );
   $effect(() => {
-    const around = [photos[current - 1]?.src, photos[current + 1]?.src].filter(Boolean) as string[];
+    const around = aroundKey ? aroundKey.split("|") : [];
     const timer = setTimeout(() => {
       ahead = around.map((src) => {
         const img = new Image();
