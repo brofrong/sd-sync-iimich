@@ -311,3 +311,33 @@ func isAfterWatermark(mtime time.Time, path string, cur VolumeSyncCursor) bool {
 	}
 	return false
 }
+
+// Covers reports whether the cursor's watermark has passed a file with the
+// given mtime and relative path, in the oldest-first (mtime, then path)
+// order sync watermarks advance in. The zero cursor covers nothing.
+func (c VolumeSyncCursor) Covers(mtime time.Time, relativePath string) bool {
+	return !isAfterWatermark(mtime, relativePath, c)
+}
+
+// UploadedPaths returns the relative paths of a volume's files recorded as
+// uploaded (in Immich), for quick membership checks.
+func (s *DB) UploadedPaths(volumeUUID string) (map[string]struct{}, error) {
+	rows, err := s.db.Query(`
+		SELECT relative_path FROM files
+		WHERE volume_uuid = ? AND uploaded_at IS NOT NULL
+	`, volumeUUID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	paths := make(map[string]struct{})
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		paths[path] = struct{}{}
+	}
+	return paths, rows.Err()
+}

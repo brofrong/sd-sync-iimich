@@ -69,14 +69,5 @@ func (s *syncSession) watermarkLocked() state.VolumeSyncCursor {
 
 // isAfterWatermark reports whether f still needs syncing relative to the saved cursor.
 func isAfterWatermark(f scanner.File, cur state.VolumeSyncCursor) bool {
-	if cur.Mtime.IsZero() {
-		return true
-	}
-	if f.Mtime.After(cur.Mtime) {
-		return true
-	}
-	if f.Mtime.Equal(cur.Mtime) && f.RelativePath > cur.RelativePath {
-		return true
-	}
-	return false
+	return !cur.Covers(f.Mtime, f.RelativePath)
 }

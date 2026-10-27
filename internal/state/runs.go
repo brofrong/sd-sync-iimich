@@ -125,6 +125,29 @@ func (s *DB) LastFinishedRun() (*SyncRun, error) {
 	return &run, nil
 }
 
+// LastFinishedRunFor returns the most recently started, now-finished run
+// for volumeUUID, or nil if that card has none (no runs at all, or only
+// runs still in progress).
+func (s *DB) LastFinishedRunFor(volumeUUID string) (*SyncRun, error) {
+	row := s.db.QueryRow(`
+		SELECT id, started_at, finished_at, volume_uuid, volume_name,
+			result_code, result_params, uploaded, skipped, errors, duplicates, bytes, error_summary,
+			failures_recorded
+		FROM sync_runs
+		WHERE volume_uuid = ? AND finished_at IS NOT NULL
+		ORDER BY started_at DESC, id DESC
+		LIMIT 1
+	`, volumeUUID)
+	run, err := scanSyncRun(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &run, nil
+}
+
 // Run returns the run with id, or nil if there is none.
 func (s *DB) Run(id int64) (*SyncRun, error) {
 	row := s.db.QueryRow(`
