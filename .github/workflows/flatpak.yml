@@ -49,6 +49,8 @@ jobs:
           bundle: SD-Sync-Immich.flatpak
           manifest-path: packaging/flatpak/io.github.brofrong.SDSyncImmich.yml
           cache-key: flatpak-builder-${{ github.sha }}
+          # As Flathub's builds do, so the lint below sees them mirrored.
+          mirror-screenshots-url: https://dl.flathub.org/media
 
       # Flathub's checks, on the manifest and on the built repository.
       - name: Lint
