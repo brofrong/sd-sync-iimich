@@ -52,7 +52,7 @@
     "f.6.title": "Не мешает",
     "f.6.text": "Живёт в menu bar или трее, может запускаться при входе, обновляется само. 8 языков.",
     "cta.title": "Бесплатно и с открытым кодом",
-    "cta.text": "Если приложение экономит вам время, поставьте звезду на GitHub: так его находят другие пользователи Immich. Ошибки и идеи — в Issues.",
+    "cta.text": "Если приложение экономит вам время, поставьте звезду на GitHub: так его находят другие пользователи Immich. Issues и pull requests приветствуются.",
     "cta.button": "Звезда на GitHub",
     "footer.issues": "Сообщить об ошибке",
     "footer.home": "Главная",
@@ -74,7 +74,7 @@
     "dl.linux.meta": "x86_64 · glibc 2.35+ (Ubuntu 22.04, Debian 12, Fedora 36 и новее)",
     "dl.linux.button": "Скачать AppImage",
     "dl.linux.1": "Сделайте файл исполняемым и запустите: <code>chmod +x SD-Sync-Immich-x86_64.AppImage</code>",
-    "dl.linux.2": "В GNOME для значка в трее нужно расширение AppIndicator (в Ubuntu оно есть). Сборки для ARM пока нет.",
+    "dl.linux.2": "В GNOME для значка в трее нужно расширение AppIndicator (в Ubuntu оно есть).",
     "dl.more": "Контрольные суммы, бинарники для командной строки и старые версии — на <a href=\"https://github.com/brofrong/sd-sync-iimich/releases\">странице релизов GitHub</a>. Подробная инструкция — в <a href=\"https://github.com/brofrong/sd-sync-iimich#readme\">README</a>.",
   };
 
@@ -93,7 +93,6 @@
       "meta.all": "macOS, Windows and Linux",
       "note.others": "Other systems: <a href=\"downloads/\">all downloads</a>. Free and open source.",
       "note.mobile": "SD Sync Immich runs on a computer: open this page there to download it.",
-      "note.arm": "There is no Linux build for ARM yet, only for x86_64.",
       "note.other": "Free and open source.",
       "release": "Version {v}, {date}.",
       "mb": "{n} MB",
@@ -111,7 +110,6 @@
       "meta.all": "macOS, Windows и Linux",
       "note.others": "Другие системы — <a href=\"downloads/\">все загрузки</a>. Бесплатно, открытый код.",
       "note.mobile": "SD Sync Immich работает на компьютере: откройте эту страницу на нём, чтобы скачать.",
-      "note.arm": "Сборки Linux для ARM пока нет, только для x86_64.",
       "note.other": "Бесплатно, открытый код.",
       "release": "Версия {v}, {date}.",
       "mb": "{n} МБ",
@@ -169,7 +167,8 @@
 
   // ---- System -------------------------------------------------------------
 
-  // detectOS answers macos, windows, linux, linux-arm, mobile or other.
+  // detectOS answers macos, windows, linux (x86_64), mobile or other: the
+  // systems with a download, and the rest.
   // ?os=<one of these> overrides it, to check the pages.
   function detectOS() {
     var asked = query.get("os");
@@ -184,7 +183,7 @@
     if (/Mac/i.test(platform) || /Mac OS X/i.test(ua)) return "macos";
     if (/CrOS/i.test(ua)) return "other";
     if (/Linux|X11/i.test(platform + " " + ua)) {
-      return /aarch64|arm/i.test(platform + " " + ua) ? "linux-arm" : "linux";
+      return /aarch64|arm/i.test(platform + " " + ua) ? "other" : "linux";
     }
     return "other";
   }
@@ -217,14 +216,13 @@
     button.href = "downloads/";
     title.textContent = t("dl.all");
     meta.textContent = version + t("meta.all");
-    note.innerHTML = t(os === "mobile" ? "note.mobile" : os === "linux-arm" ? "note.arm" : "note.other");
+    note.innerHTML = t(os === "mobile" ? "note.mobile" : "note.other");
   }
 
   function renderDownloads() {
-    var mine = os === "linux-arm" ? null : os;
     var list = document.querySelector(".systems");
     each(".system", function (el) {
-      var isMine = el.dataset.os === mine;
+      var isMine = el.dataset.os === os;
       el.classList.toggle("mine", isMine);
       el.querySelector(".mine-tag").hidden = !isMine;
       if (isMine && list.firstElementChild !== el) list.insertBefore(el, list.firstElementChild);
