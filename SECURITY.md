@@ -4,7 +4,7 @@
 
 Please report security problems privately: on the repository's
 **Security** tab, click
-[**Report a vulnerability**](https://github.com/brofrong/sd-sync-iimich/security/advisories/new).
+[**Report a vulnerability**](https://github.com/brofrong/sd-sync-immich/security/advisories/new).
 Do not open a public issue for them. You will get an answer as soon as I
 can, and a fix goes out in a new release.
 

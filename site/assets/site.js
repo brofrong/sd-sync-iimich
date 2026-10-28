@@ -6,7 +6,7 @@
 (function () {
   "use strict";
 
-  var REPO = "brofrong/sd-sync-iimich";
+  var REPO = "brofrong/sd-sync-immich";
   var RELEASES = "https://github.com/" + REPO + "/releases/latest/download/";
   var FILES = {
     macos: "SD-Sync-Immich.dmg",
@@ -84,7 +84,7 @@
     "dl.linux.button": "Скачать AppImage",
     "dl.linux.1": "Сделайте файл исполняемым и запустите: <code>chmod +x SD-Sync-Immich-x86_64.AppImage</code>",
     "dl.linux.2": "В GNOME для значка в трее нужно расширение AppIndicator (в Ubuntu оно есть).",
-    "dl.more": "Контрольные суммы, бинарники для командной строки и старые версии — на <a href=\"https://github.com/brofrong/sd-sync-iimich/releases\">странице релизов GitHub</a>. Подробная инструкция — в <a href=\"https://github.com/brofrong/sd-sync-iimich/blob/main/README.ru.md\">README</a>.",
+    "dl.more": "Контрольные суммы, бинарники для командной строки и старые версии — на <a href=\"https://github.com/brofrong/sd-sync-immich/releases\">странице релизов GitHub</a>. Подробная инструкция — в <a href=\"https://github.com/brofrong/sd-sync-immich/blob/main/README.ru.md\">README</a>.",
   };
 
   // The text the script writes itself, in both languages.

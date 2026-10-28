@@ -254,7 +254,7 @@ jobs:
         with:
           generate_release_notes: true
           body: |
-            **Windows и Linux — бета.** macOS: `SD-Sync-Immich.dmg`; Windows 10/11: `SD-Sync-Immich-Setup-x64.exe`; Linux x86_64: `SD-Sync-Immich-x86_64.AppImage`. Установка и ограничения — в [README](https://github.com/brofrong/sd-sync-iimich/blob/main/README.ru.md).
+            **Windows и Linux — бета.** macOS: `SD-Sync-Immich.dmg`; Windows 10/11: `SD-Sync-Immich-Setup-x64.exe`; Linux x86_64: `SD-Sync-Immich-x86_64.AppImage`. Установка и ограничения — в [README](https://github.com/brofrong/sd-sync-immich/blob/main/README.ru.md).
           files: |
             dist/sd-sync-immich
             dist/sd-sync-immich-darwin-arm64

@@ -8,7 +8,7 @@ A small app in the menu bar (the tray on Windows and Linux). It notices
 your camera's card by itself and uploads only the new shots to Immich. No
 more remembering which photo from the card you uploaded last.
 
-**[Download for your system →](https://brofrong.github.io/sd-sync-iimich/)**
+**[Download for your system →](https://brofrong.github.io/sd-sync-immich/)**
 macOS 13+, Windows 10/11 and Linux x86_64 (Windows and Linux are betas).
 Needs an Immich v3 server. Free and open source.
 
@@ -67,9 +67,9 @@ your computer and is only sent to your server. Details are in
 
 ## Installing
 
-The easiest way is the [download page](https://brofrong.github.io/sd-sync-iimich/):
+The easiest way is the [download page](https://brofrong.github.io/sd-sync-immich/):
 it offers the file for your system. All files are on the
-[Releases](https://github.com/brofrong/sd-sync-iimich/releases/latest) page.
+[Releases](https://github.com/brofrong/sd-sync-immich/releases/latest) page.
 
 ### macOS
 
@@ -168,7 +168,7 @@ Uninstalling the app leaves these folders. To uninstall: on macOS drag the
 app to the Trash, on Windows use **Settings → Apps**, on Linux delete the
 AppImage.
 
-Found a bug? [Open an issue](https://github.com/brofrong/sd-sync-iimich/issues/new/choose)
+Found a bug? [Open an issue](https://github.com/brofrong/sd-sync-immich/issues/new/choose)
 with your system, what you did and what happened, and attach `app.log`.
 
 ## Contributing

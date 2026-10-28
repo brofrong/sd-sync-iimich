@@ -58,7 +58,7 @@ SetCompressor /SOLID lzma
 ; The value the app's Settings write and remove (internal/install).
 !define RUN_KEY "Software\Microsoft\Windows\CurrentVersion\Run"
 !define RUN_VALUE "SD Sync Immich"
-!define REPO_URL "https://github.com/brofrong/sd-sync-iimich"
+!define REPO_URL "https://github.com/brofrong/sd-sync-immich"
 ; How long a silent install waits for the app to quit before ending it:
 ; WAIT_STEPS checks, 0.5 s apart (30 s). A silent uninstall waits only
 ; UN_WAIT_STEPS (2 s): nothing asked the app to quit.

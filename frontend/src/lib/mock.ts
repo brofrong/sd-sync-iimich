@@ -50,7 +50,7 @@ import { resolveLanguage } from "./i18n";
 const SERVER_URL = "https://immich.brofrong.ru";
 const HOST = "immich.brofrong.ru";
 // As Go's repoURL and newIssueURL.
-const REPO_URL = "https://github.com/brofrong/sd-sync-iimich";
+const REPO_URL = "https://github.com/brofrong/sd-sync-immich";
 const NEW_ISSUE_URL = REPO_URL + "/issues/new";
 
 const systems: Record<string, { os: string; osVersion: string }> = {

@@ -52,10 +52,7 @@ jobs:
 
       # Flathub's checks, on the manifest and on the built repository. The
       # screenshots and remote icons are mirrored by Flathub's own builds,
-      # so those errors are expected here and left out. So is
-      # appid-url-not-reachable until the repository is renamed to
-      # sd-sync-immich, the app id's name (docs/DEVELOPMENT.md, "Переименование
-      # репозитория"); remove it from the list then.
+      # so those errors are expected here and left out.
       - name: Lint
         run: |
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
@@ -67,7 +64,6 @@ jobs:
           python3 - <<'PY'
           import json, sys
           expected = {
-              "appid-url-not-reachable",
               "appstream-external-screenshot-url",
               "appstream-screenshots-not-mirrored-in-ostree",
               "appstream-remote-icon-not-mirrored",

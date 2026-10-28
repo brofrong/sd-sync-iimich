@@ -119,40 +119,21 @@ Workflow `flatpak.yml` собирает бандл и прогоняет `flatpa
 
 Перед каждым релизом в metainfo добавляется строка `<release>`.
 
-## Переименование репозитория
+## Прежнее имя репозитория
 
-Репозиторий называется `sd-sync-iimich` (опечатка), а id Flatpak —
-`io.github.brofrong.sd-sync-immich`: Flathub требует, чтобы по id
-открывался репозиторий. Поэтому его нужно переименовать в `sd-sync-immich`,
-и важен порядок.
+До v0.6.0 репозиторий назывался `sd-sync-iimich` (опечатка). Его
+переименовали в `sd-sync-immich`, потому что Flathub требует, чтобы по id
+`io.github.brofrong.sd-sync-immich` открывался репозиторий.
 
-Версии до v0.5.5 включительно не примут перенаправление GitHub API, которое
-появится после переименования, и перестанут видеть обновления. Начиная со
-следующей версии апдейтер сначала спрашивает новое имя, а при 404 — старое,
-поэтому работает и до переименования, и после.
-
-1. Выпустить версию с этим апдейтером и подождать, пока пользователи
-   обновятся.
-2. Переименовать: `gh repo rename sd-sync-immich -R brofrong/sd-sync-iimich`.
-   Ссылки на код и релизы GitHub перенаправляет сам. Новый репозиторий со
-   старым именем создавать нельзя: перенаправления пропадут.
-3. Заменить ссылки и закоммитить:
-
-   ```bash
-   git grep -l sd-sync-iimich -- ':!docs/superpowers' ':!docs/plans' ':!internal/update/checker.go' \
-     | xargs sed -i '' 's/sd-sync-iimich/sd-sync-immich/g'
-   git remote set-url origin https://github.com/brofrong/sd-sync-immich.git
-   ```
-
-   В `.github/workflows/flatpak.yml` убрать `appid-url-not-reachable` из
-   ожидаемых ошибок линтера.
-4. Сайт переедет на `brofrong.github.io/sd-sync-immich`, а старый адрес
-   GitHub Pages не перенаправляет. Чтобы старые ссылки работали, создать
-   репозиторий `brofrong/brofrong.github.io` со страницами
-   `sd-sync-iimich/index.html` и `sd-sync-iimich/downloads/index.html`,
-   которые переадресуют на новый адрес.
-5. В `brofrong/homebrew-tap` заменить имя в cask и в `bump.yml`.
-6. Отправить приложение на Flathub.
+- Ссылки на код, релизы и API GitHub перенаправляет сам. Новый репозиторий
+  со старым именем создавать нельзя: перенаправления пропадут.
+- Версии до v0.5.5 включительно не принимают перенаправление API на
+  `api.github.com/repositories/…` и не видят обновлений: их нужно обновить
+  вручную, скачав новую версию. Начиная с v0.6.0 апдейтер спрашивает новое
+  имя, а при 404 — старое.
+- GitHub Pages старый адрес не перенаправляет. Страницы
+  `brofrong.github.io/sd-sync-iimich/` и `…/downloads/` переадресуют на новый
+  сайт из репозитория `brofrong/brofrong.github.io`.
 
 ## Обновление с v0.3.0
 
@@ -192,8 +173,8 @@ Xcode Command Line Tools (`xcode-select --install`). Wails CLI запускае�
 через `go run`, отдельно ставить его не нужно.
 
 ```bash
-git clone https://github.com/brofrong/sd-sync-iimich.git
-cd sd-sync-iimich
+git clone https://github.com/brofrong/sd-sync-immich.git
+cd sd-sync-immich
 scripts/build-app.sh dev dist
 open dist   # SD Sync Immich.app, SD-Sync-Immich.zip и (с dmgbuild) SD-Sync-Immich.dmg
 # или сразу установить с автозапуском:
@@ -240,7 +221,7 @@ gh workflow run release.yml --ref <ветка>
 
 ## Сайт
 
-Страница [brofrong.github.io/sd-sync-iimich](https://brofrong.github.io/sd-sync-iimich/)
+Страница [brofrong.github.io/sd-sync-immich](https://brofrong.github.io/sd-sync-immich/)
 лежит в `site/` (обычный HTML, без сборки) и публикуется на GitHub Pages
 при пуше в `main` (`.github/workflows/pages.yml`). Версию, размеры файлов и
 число звёзд она берёт из GitHub при открытии, ссылки ведут на последний

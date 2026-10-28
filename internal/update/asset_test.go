@@ -40,11 +40,11 @@ func allAssetsRelease(t *testing.T) *httptest.Server {
 		_, _ = w.Write([]byte(`{
 			"tag_name": "v1.2.0",
 			"assets": [
-				{"name":"SD-Sync-Immich.zip","browser_download_url":"https://github.com/brofrong/sd-sync-iimich/releases/download/v1.2.0/SD-Sync-Immich.zip"},
-				{"name":"SD-Sync-Immich-Setup-x64.exe","browser_download_url":"https://github.com/brofrong/sd-sync-iimich/releases/download/v1.2.0/SD-Sync-Immich-Setup-x64.exe"},
-				{"name":"sd-sync-immich","browser_download_url":"https://github.com/brofrong/sd-sync-iimich/releases/download/v1.2.0/sd-sync-immich"},
-				{"name":"SD-Sync-Immich-x86_64.AppImage","browser_download_url":"https://github.com/brofrong/sd-sync-iimich/releases/download/v1.2.0/SD-Sync-Immich-x86_64.AppImage"},
-				{"name":"checksums.txt","browser_download_url":"https://github.com/brofrong/sd-sync-iimich/releases/download/v1.2.0/checksums.txt"}
+				{"name":"SD-Sync-Immich.zip","browser_download_url":"https://github.com/brofrong/sd-sync-immich/releases/download/v1.2.0/SD-Sync-Immich.zip"},
+				{"name":"SD-Sync-Immich-Setup-x64.exe","browser_download_url":"https://github.com/brofrong/sd-sync-immich/releases/download/v1.2.0/SD-Sync-Immich-Setup-x64.exe"},
+				{"name":"sd-sync-immich","browser_download_url":"https://github.com/brofrong/sd-sync-immich/releases/download/v1.2.0/sd-sync-immich"},
+				{"name":"SD-Sync-Immich-x86_64.AppImage","browser_download_url":"https://github.com/brofrong/sd-sync-immich/releases/download/v1.2.0/SD-Sync-Immich-x86_64.AppImage"},
+				{"name":"checksums.txt","browser_download_url":"https://github.com/brofrong/sd-sync-immich/releases/download/v1.2.0/checksums.txt"}
 			]
 		}`))
 	}))
@@ -78,7 +78,7 @@ func TestCheckPicksPlatformAsset(t *testing.T) {
 		if release.Binary.Name != want {
 			t.Errorf("goos %q: Binary = %q, want %q", goos, release.Binary.Name, want)
 		}
-		if wantURL := "https://github.com/brofrong/sd-sync-iimich/releases/download/v1.2.0/" + want; release.Binary.URL != wantURL {
+		if wantURL := "https://github.com/brofrong/sd-sync-immich/releases/download/v1.2.0/" + want; release.Binary.URL != wantURL {
 			t.Errorf("goos %q: Binary URL = %q, want %q", goos, release.Binary.URL, wantURL)
 		}
 		if release.Checksums.Name != "checksums.txt" {
@@ -93,8 +93,8 @@ func TestCheckRejectsReleaseWithoutPlatformAsset(t *testing.T) {
 		_, _ = w.Write([]byte(`{
 			"tag_name":"v1.2.0",
 			"assets":[
-				{"name":"sd-sync-immich","browser_download_url":"https://github.com/brofrong/sd-sync-iimich/releases/download/v1.2.0/sd-sync-immich"},
-				{"name":"checksums.txt","browser_download_url":"https://github.com/brofrong/sd-sync-iimich/releases/download/v1.2.0/checksums.txt"}
+				{"name":"sd-sync-immich","browser_download_url":"https://github.com/brofrong/sd-sync-immich/releases/download/v1.2.0/sd-sync-immich"},
+				{"name":"checksums.txt","browser_download_url":"https://github.com/brofrong/sd-sync-immich/releases/download/v1.2.0/checksums.txt"}
 			]
 		}`))
 	}))

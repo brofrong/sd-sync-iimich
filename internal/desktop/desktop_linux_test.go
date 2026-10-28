@@ -61,7 +61,7 @@ func TestDesktopCommandsInAppImageGetCleanEnvironment(t *testing.T) {
 	t.Setenv("SD_SYNC_KEEP", "kept")
 	cmds := recordRun(t)
 
-	if err := OpenURL("https://github.com/brofrong/sd-sync-iimich/issues/new"); err != nil {
+	if err := OpenURL("https://github.com/brofrong/sd-sync-immich/issues/new"); err != nil {
 		t.Fatal(err)
 	}
 	if err := Open("/home/me/.local/state/sd-sync-immich/app.log"); err != nil {

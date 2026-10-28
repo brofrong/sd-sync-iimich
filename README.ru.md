@@ -8,7 +8,7 @@
 замечает карту фотоаппарата и загружает в Immich только новые снимки. Больше
 не нужно вспоминать, какое фото с карты было загружено последним.
 
-**[Скачать для своей системы →](https://brofrong.github.io/sd-sync-iimich/)**
+**[Скачать для своей системы →](https://brofrong.github.io/sd-sync-immich/)**
 macOS 13+, Windows 10/11 и Linux x86_64 (Windows и Linux — бета). Нужен
 сервер Immich v3. Бесплатно, открытый код.
 
@@ -66,9 +66,9 @@ macOS 13+, Windows 10/11 и Linux x86_64 (Windows и Linux — бета). Нуж
 
 ## Установка
 
-Самый простой путь — [страница загрузки](https://brofrong.github.io/sd-sync-iimich/):
+Самый простой путь — [страница загрузки](https://brofrong.github.io/sd-sync-immich/):
 она сама предложит файл для вашей системы. Все файлы — на странице
-[Releases](https://github.com/brofrong/sd-sync-iimich/releases/latest).
+[Releases](https://github.com/brofrong/sd-sync-immich/releases/latest).
 
 ### macOS
 
@@ -167,7 +167,7 @@ Linux — если просит пароль; тогда приложение п
 перетащить в Корзину, на Windows — **Параметры → Приложения**, на Linux —
 удалить AppImage.
 
-Нашли ошибку? Создайте [issue](https://github.com/brofrong/sd-sync-iimich/issues/new/choose):
+Нашли ошибку? Создайте [issue](https://github.com/brofrong/sd-sync-immich/issues/new/choose):
 напишите систему, что делали и что произошло, и приложите `app.log`.
 
 ## Участие

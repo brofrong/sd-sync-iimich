@@ -5,7 +5,7 @@ or Russian.
 
 ## Ways to help
 
-- **Report a bug.** [Open an issue](https://github.com/brofrong/sd-sync-iimich/issues/new/choose)
+- **Report a bug.** [Open an issue](https://github.com/brofrong/sd-sync-immich/issues/new/choose)
   with your system, the app version (top of Settings) and `app.log`
   (Settings → Open Log).
 - **Try the betas.** Windows and Linux builds are new: a report that
@@ -25,8 +25,8 @@ libwebkit2gtk-4.1-dev` on Debian and Ubuntu) and `-tags=gtk3`. The Wails CLI
 runs through `go run`, nothing to install.
 
 ```bash
-git clone https://github.com/brofrong/sd-sync-iimich.git
-cd sd-sync-iimich
+git clone https://github.com/brofrong/sd-sync-immich.git
+cd sd-sync-immich
 scripts/build-frontend.sh          # npm ci, TypeScript bindings, frontend/dist
 go build -o sd-sync-immich ./cmd/sd-sync-immich
 ```

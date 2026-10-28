@@ -14,7 +14,7 @@ import (
 // The project's GitHub repository, and the page that opens a new issue.
 // They are the only URLs OpenURL opens.
 const (
-	repoURL     = "https://github.com/brofrong/sd-sync-iimich"
+	repoURL     = "https://github.com/brofrong/sd-sync-immich"
 	newIssueURL = repoURL + "/issues/new"
 )
 
@@ -72,9 +72,9 @@ func allowedURL(raw string) bool {
 		return false
 	}
 	switch u.Path {
-	case "/brofrong/sd-sync-iimich":
+	case "/brofrong/sd-sync-immich":
 		return u.RawQuery == ""
-	case "/brofrong/sd-sync-iimich/issues/new":
+	case "/brofrong/sd-sync-immich/issues/new":
 		if u.RawQuery == "" {
 			return true
 		}

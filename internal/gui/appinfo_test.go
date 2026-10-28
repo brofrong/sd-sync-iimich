@@ -48,7 +48,7 @@ func TestIssueURL(t *testing.T) {
 	info := AppInfoView{Version: "v0.5.0", OS: "Windows", OSVersion: "11 (10.0.22631)", Beta: true}
 	raw := issueURL(info)
 
-	prefix := "https://github.com/brofrong/sd-sync-iimich/issues/new?body="
+	prefix := "https://github.com/brofrong/sd-sync-immich/issues/new?body="
 	if !strings.HasPrefix(raw, prefix) {
 		t.Fatalf("issueURL = %q, want prefix %q", raw, prefix)
 	}
@@ -101,36 +101,36 @@ func recordOpenURL(t *testing.T) *[]string {
 func TestOpenURLAllowlist(t *testing.T) {
 	issue := issueURL(AppInfoView{Version: "v0.5.0", OS: "Linux", OSVersion: "Ubuntu 24.04.1 LTS"})
 	allowed := []string{
-		"https://github.com/brofrong/sd-sync-iimich",
-		"https://github.com/brofrong/sd-sync-iimich/issues/new",
+		"https://github.com/brofrong/sd-sync-immich",
+		"https://github.com/brofrong/sd-sync-immich/issues/new",
 		issue,
 	}
 	refused := []string{
 		"",
 		"https://example.com",
 		"https://github.com/brofrong",
-		"https://github.com/brofrong/sd-sync-iimich/",
-		"https://github.com/brofrong/sd-sync-iimich/issues",
-		"https://github.com/brofrong/sd-sync-iimich/issues/1",
-		"https://github.com/brofrong/sd-sync-iimich/issues/new/../../../evil",
-		"https://github.com/brofrong%2Fsd-sync-iimich",
-		"https://github.com/brofrong/sd-sync-iimich?tab=readme",
-		"https://github.com/brofrong/sd-sync-iimich#readme",
-		"https://github.com/brofrong/sd-sync-iimich/issues/new?body=x&title=y",
-		"https://github.com/brofrong/sd-sync-iimich/issues/new?title=y",
-		"https://github.com/brofrong/sd-sync-iimich/issues/new?body=a b",
-		"https://github.com/brofrong/sd-sync-iimich/issues/new?body=x#y",
-		"http://github.com/brofrong/sd-sync-iimich",
-		"https://GitHub.com/brofrong/sd-sync-iimich",
-		"https://github.com.evil.example/brofrong/sd-sync-iimich",
-		"https://github.com/brofrong/sd-sync-iimich.evil.com",
-		"https://github.com/brofrong/sd-sync-iimich/issues/new.evil",
-		"https://evil@github.com/brofrong/sd-sync-iimich",
-		"https://github.com:8443/brofrong/sd-sync-iimich",
+		"https://github.com/brofrong/sd-sync-immich/",
+		"https://github.com/brofrong/sd-sync-immich/issues",
+		"https://github.com/brofrong/sd-sync-immich/issues/1",
+		"https://github.com/brofrong/sd-sync-immich/issues/new/../../../evil",
+		"https://github.com/brofrong%2Fsd-sync-immich",
+		"https://github.com/brofrong/sd-sync-immich?tab=readme",
+		"https://github.com/brofrong/sd-sync-immich#readme",
+		"https://github.com/brofrong/sd-sync-immich/issues/new?body=x&title=y",
+		"https://github.com/brofrong/sd-sync-immich/issues/new?title=y",
+		"https://github.com/brofrong/sd-sync-immich/issues/new?body=a b",
+		"https://github.com/brofrong/sd-sync-immich/issues/new?body=x#y",
+		"http://github.com/brofrong/sd-sync-immich",
+		"https://GitHub.com/brofrong/sd-sync-immich",
+		"https://github.com.evil.example/brofrong/sd-sync-immich",
+		"https://github.com/brofrong/sd-sync-immich.evil.com",
+		"https://github.com/brofrong/sd-sync-immich/issues/new.evil",
+		"https://evil@github.com/brofrong/sd-sync-immich",
+		"https://github.com:8443/brofrong/sd-sync-immich",
 		"file:///etc/passwd",
 		`C:\Windows\System32\calc.exe`,
 		"calc.exe",
-		" https://github.com/brofrong/sd-sync-iimich",
+		" https://github.com/brofrong/sd-sync-immich",
 	}
 
 	opened := recordOpenURL(t)
