@@ -14,8 +14,12 @@ import (
 )
 
 const (
-	defaultAPIURL = "https://api.github.com/repos/brofrong/sd-sync-iimich/releases/latest"
-	maxAPIBytes   = 2 << 20
+	defaultAPIURL = "https://api.github.com/repos/brofrong/sd-sync-immich/releases/latest"
+	// formerAPIURL is the repository's name until it was renamed from
+	// sd-sync-iimich: asked when defaultAPIURL is not there (404), before
+	// the rename. GitHub redirects the former name after it.
+	formerAPIURL = "https://api.github.com/repos/brofrong/sd-sync-iimich/releases/latest"
+	maxAPIBytes  = 2 << 20
 )
 
 type Asset struct {
@@ -36,6 +40,8 @@ type Release struct {
 type Client struct {
 	CurrentVersion string
 	APIURL         string
+	// FallbackAPIURL, when set, is asked when APIURL answers 404.
+	FallbackAPIURL string
 	HTTPClient     *http.Client
 
 	allowLocalDownloads bool
@@ -61,6 +67,7 @@ func NewClient(currentVersion string) *Client {
 	return &Client{
 		CurrentVersion: currentVersion,
 		APIURL:         defaultAPIURL,
+		FallbackAPIURL: formerAPIURL,
 		HTTPClient: &http.Client{
 			Transport: transport,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -83,19 +90,11 @@ func (c *Client) Check(ctx context.Context) (*Release, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, apiTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.APIURL, nil)
-	if err != nil {
-		return nil, err
+	resp, err := c.getLatest(ctx, c.APIURL)
+	if err == nil && resp.StatusCode == http.StatusNotFound && c.FallbackAPIURL != "" {
+		resp.Body.Close()
+		resp, err = c.getLatest(ctx, c.FallbackAPIURL)
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("User-Agent", "sd-sync-immich/"+c.CurrentVersion)
-
-	httpClient := c.HTTPClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("check GitHub Releases: %w", err)
 	}
@@ -220,6 +219,29 @@ func validateDownloadURL(rawURL string, allowLocal bool) error {
 	return nil
 }
 
+// getLatest asks the GitHub API at apiURL for the latest release.
+func (c *Client) getLatest(ctx context.Context, apiURL string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "sd-sync-immich/"+c.CurrentVersion)
+
+	httpClient := c.HTTPClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	return httpClient.Do(req)
+}
+
+// isTrustedGitHubHost reports whether a redirect may go to host: GitHub,
+// its API (which redirects a renamed repository's former name) and its
+// download hosts.
 func isTrustedGitHubHost(host string) bool {
+	if host == "api.github.com" {
+		return true
+	}
 	return host == "github.com" || strings.HasSuffix(host, ".githubusercontent.com")
 }

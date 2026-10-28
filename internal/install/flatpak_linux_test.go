@@ -35,7 +35,7 @@ func runAsFlatpak(t *testing.T, id string) (home string, requests *[]bool) {
 }
 
 func TestFlatpakAutostartGoesThroughThePortal(t *testing.T) {
-	const id = "io.github.brofrong.SDSyncImmich"
+	const id = "io.github.brofrong.sd-sync-immich"
 	home, requests := runAsFlatpak(t, id)
 
 	if !Flatpak() || !AutostartAvailable("/app/bin/sd-sync-immich") {

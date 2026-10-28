@@ -43,8 +43,8 @@ func TestCheckReturnsNewReleaseWithRequiredAssets(t *testing.T) {
 			"body": "Changes",
 			"html_url": "https://example.test/releases/v1.2.0",
 			"assets": [
-				{"name":"sd-sync-immich","browser_download_url":"https://github.com/brofrong/sd-sync-iimich/releases/download/v1.2.0/sd-sync-immich"},
-				{"name":"checksums.txt","browser_download_url":"https://github.com/brofrong/sd-sync-iimich/releases/download/v1.2.0/checksums.txt"}
+				{"name":"sd-sync-immich","browser_download_url":"https://github.com/brofrong/sd-sync-immich/releases/download/v1.2.0/sd-sync-immich"},
+				{"name":"checksums.txt","browser_download_url":"https://github.com/brofrong/sd-sync-immich/releases/download/v1.2.0/checksums.txt"}
 			]
 		}`))
 	}))
@@ -126,5 +126,46 @@ func TestCheckRejectsAssetsFromUntrustedHost(t *testing.T) {
 	client.goos = "darwin"
 	if _, err := client.Check(context.Background()); err == nil {
 		t.Fatal("Check() accepted assets from an untrusted host")
+	}
+}
+
+// TestCheckFallsBackToTheFormerName: before the repository is renamed, its
+// new name answers 404 and the former one has the releases.
+func TestCheckFallsBackToTheFormerName(t *testing.T) {
+	var asked []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = append(asked, r.URL.Path)
+		if r.URL.Path == "/new" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{"tag_name": "v1.1.0", "assets": []}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("v1.1.0")
+	client.APIURL = server.URL + "/new"
+	client.FallbackAPIURL = server.URL + "/former"
+
+	release, err := client.Check(context.Background())
+	if err != nil || release != nil {
+		t.Fatalf("Check() = %v, %v; want no update and no error", release, err)
+	}
+	if len(asked) != 2 || asked[0] != "/new" || asked[1] != "/former" {
+		t.Fatalf("asked %v, want [/new /former]", asked)
+	}
+}
+
+func TestRedirectsMayGoToTheGitHubAPI(t *testing.T) {
+	for host, want := range map[string]bool{
+		"api.github.com":                       true,
+		"github.com":                           true,
+		"release-assets.githubusercontent.com": true,
+		"api.github.com.evil.example":          false,
+		"example.com":                          false,
+	} {
+		if got := isTrustedGitHubHost(host); got != want {
+			t.Errorf("isTrustedGitHubHost(%q) = %v, want %v", host, got, want)
+		}
 	}
 }

@@ -119,6 +119,41 @@ Workflow `flatpak.yml` собирает бандл и прогоняет `flatpa
 
 Перед каждым релизом в metainfo добавляется строка `<release>`.
 
+## Переименование репозитория
+
+Репозиторий называется `sd-sync-iimich` (опечатка), а id Flatpak —
+`io.github.brofrong.sd-sync-immich`: Flathub требует, чтобы по id
+открывался репозиторий. Поэтому его нужно переименовать в `sd-sync-immich`,
+и важен порядок.
+
+Версии до v0.5.5 включительно не примут перенаправление GitHub API, которое
+появится после переименования, и перестанут видеть обновления. Начиная со
+следующей версии апдейтер сначала спрашивает новое имя, а при 404 — старое,
+поэтому работает и до переименования, и после.
+
+1. Выпустить версию с этим апдейтером и подождать, пока пользователи
+   обновятся.
+2. Переименовать: `gh repo rename sd-sync-immich -R brofrong/sd-sync-iimich`.
+   Ссылки на код и релизы GitHub перенаправляет сам. Новый репозиторий со
+   старым именем создавать нельзя: перенаправления пропадут.
+3. Заменить ссылки и закоммитить:
+
+   ```bash
+   git grep -l sd-sync-iimich -- ':!docs/superpowers' ':!docs/plans' ':!internal/update/checker.go' \
+     | xargs sed -i '' 's/sd-sync-iimich/sd-sync-immich/g'
+   git remote set-url origin https://github.com/brofrong/sd-sync-immich.git
+   ```
+
+   В `.github/workflows/flatpak.yml` убрать `appid-url-not-reachable` из
+   ожидаемых ошибок линтера.
+4. Сайт переедет на `brofrong.github.io/sd-sync-immich`, а старый адрес
+   GitHub Pages не перенаправляет. Чтобы старые ссылки работали, создать
+   репозиторий `brofrong/brofrong.github.io` со страницами
+   `sd-sync-iimich/index.html` и `sd-sync-iimich/downloads/index.html`,
+   которые переадресуют на новый адрес.
+5. В `brofrong/homebrew-tap` заменить имя в cask и в `bump.yml`.
+6. Отправить приложение на Flathub.
+
 ## Обновление с v0.3.0
 
 Ничего делать не нужно: v0.3.0 скачает обновление как обычно, а новая версия

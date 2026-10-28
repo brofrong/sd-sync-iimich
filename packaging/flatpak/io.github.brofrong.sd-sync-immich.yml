@@ -4,7 +4,7 @@
 # (flatpak-node-generator npm frontend/package-lock.json). The TypeScript
 # bindings are committed, as the Wails CLI that generates them is not part
 # of the build. See docs/DEVELOPMENT.md ("Flatpak").
-id: io.github.brofrong.SDSyncImmich
+id: io.github.brofrong.sd-sync-immich
 runtime: org.gnome.Platform
 runtime-version: '51'
 sdk: org.gnome.Sdk

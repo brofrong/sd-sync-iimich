@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.brofrong.SDSyncImmich</id>
+  <id>io.github.brofrong.sd-sync-immich</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
   <name>SD Sync Immich</name>
@@ -27,21 +27,21 @@
       team.
     </p>
   </description>
-  <launchable type="desktop-id">io.github.brofrong.SDSyncImmich.desktop</launchable>
+  <launchable type="desktop-id">io.github.brofrong.sd-sync-immich.desktop</launchable>
   <provides>
     <binary>sd-sync-immich</binary>
   </provides>
-  <url type="homepage">https://brofrong.github.io/sd-sync-iimich/</url>
-  <url type="bugtracker">https://github.com/brofrong/sd-sync-iimich/issues</url>
-  <url type="vcs-browser">https://github.com/brofrong/sd-sync-iimich</url>
-  <url type="contribute">https://github.com/brofrong/sd-sync-iimich/blob/main/CONTRIBUTING.md</url>
+  <url type="homepage">https://brofrong.github.io/sd-sync-immich/</url>
+  <url type="bugtracker">https://github.com/brofrong/sd-sync-immich/issues</url>
+  <url type="vcs-browser">https://github.com/brofrong/sd-sync-immich</url>
+  <url type="contribute">https://github.com/brofrong/sd-sync-immich/blob/main/CONTRIBUTING.md</url>
   <screenshots>
     <screenshot type="default">
-      <image>https://brofrong.github.io/sd-sync-iimich/assets/status-en.jpg</image>
+      <image>https://brofrong.github.io/sd-sync-immich/assets/status-en.jpg</image>
       <caption>Uploading a card</caption>
     </screenshot>
     <screenshot>
-      <image>https://brofrong.github.io/sd-sync-iimich/assets/gallery-en.jpg</image>
+      <image>https://brofrong.github.io/sd-sync-immich/assets/gallery-en.jpg</image>
       <caption>The card's photos by day</caption>
     </screenshot>
   </screenshots>
