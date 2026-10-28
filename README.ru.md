@@ -114,6 +114,16 @@ brew install --cask sd-sync-immich
 
 2. Если AppImage ругается на FUSE, установите пакет `fuse3` (или `fuse`).
 
+Или Flatpak вместо AppImage: скачайте **`SD-Sync-Immich-x86_64.flatpak`** и
+установите:
+
+```bash
+flatpak install --user SD-Sync-Immich-x86_64.flatpak
+```
+
+Приложение появится в меню приложений. Flatpak-версия не обновляется сама:
+новую версию скачайте и установите так же.
+
 Подходят Ubuntu 22.04, Debian 12, Fedora 36 и новее. В GNOME для значка в трее
 нужно расширение
 [AppIndicator](https://extensions.gnome.org/extension/615/appindicator-support/)
@@ -162,10 +172,12 @@ Linux — если просит пароль; тогда приложение п
 | macOS | `~/.config/sd-sync-immich` | `~/Library/Logs/sd-sync-immich` |
 | Windows | `%APPDATA%\sd-sync-immich` | `%LOCALAPPDATA%\sd-sync-immich\logs` |
 | Linux | `~/.config/sd-sync-immich` | `~/.local/state/sd-sync-immich` |
+| Linux, Flatpak | `~/.var/app/io.github.brofrong.sd-sync-immich/config/sd-sync-immich` | `~/.var/app/io.github.brofrong.sd-sync-immich/.local/state/sd-sync-immich` |
 
 Удаление приложения эти папки не трогает. Удалить приложение: на macOS —
 перетащить в Корзину, на Windows — **Параметры → Приложения**, на Linux —
-удалить AppImage.
+удалить AppImage или выполнить
+`flatpak uninstall io.github.brofrong.sd-sync-immich`.
 
 Нашли ошибку? Создайте [issue](https://github.com/brofrong/sd-sync-immich/issues/new/choose):
 напишите систему, что делали и что произошло, и приложите `app.log`.

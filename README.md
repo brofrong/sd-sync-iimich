@@ -115,6 +115,16 @@ the taskbar).
 2. If the AppImage complains about FUSE, install the `fuse3` (or `fuse`)
    package.
 
+Or a Flatpak instead of the AppImage: download
+**`SD-Sync-Immich-x86_64.flatpak`** and install it:
+
+```bash
+flatpak install --user SD-Sync-Immich-x86_64.flatpak
+```
+
+The app shows up in the applications menu. The Flatpak does not update
+itself: download the new version and install it the same way.
+
 Ubuntu 22.04, Debian 12, Fedora 36 and newer work. On GNOME the tray icon
 needs the
 [AppIndicator](https://extensions.gnome.org/extension/615/appindicator-support/)
@@ -163,10 +173,11 @@ files are here:
 | macOS | `~/.config/sd-sync-immich` | `~/Library/Logs/sd-sync-immich` |
 | Windows | `%APPDATA%\sd-sync-immich` | `%LOCALAPPDATA%\sd-sync-immich\logs` |
 | Linux | `~/.config/sd-sync-immich` | `~/.local/state/sd-sync-immich` |
+| Linux, Flatpak | `~/.var/app/io.github.brofrong.sd-sync-immich/config/sd-sync-immich` | `~/.var/app/io.github.brofrong.sd-sync-immich/.local/state/sd-sync-immich` |
 
 Uninstalling the app leaves these folders. To uninstall: on macOS drag the
 app to the Trash, on Windows use **Settings → Apps**, on Linux delete the
-AppImage.
+AppImage or run `flatpak uninstall io.github.brofrong.sd-sync-immich`.
 
 Found a bug? [Open an issue](https://github.com/brofrong/sd-sync-immich/issues/new/choose)
 with your system, what you did and what happened, and attach `app.log`.
