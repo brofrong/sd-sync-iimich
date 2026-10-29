@@ -1,8 +1,24 @@
-# SD Sync Immich
+<p align="center">
+  <img src="site/assets/icon.svg" width="96" height="96" alt="">
+</p>
 
-[English](README.md) · **Русский**
+<h1 align="center">SD Sync Immich</h1>
 
-Вставил SD-карту — фото уже в [Immich](https://immich.app).
+<p align="center"><b>Вставил SD-карту — фото уже в <a href="https://immich.app">Immich</a>.</b></p>
+
+<p align="center">
+  <a href="https://brofrong.github.io/sd-sync-immich/"><b>Сайт</b></a> ·
+  <a href="https://brofrong.github.io/sd-sync-immich/downloads/"><b>Скачать</b></a> ·
+  <a href="README.md">English</a> · Русский
+</p>
+
+<p align="center">
+  <a href="https://github.com/brofrong/sd-sync-immich/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/brofrong/sd-sync-immich?style=flat-square&color=7b5cff"></a>
+  <a href="https://github.com/brofrong/sd-sync-immich/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/brofrong/sd-sync-immich/total?style=flat-square&color=0a84ff"></a>
+  <a href="https://github.com/brofrong/sd-sync-immich/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/brofrong/sd-sync-immich/ci.yml?branch=main&style=flat-square&label=CI"></a>
+  <img alt="macOS, Windows, Linux" src="https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-555?style=flat-square">
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/brofrong/sd-sync-immich?style=flat-square&color=30d158"></a>
+</p>
 
 Маленькое приложение в menu bar (на Windows и Linux — в трее). Оно само
 замечает карту фотоаппарата и загружает в Immich только новые снимки. Больше
@@ -63,6 +79,17 @@ macOS 13+, Windows 10/11 и Linux x86_64 (Windows и Linux — бета). Нуж
 проверить и скачать новую версию. Никакой аналитики и аккаунтов. Ключ API
 хранится на вашем компьютере и отправляется только на ваш сервер. Подробнее —
 в [SECURITY.md](SECURITY.md).
+
+## Как сделано
+
+Большая часть кода, тестов и текстов написана с помощью ИИ (Claude, через
+Claude Code) — в коммитах, которые он писал, это указано. Я решаю, что и как
+делает приложение, и пользуюсь им сам: на macOS с картами своей камеры с
+июля 2026 года. Каждое изменение проходит автоматические тесты на macOS,
+Windows и Linux; тесты работают с поддельным сервером и временными папками и
+никогда не трогают настоящие карты и диски. Сборки для Windows и Linux
+вручную проверены гораздо меньше, поэтому они — бета. Если на вашей системе
+что-то не работает, [напишите](https://github.com/brofrong/sd-sync-immich/issues/new/choose).
 
 ## Установка
 
@@ -181,6 +208,7 @@ Linux — если просит пароль; тогда приложение п
 
 Нашли ошибку? Создайте [issue](https://github.com/brofrong/sd-sync-immich/issues/new/choose):
 напишите систему, что делали и что произошло, и приложите `app.log`.
+Вопросы и идеи — в [Discussions](https://github.com/brofrong/sd-sync-immich/discussions).
 
 ## Участие
 

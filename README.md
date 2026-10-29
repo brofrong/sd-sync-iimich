@@ -1,8 +1,24 @@
-# SD Sync Immich
+<p align="center">
+  <img src="site/assets/icon.svg" width="96" height="96" alt="">
+</p>
 
-**English** · [Русский](README.ru.md)
+<h1 align="center">SD Sync Immich</h1>
 
-Insert the SD card, the photos go to [Immich](https://immich.app).
+<p align="center"><b>Insert the SD card, the photos go to <a href="https://immich.app">Immich</a>.</b></p>
+
+<p align="center">
+  <a href="https://brofrong.github.io/sd-sync-immich/"><b>Website</b></a> ·
+  <a href="https://brofrong.github.io/sd-sync-immich/downloads/"><b>Download</b></a> ·
+  English · <a href="README.ru.md">Русский</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/brofrong/sd-sync-immich/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/brofrong/sd-sync-immich?style=flat-square&color=7b5cff"></a>
+  <a href="https://github.com/brofrong/sd-sync-immich/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/brofrong/sd-sync-immich/total?style=flat-square&color=0a84ff"></a>
+  <a href="https://github.com/brofrong/sd-sync-immich/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/brofrong/sd-sync-immich/ci.yml?branch=main&style=flat-square&label=CI"></a>
+  <img alt="macOS, Windows, Linux" src="https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-555?style=flat-square">
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/brofrong/sd-sync-immich?style=flat-square&color=30d158"></a>
+</p>
 
 A small app in the menu bar (the tray on Windows and Linux). It notices
 your camera's card by itself and uploads only the new shots to Immich. No
@@ -64,6 +80,17 @@ The app talks only to your Immich server and to GitHub, to check for a new
 version and download it. No analytics, no accounts. The API key stays on
 your computer and is only sent to your server. Details are in
 [SECURITY.md](SECURITY.md).
+
+## How it is made
+
+Most of the code, tests and texts are written with AI (Claude, through
+Claude Code); the commits that it co-wrote say so. I decide what the app
+does and how, and I use it myself: on macOS with my camera's cards since
+July 2026. Every change runs the automated tests on macOS, Windows and
+Linux; the tests use fake servers and temporary folders, never real cards
+or disks. The Windows and Linux builds have been tried by hand much less,
+which is why they are betas. If something breaks on your system,
+[please tell me](https://github.com/brofrong/sd-sync-immich/issues/new/choose).
 
 ## Installing
 
@@ -181,6 +208,7 @@ AppImage or run `flatpak uninstall io.github.brofrong.sd-sync-immich`.
 
 Found a bug? [Open an issue](https://github.com/brofrong/sd-sync-immich/issues/new/choose)
 with your system, what you did and what happened, and attach `app.log`.
+Questions and ideas are welcome in [Discussions](https://github.com/brofrong/sd-sync-immich/discussions).
 
 ## Contributing
 

@@ -84,6 +84,7 @@
     "dl.linux.button": "Скачать AppImage",
     "dl.linux.1": "Сделайте файл исполняемым и запустите: <code>chmod +x SD-Sync-Immich-x86_64.AppImage</code>",
     "dl.linux.2": "В GNOME для значка в трее нужно расширение AppIndicator (в Ubuntu оно есть).",
+    "dl.linux.flatpak": "Или <a href=\"https://github.com/brofrong/sd-sync-immich/releases/latest/download/SD-Sync-Immich-x86_64.flatpak\">Flatpak</a> вместо AppImage. Сам он не обновляется: каждую новую версию устанавливайте так же.",
     "dl.more": "Контрольные суммы, бинарники для командной строки и старые версии — на <a href=\"https://github.com/brofrong/sd-sync-immich/releases\">странице релизов GitHub</a>. Подробная инструкция — в <a href=\"https://github.com/brofrong/sd-sync-immich/blob/main/README.ru.md\">README</a>.",
   };
 
