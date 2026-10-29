@@ -37,6 +37,8 @@ jobs:
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: canary # bun lint is only in canary for now
 
       - name: Install Wails CLI
         run: |
