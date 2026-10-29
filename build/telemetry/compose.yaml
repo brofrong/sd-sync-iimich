@@ -1,0 +1,15 @@
+# The statistics server as deployed: behind the reverse proxy that serves
+# https://sd-sync-stats.brofrong.ru. Set DASHBOARD_PASSWORD in .env.
+services:
+  sd-sync-telemetry:
+    image: ghcr.io/brofrong/sd-sync-telemetry:latest
+    restart: unless-stopped
+    environment:
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?set the dashboard password}
+    volumes:
+      - data:/data
+    ports:
+      - "127.0.0.1:8087:8080"
+
+volumes:
+  data:

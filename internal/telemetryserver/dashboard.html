@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>SD Sync Immich · statistics</title>
+<style>
+  :root { color-scheme: dark; --bg: #0f0e14; --card: rgba(120, 90, 255, 0.10); --line: rgba(180, 160, 255, 0.18);
+    --text: #f2f2f7; --text-2: rgba(255, 255, 255, 0.62); --a1: #7b5cff; --a2: #0a84ff; --a3: #64d2ff; --red: #ff6961; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px; color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(900px 500px at 0% -10%, rgba(106, 76, 240, 0.30), transparent 60%), var(--bg); min-height: 100vh; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-2); margin: 0 0 12px; }
+  .sub { color: var(--text-2); margin: 0 0 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  .wide { grid-column: 1 / -1; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile b { display: block; font-size: 28px; letter-spacing: -0.02em; }
+  .tile span { color: var(--text-2); font-size: 12px; }
+  .chart { display: flex; align-items: flex-end; gap: 3px; height: 140px; }
+  .chart div { flex: 1; min-height: 2px; border-radius: 3px 3px 0 0; background: linear-gradient(180deg, var(--a3), var(--a1)); }
+  .axis { display: flex; justify-content: space-between; color: var(--text-2); font-size: 11px; margin-top: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { padding: 5px 4px; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.06); vertical-align: top; }
+  th { color: var(--text-2); font-weight: 500; font-size: 12px; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .bar { height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--a1), var(--a2)); margin-top: 3px; }
+  .err { color: var(--red); }
+  .muted { color: var(--text-2); }
+  code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-word; }
+</style>
+</head>
+<body>
+<h1>SD Sync Immich · statistics</h1>
+<p class="sub">Installs that allowed anonymous statistics. Updated {{.Generated}}.</p>
+
+<div class="tiles">
+  <div class="card tile"><b>{{.Active1}}</b><span>active today</span></div>
+  <div class="card tile"><b>{{.Active7}}</b><span>active in 7 days</span></div>
+  <div class="card tile"><b>{{.Active30}}</b><span>active in 30 days</span></div>
+  <div class="card tile"><b>{{.Installs}}</b><span>installs ever</span></div>
+  <div class="card tile"><b>{{.Downloads.Total}}</b><span>downloads from GitHub</span></div>
+</div>
+
+<div class="grid">
+  <div class="card wide">
+    <h2>Active installs per day, 30 days</h2>
+    <div class="chart">
+      {{range .Days}}<div style="height: {{pct .Active $.MaxDayActive}}%" title="{{.Date}}: {{.Active}} active, {{.Launches}} launches"></div>{{end}}
+    </div>
+    <div class="axis">{{with index .Days 0}}<span>{{.Date}}</span>{{end}}<span>today</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Downloads</h2>
+    {{if .DownloadsError}}<p class="err">GitHub: {{.DownloadsError}}</p>{{end}}
+    <table>
+      <tr><th>Release</th><th class="n">DMG</th><th class="n">mac upd.</th><th class="n">Win</th><th class="n">AppImage</th><th class="n">Flatpak</th></tr>
+      {{range .Releases}}<tr><td style="white-space: nowrap">{{.Tag}} <span class="muted">{{.Date}}</span></td><td class="n">{{.DMG}}</td><td class="n">{{.MacOther}}</td><td class="n">{{.Windows}}</td><td class="n">{{.AppImage}}</td><td class="n">{{.Flatpak}}</td></tr>{{end}}
+    </table>
+    <p class="muted">“mac upd.” are the zip and binaries the macOS updater downloads; Windows and Linux updates download the same files as a first install.</p>
+  </div>
+
+  <div class="card">
+    <h2>Syncs, 30 days</h2>
+    <table>
+      <tr><td>Syncs</td><td class="n">{{.Syncs.Syncs}}</td></tr>
+      <tr><td>Files seen</td><td class="n">{{.Syncs.Files}}</td></tr>
+      <tr><td>Uploaded</td><td class="n">{{.Syncs.Uploaded}}</td></tr>
+      <tr><td>Already in Immich</td><td class="n">{{.Syncs.Duplicates}}</td></tr>
+      <tr><td>RAW+JPEG stacks</td><td class="n">{{.Syncs.Stacks}}</td></tr>
+      <tr><td>Uploaded, GB</td><td class="n">{{gb .Syncs.Bytes}}</td></tr>
+      <tr><td>Failed files</td><td class="n">{{.Syncs.Errors}}</td></tr>
+    </table>
+    <h2 style="margin-top:16px">Outcomes</h2>
+    <table>{{range .Syncs.Results}}<tr><td><code>{{.Value}}</code></td><td class="n">{{.N}}</td></tr>{{end}}</table>
+    {{if .Syncs.ErrorKinds}}<h2 style="margin-top:16px">Failed files by kind</h2>
+    <table>{{range .Syncs.ErrorKinds}}<tr><td><code>{{.Value}}</code></td><td class="n">{{.N}}</td></tr>{{end}}</table>{{end}}
+  </div>
+
+  {{template "counts" dict "Title" "Versions, 30 days" "Rows" .Versions "Total" .Active30}}
+  {{template "counts" dict "Title" "Systems, 30 days" "Rows" .Systems "Total" .Active30}}
+  {{template "counts" dict "Title" "Installed as, 30 days" "Rows" .Kinds "Total" .Active30}}
+  {{template "counts" dict "Title" "Languages, 30 days" "Rows" .Langs "Total" .Active30}}
+
+  <div class="card wide">
+    <h2>Errors, 7 days</h2>
+    {{if .Errors}}<table>
+      <tr><th>Message</th><th class="n">Times</th><th class="n">Installs</th><th>Versions</th></tr>
+      {{range .Errors}}<tr><td><code>{{.Message}}</code></td><td class="n">{{.Count}}</td><td class="n">{{.Installs}}</td><td class="muted">{{.Versions}}</td></tr>{{end}}
+    </table>{{else}}<p class="muted">No errors.</p>{{end}}
+  </div>
+</div>
+</body>
+</html>
+{{define "counts"}}<div class="card">
+  <h2>{{.Title}}</h2>
+  <table>{{$total := .Total}}{{range .Rows}}<tr><td>{{.Value}}<div class="bar" style="width: {{pct .N $total}}%"></div></td><td class="n">{{.N}}</td></tr>{{else}}<tr><td class="muted">Nothing yet.</td></tr>{{end}}</table>
+</div>{{end}}

@@ -136,6 +136,34 @@ Workflow `flatpak.yml` собирает бандл и прогоняет `flatpa
   `brofrong.github.io/sd-sync-iimich/` и `…/downloads/` переадресуют на новый
   сайт из репозитория `brofrong/brofrong.github.io`.
 
+## Сервер статистики
+
+`cmd/sd-sync-telemetry` принимает анонимную статистику приложения и
+показывает её на странице под паролем. Код — в `internal/telemetryserver`,
+хранилище — SQLite. Адрес отправителя сервер не сохраняет: IP нужен только в
+памяти, чтобы ограничить частоту запросов (30 в минуту). События старше 400
+дней удаляются.
+
+- `POST /v1/events` — события приложения. Сервер принимает только релизные
+  версии и известные поля, остальное отбрасывает.
+- `GET /` — статистика: активные установки по дням, версии, системы,
+  синхронизации, ошибки и скачивания с GitHub. Пользователь `admin`, пароль —
+  переменная `DASHBOARD_PASSWORD` (пустая выключает страницу).
+- `GET /healthz` — проверка для Docker.
+
+Образ `ghcr.io/brofrong/sd-sync-telemetry` собирает workflow
+`telemetry.yml` при push в `main`, если менялся сервер. Если задан секрет
+`ARCANE_WEBHOOK_URL`, тот же workflow просит Arcane обновить контейнер.
+Пример compose — `build/telemetry/compose.yaml`; сервер работает за
+обратным прокси на `https://sd-sync-stats.brofrong.ru`.
+
+Локально:
+
+```bash
+docker build -f build/telemetry/Dockerfile -t sd-sync-telemetry .
+docker run --rm -e DASHBOARD_PASSWORD=pw -p 8080:8080 sd-sync-telemetry
+```
+
 ## Обновление с v0.3.0
 
 Ничего делать не нужно: v0.3.0 скачает обновление как обычно, а новая версия
