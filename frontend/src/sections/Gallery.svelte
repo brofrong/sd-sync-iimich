@@ -12,7 +12,11 @@
   // every 2 s. Clicking a photo opens it in the viewer; closing the viewer
   // brings the last photo shown into view and focuses its tile.
   import { onDestroy, tick, untrack } from "svelte";
-  import type { List, Photo } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gallery";
+
+  import type {
+    List,
+    Photo,
+  } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gallery";
   import Button from "../components/Button.svelte";
   import GlassCard from "../components/GlassCard.svelte";
   import PhotoViewer from "../components/PhotoViewer.svelte";
@@ -43,7 +47,8 @@
     openIndex = null;
     if (!path) return;
     await tick();
-    for (const tile of days?.querySelectorAll<HTMLElement>("[data-path]") ?? []) {
+    for (const tile of days?.querySelectorAll<HTMLElement>("[data-path]") ??
+      []) {
       if (tile.dataset.path === path) {
         tile.focus();
         break;
@@ -75,7 +80,8 @@
         if (n !== seq) return;
         list = l;
         loadError = "";
-        if (settled.size > 0) finished = new Set([...finished].filter((p) => !settled.has(p)));
+        if (settled.size > 0)
+          finished = new Set([...finished].filter((p) => !settled.has(p)));
       },
       (err) => {
         if (n !== seq) return;
@@ -96,7 +102,9 @@
   });
 
   const code = $derived($status.code as string);
-  const card = $derived(`${$appState.card?.uuid ?? ""}|${$appState.card?.mounted ?? false}`);
+  const card = $derived(
+    `${$appState.card?.uuid ?? ""}|${$appState.card?.mounted ?? false}`,
+  );
   // On entry, and whenever the card or the status changes.
   $effect(() => {
     void code;
@@ -105,7 +113,9 @@
   });
 
   // While syncing, each finished file changes the statuses.
-  const current = $derived(code === "syncing" ? ($status.progress?.current ?? 0) : -1);
+  const current = $derived(
+    code === "syncing" ? ($status.progress?.current ?? 0) : -1,
+  );
   let lastCurrent = -1;
   $effect(() => {
     if (current === lastCurrent) return;
@@ -119,7 +129,9 @@
   // The files uploading right now. The key is a string so that status
   // events with the same files do not touch the tiles.
   const inFlightKey = $derived(($status.progress?.inFlight ?? []).join("\n"));
-  const inFlight = $derived(new Set(inFlightKey ? inFlightKey.split("\n") : []));
+  const inFlight = $derived(
+    new Set(inFlightKey ? inFlightKey.split("\n") : []),
+  );
 
   // The files that left inFlight (finished uploading, or failed) since the
   // list was last asked for. The list showing their new status may be up
@@ -131,17 +143,20 @@
     const now = inFlight;
     const gone = [...lastInFlight].filter((p) => !now.has(p));
     lastInFlight = now;
-    if (gone.length > 0) untrack(() => (finished = new Set([...finished, ...gone])));
+    if (gone.length > 0)
+      untrack(() => (finished = new Set([...finished, ...gone])));
   });
   // Once the sync ends (done, stopped, or its last file failed), the list
   // asked for on that change shows the final statuses: nothing is
   // uploading any more.
   $effect(() => {
-    if (code !== "syncing") untrack(() => finished.size > 0 && (finished = new Set()));
+    if (code !== "syncing")
+      untrack(() => finished.size > 0 && (finished = new Set()));
   });
 
   function statusOf(p: Photo): TileStatus {
-    const uploading = code === "syncing" && (inFlight.has(p.path) || finished.has(p.path));
+    const uploading =
+      code === "syncing" && (inFlight.has(p.path) || finished.has(p.path));
     if (p.status !== "in_immich" && uploading) return "uploading";
     if (p.status === "in_immich" || p.status === "failed") return p.status;
     return "waiting";
@@ -173,7 +188,11 @@
       const key = dayOf(photo.takenAt);
       let last = out[out.length - 1];
       if (!last || last.key !== key) {
-        last = { key, day: key > 0 ? formatDay(new Date(key), now) : "", items: [] };
+        last = {
+          key,
+          day: key > 0 ? formatDay(new Date(key), now) : "",
+          items: [],
+        };
         out.push(last);
       }
       last.items.push({ photo, index });
@@ -182,8 +201,17 @@
   });
 
   const total = $derived(list?.photos.length ?? 0);
-  const done = $derived(list ? list.photos.reduce((n, p) => n + (p.status === "in_immich" ? 1 : 0), 0) : 0);
-  const summary = $derived(t("gallery.summary", { count: formatNumber(total), done: formatNumber(done) }));
+  const done = $derived(
+    list
+      ? list.photos.reduce((n, p) => n + (p.status === "in_immich" ? 1 : 0), 0)
+      : 0,
+  );
+  const summary = $derived(
+    t("gallery.summary", {
+      count: formatNumber(total),
+      done: formatNumber(done),
+    }),
+  );
 
   // ---- Off-screen days ------------------------------------------------------
   // A day off screen is skipped by the renderer (content-visibility); its
@@ -224,32 +252,45 @@
   {:else if list === null}
     <GlassCard tone={otherCard ? "warn" : "idle"}>
       <p class="empty-state">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.gallery} /></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={icons.gallery} /></svg
+        >
         <span>
           {otherCard
-            ? t("gallery.other_card", { mounted_name: params.mounted_name, selected_name: params.selected_name })
+            ? t("gallery.other_card", {
+                mounted_name: params.mounted_name,
+                selected_name: params.selected_name,
+              })
             : t("gallery.no_card")}
         </span>
       </p>
       {#if otherCard}
         <div class="actions">
-          <Button onclick={() => onNavigate("cards")}>{t("action.open_cards")}</Button>
+          <Button onclick={() => onNavigate("cards")}
+            >{t("action.open_cards")}</Button
+          >
         </div>
       {/if}
     </GlassCard>
   {:else if total === 0}
     <GlassCard>
       <p class="empty-state">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.gallery} /></svg><span>{t("gallery.empty")}</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={icons.gallery} /></svg
+        ><span>{t("gallery.empty")}</span>
       </p>
       {#if list.other > 0}
-        <p class="hint other">{t("gallery.hidden", { count: formatNumber(list.other) })}</p>
+        <p class="hint other">
+          {t("gallery.hidden", { count: formatNumber(list.other) })}
+        </p>
       {/if}
     </GlassCard>
   {:else}
     <GlassCard>
       <div class="head">
-        <h2 class="name" title={list.cardName}>{list.cardName || t("cards.unnamed")}</h2>
+        <h2 class="name" title={list.cardName}>
+          {list.cardName || t("cards.unnamed")}
+        </h2>
         <span class="meta">{summary}</span>
       </div>
       <div
@@ -263,16 +304,28 @@
         <i style:width="{(done / total) * 100}%"></i>
       </div>
       {#if list.other > 0}
-        <p class="hint">{t("gallery.hidden", { count: formatNumber(list.other) })}</p>
+        <p class="hint">
+          {t("gallery.hidden", { count: formatNumber(list.other) })}
+        </p>
       {/if}
     </GlassCard>
 
     <div class="days" bind:clientWidth={width} bind:this={days}>
       {#each groups as group, g (group.key)}
-        <section class="day" style:contain-intrinsic-block-size="auto {dayHeight(group.items.length)}px" aria-labelledby="gallery-day-{g}">
+        <section
+          class="day"
+          style:contain-intrinsic-block-size="auto {dayHeight(
+            group.items.length,
+          )}px"
+          aria-labelledby="gallery-day-{g}"
+        >
           <h3 id="gallery-day-{g}">
             <span class="day-name">{group.day}</span>
-            <span class="count">{t("gallery.day_count", { count: formatNumber(group.items.length) })}</span>
+            <span class="count"
+              >{t("gallery.day_count", {
+                count: formatNumber(group.items.length),
+              })}</span
+            >
           </h3>
           <ul class="grid">
             {#each group.items as item (item.photo.path)}
@@ -286,7 +339,13 @@
                   data-path={item.photo.path}
                   onclick={() => (openIndex = item.index)}
                 >
-                  <img src={item.photo.thumb} alt="" loading="lazy" decoding="async" draggable="false" />
+                  <img
+                    src={item.photo.thumb}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    draggable="false"
+                  />
                   <span class="badge {s}" aria-hidden="true">
                     {#if s === "in_immich"}
                       <svg viewBox="0 0 24 24"><path d={icons.check} /></svg>
@@ -461,14 +520,22 @@
     z-index: 1;
     height: 3px;
     background:
-      linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7), transparent) -100% 0 / 50% 100% no-repeat,
+      linear-gradient(
+          90deg,
+          transparent,
+          rgba(255, 255, 255, 0.7),
+          transparent
+        ) -100%
+        0 / 50% 100% no-repeat,
       var(--accent-2);
     box-shadow: 0 0 8px rgba(10, 132, 255, 0.8);
     animation: run 1.3s linear infinite;
   }
   @keyframes run {
     to {
-      background-position: 200% 0, 0 0;
+      background-position:
+        200% 0,
+        0 0;
     }
   }
 
@@ -515,7 +582,12 @@
     display: block;
     aspect-ratio: 3 / 2;
     border-radius: 6px;
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.05),
+      rgba(255, 255, 255, 0.1),
+      rgba(255, 255, 255, 0.05)
+    );
     background-size: 200% 100%;
     animation: skeleton-wave 1.4s ease-in-out infinite;
   }

@@ -1,7 +1,7 @@
 // Translation and locale-aware formatting. The catalogs are the JSON files
 // shared with the Go backend (frontend/locales); t() follows the same rules
 // as Go's Catalog.T: the current language, then English, then the key.
-import { get, writable, type Writable } from "svelte/store";
+import { get, type Writable, writable } from "svelte/store";
 
 type Messages = Record<string, string>;
 
@@ -17,7 +17,16 @@ for (const [path, messages] of Object.entries(modules)) {
 }
 
 /** Supported languages, in the order language pickers offer them (as in Go). */
-export const supported = ["en", "ru", "de", "es", "fr", "pt-BR", "zh-Hans", "ja"];
+export const supported = [
+  "en",
+  "ru",
+  "de",
+  "es",
+  "fr",
+  "pt-BR",
+  "zh-Hans",
+  "ja",
+];
 
 /** Each supported language in its own name, for language pickers. */
 export const languageNames: Record<string, string> = {
@@ -39,7 +48,10 @@ lang.subscribe((l) => {
 });
 
 /** t translates key, substituting {name} placeholders from params. */
-export function t(key: string, params?: Record<string, string | number | undefined>): string {
+export function t(
+  key: string,
+  params?: Record<string, string | number | undefined>,
+): string {
   const l = get(lang);
   const text = catalogs[l]?.[key] ?? catalogs.en?.[key] ?? key;
   if (!params) return text;
@@ -54,8 +66,12 @@ export function t(key: string, params?: Record<string, string | number | undefin
  * explicit supported preference wins, then the first matching system
  * language, then English.
  */
-export function resolveLanguage(preference: string, system: readonly string[]): string {
-  const exact = (tag: string) => supported.find((s) => s.toLowerCase() === tag.toLowerCase());
+export function resolveLanguage(
+  preference: string,
+  system: readonly string[],
+): string {
+  const exact = (tag: string) =>
+    supported.find((s) => s.toLowerCase() === tag.toLowerCase());
   if (preference && exact(preference)) return exact(preference)!;
   for (const sys of system) {
     const s = sys.trim();
@@ -108,19 +124,27 @@ function digits(v: number): Intl.NumberFormatOptions {
 /** formatBytes formats a size: "8.1 GB", "256 ГБ". */
 export function formatBytes(bytes: number): string {
   const [v, unit] = scaleBytes(bytes);
-  return nf({ style: "unit", unit, unitDisplay: "short", ...digits(v) }).format(v);
+  return nf({ style: "unit", unit, unitDisplay: "short", ...digits(v) }).format(
+    v,
+  );
 }
 
 /** formatSpeed formats a transfer rate: "4.9 MB/s". */
 export function formatSpeed(bytesPerSec: number): string {
   const [v, unit] = scaleBytes(bytesPerSec);
-  return nf({ style: "unit", unit: `${unit}-per-second`, unitDisplay: "short", ...digits(v) }).format(v);
+  return nf({
+    style: "unit",
+    unit: `${unit}-per-second`,
+    unitDisplay: "short",
+    ...digits(v),
+  }).format(v);
 }
 
 /** formatDuration formats seconds compactly: "45 sec", "6 min", "1 hr 48 min". */
 export function formatDuration(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
-  const unit = (n: number, u: string) => nf({ style: "unit", unit: u, unitDisplay: "short" }).format(n);
+  const unit = (n: number, u: string) =>
+    nf({ style: "unit", unit: u, unitDisplay: "short" }).format(n);
   if (s < 60) return unit(s, "second");
   if (s < 3600) return unit(Math.ceil(s / 60), "minute");
   const h = Math.floor(s / 3600);
@@ -143,7 +167,13 @@ export function formatRelative(date: Date, now: Date = new Date()): string {
     [Infinity, "year"],
   ];
   const sizes: Record<string, number> = {
-    second: 1, minute: 60, hour: 3600, day: 86400, week: 604800, month: 2629800, year: 31557600,
+    second: 1,
+    minute: 60,
+    hour: 3600,
+    day: 86400,
+    week: 604800,
+    month: 2629800,
+    year: 31557600,
   };
   for (const [limit, u] of steps) {
     if (abs < limit) {
@@ -177,10 +207,13 @@ export function formatTime(date: Date): string {
  * "Monday, October 19" within the year and "October 19, 2025" before it.
  */
 export function formatDay(date: Date, now: Date = new Date()): string {
-  const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const midnight = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const days = Math.round((midnight(date) - midnight(now)) / 86400e3);
   if (days === 0 || days === -1) {
-    const text = new Intl.RelativeTimeFormat(get(lang), { numeric: "auto" }).format(days, "day");
+    const text = new Intl.RelativeTimeFormat(get(lang), {
+      numeric: "auto",
+    }).format(days, "day");
     return text.charAt(0).toLocaleUpperCase(get(lang)) + text.slice(1);
   }
   if (date.getFullYear() === now.getFullYear()) {

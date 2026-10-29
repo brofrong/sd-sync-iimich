@@ -8,7 +8,9 @@
     "build": "vite build --mode production && touch dist/.gitkeep",
     "build:dev": "vite build --minify false --mode development && touch dist/.gitkeep",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.json"
+    "lint": "bun lint --no-script",
+    "fmt": "bun fmt --no-script",
+    "check": "bun check --no-script && svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
     "@wailsio/runtime": "3.0.0-beta.34"

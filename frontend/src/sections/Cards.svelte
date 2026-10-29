@@ -8,6 +8,7 @@
   // forgotten).
   import { flip } from "svelte/animate";
   import { fade, slide } from "svelte/transition";
+
   import type { CardView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
   import Button from "../components/Button.svelte";
   import GlassCard from "../components/GlassCard.svelte";
@@ -22,7 +23,9 @@
   // The card whose "Forget" awaits confirmation.
   let confirming = $state<string | null>(null);
   // Only the selected card syncs; it can't be forgotten meanwhile.
-  const syncing = $derived($status.code === "syncing" || $status.code === "scanning");
+  const syncing = $derived(
+    $status.code === "syncing" || $status.code === "scanning",
+  );
   const ms = (n: number) => ($reducedMotion ? 0 : n);
 
   function message(err: unknown): string {
@@ -39,7 +42,8 @@
         loadError = "";
       },
       (err) => {
-        if (g === generation) loadError = t("ui.load_failed", { detail: message(err) });
+        if (g === generation)
+          loadError = t("ui.load_failed", { detail: message(err) });
       },
     );
   }
@@ -74,46 +78,81 @@
     </GlassCard>
   {:else if cards.length === 0}
     <GlassCard>
-      <p class="empty-state"><svg class="pulse" viewBox="0 0 24 24" aria-hidden="true"><path d={icons.cards} /></svg><span>{t("cards.empty")}</span></p>
+      <p class="empty-state">
+        <svg class="pulse" viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={icons.cards} /></svg
+        ><span>{t("cards.empty")}</span>
+      </p>
     </GlassCard>
   {:else}
     <ul class="list">
       {#each cards as card (card.uuid)}
-        <li animate:flip={{ duration: ms(450) }} in:fade={{ duration: ms(250) }}>
-          <GlassCard tone={card.selected && card.mounted ? "accent" : "idle"} padding="14px 16px">
+        <li
+          animate:flip={{ duration: ms(450) }}
+          in:fade={{ duration: ms(250) }}
+        >
+          <GlassCard
+            tone={card.selected && card.mounted ? "accent" : "idle"}
+            padding="14px 16px"
+          >
             <div class="row" class:away={!card.mounted}>
               <span class="icon" class:on={card.selected} aria-hidden="true">
                 <svg viewBox="0 0 24 24"><path d={icons.cards} /></svg>
               </span>
               <div class="info">
                 <div class="name-line">
-                  <span class="name" id="card-{card.uuid}" title={card.name || t("cards.unnamed")}>
+                  <span
+                    class="name"
+                    id="card-{card.uuid}"
+                    title={card.name || t("cards.unnamed")}
+                  >
                     {card.name || t("cards.unnamed")}
                   </span>
                   {#if card.selected}
-                    <span class="badge" in:fade={{ duration: ms(200) }}>{t("cards.selected")}</span>
+                    <span class="badge" in:fade={{ duration: ms(200) }}
+                      >{t("cards.selected")}</span
+                    >
                   {/if}
                 </div>
                 <div class="sub">
                   {#if card.mounted}
-                    {#if card.sizeBytes > 0}<span>{formatBytes(card.sizeBytes)}</span>{/if}
-                    {#if card.mountPoint}<span class="path" title={card.mountPoint}>{card.mountPoint}</span>{/if}
+                    {#if card.sizeBytes > 0}<span
+                        >{formatBytes(card.sizeBytes)}</span
+                      >{/if}
+                    {#if card.mountPoint}<span
+                        class="path"
+                        title={card.mountPoint}>{card.mountPoint}</span
+                      >{/if}
                   {:else}
-                    <span class="offline"><i class="dot" aria-hidden="true"></i>{t("cards.not_connected")}</span>
+                    <span class="offline"
+                      ><i class="dot" aria-hidden="true"></i>{t(
+                        "cards.not_connected",
+                      )}</span
+                    >
                   {/if}
                   {#if card.remembered}
-                    <span>{t("cards.uploaded", { count: formatNumber(card.uploaded) })}</span>
+                    <span
+                      >{t("cards.uploaded", {
+                        count: formatNumber(card.uploaded),
+                      })}</span
+                    >
                   {/if}
                 </div>
                 <div class="uuid">{t("cards.uuid", { uuid: card.uuid })}</div>
               </div>
               <div class="actions">
                 {#if card.mounted && !card.selected}
-                  <Button describedby="card-{card.uuid}" onclick={() => act(() => backend.SelectCard(card.uuid))}>
+                  <Button
+                    describedby="card-{card.uuid}"
+                    onclick={() => act(() => backend.SelectCard(card.uuid))}
+                  >
                     {t("cards.select")}
                   </Button>
                 {:else if card.mounted && card.selected}
-                  <Button describedby="card-{card.uuid}" onclick={() => act(() => backend.EjectCard())}>
+                  <Button
+                    describedby="card-{card.uuid}"
+                    onclick={() => act(() => backend.EjectCard())}
+                  >
                     {t("cards.eject")}
                   </Button>
                 {/if}
@@ -130,9 +169,15 @@
             </div>
             {#if confirming === card.uuid}
               <div class="confirm" transition:slide={{ duration: ms(250) }}>
-                <p id="forget-{card.uuid}">{t("cards.forget_confirm", { name: card.name || t("cards.unnamed") })}</p>
+                <p id="forget-{card.uuid}">
+                  {t("cards.forget_confirm", {
+                    name: card.name || t("cards.unnamed"),
+                  })}
+                </p>
                 <div class="actions">
-                  <Button onclick={() => (confirming = null)}>{t("cards.cancel")}</Button>
+                  <Button onclick={() => (confirming = null)}
+                    >{t("cards.cancel")}</Button
+                  >
                   <Button
                     variant="primary"
                     describedby="forget-{card.uuid}"
@@ -196,7 +241,11 @@
       box-shadow 0.4s;
   }
   .icon.on {
-    background: linear-gradient(135deg, rgba(123, 92, 255, 0.55), rgba(10, 132, 255, 0.4));
+    background: linear-gradient(
+      135deg,
+      rgba(123, 92, 255, 0.55),
+      rgba(10, 132, 255, 0.4)
+    );
     color: #fff;
   }
   .row:not(.away) .icon.on {
@@ -311,7 +360,6 @@
     line-height: 1.5;
   }
 
-
   .pulse {
     animation: pulse 2.4s ease-in-out infinite;
   }
@@ -321,6 +369,4 @@
       transform: translateY(1px);
     }
   }
-
-
 </style>

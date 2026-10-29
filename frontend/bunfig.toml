@@ -1,0 +1,13 @@
+[fmt]
+sortImports = true
+ignorePatterns = ["bindings/"]
+
+[lint]
+ignorePatterns = ["bindings/"]
+
+[lint.categories]
+correctness = "error"
+
+[lint.rules]
+# Svelte stores and reactive objects work correctly with spread syntax, this rule is a false positive
+"@typescript-eslint/no-misused-spread" = "off"

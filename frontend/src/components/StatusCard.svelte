@@ -8,10 +8,17 @@
   // becomes an onboarding step.
   import { untrack } from "svelte";
   import { fade, fly } from "svelte/transition";
+
   import type { Status } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/app";
   import type { StateView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
   import { backend } from "../lib/backend";
-  import { formatBytes, formatDuration, formatNumber, formatSpeed, t } from "../lib/i18n";
+  import {
+    formatBytes,
+    formatDuration,
+    formatNumber,
+    formatSpeed,
+    t,
+  } from "../lib/i18n";
   import { icons } from "../lib/icons";
   import { errorCodes, reducedMotion, toneFor } from "../lib/stores";
   import Button from "./Button.svelte";
@@ -30,7 +37,9 @@
 
   const code = $derived(status.code as string);
   const tone = $derived(toneFor(code));
-  const onboarding = $derived(code === "not_configured" || code === "no_card_selected");
+  const onboarding = $derived(
+    code === "not_configured" || code === "no_card_selected",
+  );
   const ms = (n: number) => ($reducedMotion ? 0 : n);
 
   // Counts in params are formatted for the current language.
@@ -39,7 +48,9 @@
     Object.fromEntries(
       Object.entries(status.params ?? {}).map(([k, v]) => [
         k,
-        countParams.has(k) && /^\d+$/.test(v ?? "") ? formatNumber(Number(v)) : (v ?? ""),
+        countParams.has(k) && /^\d+$/.test(v ?? "")
+          ? formatNumber(Number(v))
+          : (v ?? ""),
       ]),
     ),
   );
@@ -49,13 +60,17 @@
   // What became of the card's format before it was ejected (Go: the
   // "format" param of ejected).
   const formatLine = $derived(
-    code === "ejected" && params.format ? t(`status.ejected.format.${params.format}`, params) : "",
+    code === "ejected" && params.format
+      ? t(`status.ejected.format.${params.format}`, params)
+      : "",
   );
 
   // ---- Format countdown ---------------------------------------------------------
   // As Go's formatCountdown (30 s).
   const COUNTDOWN = 30;
-  const seconds = $derived(Math.max(0, Number(status.params?.seconds ?? 0) || 0));
+  const seconds = $derived(
+    Math.max(0, Number(status.params?.seconds ?? 0) || 0),
+  );
   const RING = 2 * Math.PI * 21;
 
   const progress = $derived(status.progress);
@@ -110,7 +125,9 @@
           return await backend.CancelFormat();
       }
     } catch (err) {
-      actionError = t("ui.action_failed", { detail: err instanceof Error ? err.message : String(err) });
+      actionError = t("ui.action_failed", {
+        detail: err instanceof Error ? err.message : String(err),
+      });
       throw err;
     }
   }
@@ -122,8 +139,16 @@
   // ---- Onboarding -------------------------------------------------------------
   const serverReady = $derived(Boolean(view.server.url && view.server.hasKey));
   const steps = $derived([
-    { label: t("onboarding.server"), done: serverReady, current: code === "not_configured" },
-    { label: t("onboarding.card"), done: false, current: code === "no_card_selected" },
+    {
+      label: t("onboarding.server"),
+      done: serverReady,
+      current: code === "not_configured",
+    },
+    {
+      label: t("onboarding.card"),
+      done: false,
+      current: code === "no_card_selected",
+    },
   ]);
   const stepNumber = $derived(code === "not_configured" ? 1 : 2);
 
@@ -133,14 +158,27 @@
 
 <GlassCard {tone} {shake} padding="0">
   <div class="body" style:height={stackHeight ? `${stackHeight}px` : "auto"}>
-    <div class="stack" bind:offsetHeight={stackHeight} aria-live="polite" aria-busy={!code}>
+    <div
+      class="stack"
+      bind:offsetHeight={stackHeight}
+      aria-live="polite"
+      aria-busy={!code}
+    >
       {#key code}
-        <div class="state" in:fly={{ y: 10, duration: ms(350), delay: ms(120) }} out:fade={{ duration: ms(150) }}>
+        <div
+          class="state"
+          in:fly={{ y: 10, duration: ms(350), delay: ms(120) }}
+          out:fade={{ duration: ms(150) }}
+        >
           {#if !code}
-            <div class="skeleton" aria-hidden="true"><i></i><i></i><i class="short"></i></div>
+            <div class="skeleton" aria-hidden="true">
+              <i></i><i></i><i class="short"></i>
+            </div>
           {:else}
             {#if onboarding}
-              <div class="eyebrow">{t("onboarding.step", { current: stepNumber, total: 2 })}</div>
+              <div class="eyebrow">
+                {t("onboarding.step", { current: stepNumber, total: 2 })}
+              </div>
             {/if}
 
             <div class="head">
@@ -153,13 +191,23 @@
                     <path class="tick" d="M7 12.5l3.2 3.2L17 9" />
                   </svg>
                 {:else if tone === "error" || code === "done_with_errors" || code.startsWith("format_skipped")}
-                  <svg class="line pop" viewBox="0 0 24 24"><path d={icons.warning} /></svg>
+                  <svg class="line pop" viewBox="0 0 24 24"
+                    ><path d={icons.warning} /></svg
+                  >
                 {:else if code === "cancelled"}
-                  <svg class="line" viewBox="0 0 24 24"><path d={icons.pause} /></svg>
+                  <svg class="line" viewBox="0 0 24 24"
+                    ><path d={icons.pause} /></svg
+                  >
                 {:else if code === "not_configured"}
-                  <svg class="line" viewBox="0 0 24 24"><path d={icons.server} /></svg>
+                  <svg class="line" viewBox="0 0 24 24"
+                    ><path d={icons.server} /></svg
+                  >
                 {:else}
-                  <svg class="line" class:pulse={code === "waiting_for_card"} viewBox="0 0 24 24"><path d={icons.cards} /></svg>
+                  <svg
+                    class="line"
+                    class:pulse={code === "waiting_for_card"}
+                    viewBox="0 0 24 24"><path d={icons.cards} /></svg
+                  >
                 {/if}
               </span>
               <h2 class="title">{title}</h2>
@@ -167,32 +215,72 @@
 
             {#if code === "syncing" && progress}
               <p class="detail file">
-                <span class="filename">{t("progress.file", { file: progress.file })}</span>
+                <span class="filename"
+                  >{t("progress.file", { file: progress.file })}</span
+                >
                 {#if progress.bytesPerSec > 0}
-                  <span class="sep">·</span><span class="nowrap">{formatSpeed(progress.bytesPerSec)}</span>
+                  <span class="sep">·</span><span class="nowrap"
+                    >{formatSpeed(progress.bytesPerSec)}</span
+                  >
                 {/if}
                 {#if progress.etaSeconds > 0}
-                  <span class="sep">·</span><span class="nowrap">{t("progress.eta", { time: formatDuration(progress.etaSeconds) })}</span>
+                  <span class="sep">·</span><span class="nowrap"
+                    >{t("progress.eta", {
+                      time: formatDuration(progress.etaSeconds),
+                    })}</span
+                  >
                 {/if}
               </p>
               <ProgressBar value={ratio} label={title} />
               <div class="meta">
-                <span>{t("progress.count", { current: formatNumber(progress.current), total: formatNumber(progress.total) })}</span>
+                <span
+                  >{t("progress.count", {
+                    current: formatNumber(progress.current),
+                    total: formatNumber(progress.total),
+                  })}</span
+                >
                 {#if progress.bytesTotal > 0}
-                  <span>{t("progress.bytes", { done: formatBytes(progress.bytesDone), total: formatBytes(progress.bytesTotal) })}</span>
+                  <span
+                    >{t("progress.bytes", {
+                      done: formatBytes(progress.bytesDone),
+                      total: formatBytes(progress.bytesTotal),
+                    })}</span
+                  >
                 {/if}
               </div>
               <div class="counts">
-                <span class="uploaded"><i aria-hidden="true"></i>{t("progress.uploaded", { count: formatNumber(progress.uploaded) })}</span>
-                <span class="duplicates"><i aria-hidden="true"></i>{t("progress.duplicates", { count: formatNumber(progress.duplicates) })}</span>
-                <span class="errors" class:bad={progress.errors > 0}><i aria-hidden="true"></i>{t("progress.errors", { count: formatNumber(progress.errors) })}</span>
+                <span class="uploaded"
+                  ><i aria-hidden="true"></i>{t("progress.uploaded", {
+                    count: formatNumber(progress.uploaded),
+                  })}</span
+                >
+                <span class="duplicates"
+                  ><i aria-hidden="true"></i>{t("progress.duplicates", {
+                    count: formatNumber(progress.duplicates),
+                  })}</span
+                >
+                <span class="errors" class:bad={progress.errors > 0}
+                  ><i aria-hidden="true"></i>{t("progress.errors", {
+                    count: formatNumber(progress.errors),
+                  })}</span
+                >
               </div>
             {:else if code === "verifying" && progress}
               <p class="detail">{detail}</p>
-              <ProgressBar value={progress.total > 0 ? progress.current / progress.total : null} label={title} />
+              <ProgressBar
+                value={progress.total > 0
+                  ? progress.current / progress.total
+                  : null}
+                label={title}
+              />
               {#if progress.total > 0}
                 <div class="meta">
-                  <span>{t("progress.count", { current: formatNumber(progress.current), total: formatNumber(progress.total) })}</span>
+                  <span
+                    >{t("progress.count", {
+                      current: formatNumber(progress.current),
+                      total: formatNumber(progress.total),
+                    })}</span
+                  >
                 </div>
               {/if}
             {:else if code === "format_pending"}
@@ -205,7 +293,8 @@
                     cy="24"
                     r="21"
                     stroke-dasharray={RING}
-                    stroke-dashoffset={RING * (1 - Math.min(seconds, COUNTDOWN) / COUNTDOWN)}
+                    stroke-dashoffset={RING *
+                      (1 - Math.min(seconds, COUNTDOWN) / COUNTDOWN)}
                   />
                   <text x="24" y="24">{seconds}</text>
                 </svg>
@@ -214,7 +303,12 @@
             {:else}
               <p class="detail">{detail}</p>
               {#if formatLine}
-                <p class="detail format-line" class:warn={params.format !== "formatted"}>{formatLine}</p>
+                <p
+                  class="detail format-line"
+                  class:warn={params.format !== "formatted"}
+                >
+                  {formatLine}
+                </p>
               {/if}
               {#if code === "done_with_errors" && errorKinds.length}
                 <ul class="kinds">
@@ -232,7 +326,9 @@
                   <li class:done={step.done} class:current={step.current}>
                     <span class="num" aria-hidden="true">
                       {#if step.done}
-                        <svg viewBox="0 0 24 24"><path d="M6 12.5l4 4L18 8" /></svg>
+                        <svg viewBox="0 0 24 24"
+                          ><path d="M6 12.5l4 4L18 8" /></svg
+                        >
                       {:else}{i + 1}{/if}
                     </span>
                     {step.label}
@@ -244,7 +340,10 @@
             {#if status.actions?.length}
               <div class="actions">
                 {#each status.actions as action, i (action)}
-                  <Button variant={isPrimary(action, i) ? "primary" : "secondary"} onclick={() => run(action)}>
+                  <Button
+                    variant={isPrimary(action, i) ? "primary" : "secondary"}
+                    onclick={() => run(action)}
+                  >
                     {t(`action.${action}`)}
                   </Button>
                 {/each}
@@ -593,7 +692,12 @@
     display: block;
     height: 12px;
     border-radius: 6px;
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.06),
+      rgba(255, 255, 255, 0.12),
+      rgba(255, 255, 255, 0.06)
+    );
     background-size: 200% 100%;
     animation: wave 1.4s ease-in-out infinite;
   }

@@ -16,7 +16,14 @@
     children: Snippet;
   }
 
-  let { variant = "secondary", disabled = false, busy: external = false, describedby, onclick, children }: Props = $props();
+  let {
+    variant = "secondary",
+    disabled = false,
+    busy: external = false,
+    describedby,
+    onclick,
+    children,
+  }: Props = $props();
 
   let running = $state(false);
   const busy = $derived(running || external);
@@ -91,11 +98,15 @@
   .primary {
     border-color: transparent;
     background: var(--accent);
-    box-shadow: var(--glow), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    box-shadow:
+      var(--glow),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22);
   }
   .primary:hover:not(:disabled) {
     background: var(--accent);
-    box-shadow: var(--glow-strong), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+    box-shadow:
+      var(--glow-strong),
+      inset 0 1px 0 rgba(255, 255, 255, 0.28);
   }
   /* Glow marks what can be clicked now; a disabled primary has none and
      loses most of its colour. */

@@ -5,16 +5,23 @@
   // panel opens over all of it.
   import { onMount } from "svelte";
   import { fade, fly } from "svelte/transition";
+
   import LogsDialog from "./components/LogsDialog.svelte";
   import Sidebar from "./components/Sidebar.svelte";
+  import { connect, status } from "./lib/backend";
+  import { lang, t } from "./lib/i18n";
+  import {
+    logsOpen,
+    navigate,
+    reducedMotion,
+    section,
+    toneFor,
+  } from "./lib/stores";
   import Cards from "./sections/Cards.svelte";
   import Gallery from "./sections/Gallery.svelte";
   import History from "./sections/History.svelte";
   import Settings from "./sections/Settings.svelte";
   import Status from "./sections/Status.svelte";
-  import { connect, status } from "./lib/backend";
-  import { lang, t } from "./lib/i18n";
-  import { logsOpen, navigate, reducedMotion, section, toneFor } from "./lib/stores";
 
   onMount(connect);
 
@@ -35,14 +42,20 @@
 
       <header class="head drag">
         {#key $section}
-          <h1 in:fly={{ x: -8, duration: ms(300) }}>{t(`section.${$section}`)}</h1>
+          <h1 in:fly={{ x: -8, duration: ms(300) }}>
+            {t(`section.${$section}`)}
+          </h1>
         {/key}
       </header>
 
       <div class="scroll">
         <div class="pages">
           {#key $section}
-            <div class="page" in:fly={{ y: 12, duration: ms(350), delay: ms(90) }} out:fade={{ duration: ms(120) }}>
+            <div
+              class="page"
+              in:fly={{ y: 12, duration: ms(350), delay: ms(90) }}
+              out:fade={{ duration: ms(120) }}
+            >
               {#if $section === "status"}
                 <Status onNavigate={navigate} />
               {:else if $section === "gallery"}
@@ -173,23 +186,53 @@
     }
   }
 
-  .tone-idle .b1 { color: #6a4cf0; }
-  .tone-idle .b2 { color: #1f5fd6; }
-  .tone-idle .b3 { color: #8a3cc4; }
+  .tone-idle .b1 {
+    color: #6a4cf0;
+  }
+  .tone-idle .b2 {
+    color: #1f5fd6;
+  }
+  .tone-idle .b3 {
+    color: #8a3cc4;
+  }
 
-  .tone-accent .b1 { color: #7b5cff; }
-  .tone-accent .b2 { color: #0a84ff; }
-  .tone-accent .b3 { color: #3ab8ff; }
+  .tone-accent .b1 {
+    color: #7b5cff;
+  }
+  .tone-accent .b2 {
+    color: #0a84ff;
+  }
+  .tone-accent .b3 {
+    color: #3ab8ff;
+  }
 
-  .tone-error .b1 { color: #ff453a; }
-  .tone-error .b2 { color: #b0275a; }
-  .tone-error .b3 { color: #6a3cd6; }
+  .tone-error .b1 {
+    color: #ff453a;
+  }
+  .tone-error .b2 {
+    color: #b0275a;
+  }
+  .tone-error .b3 {
+    color: #6a3cd6;
+  }
 
-  .tone-warn .b1 { color: #ff9f0a; }
-  .tone-warn .b2 { color: #7b5cff; }
-  .tone-warn .b3 { color: #e0583a; }
+  .tone-warn .b1 {
+    color: #ff9f0a;
+  }
+  .tone-warn .b2 {
+    color: #7b5cff;
+  }
+  .tone-warn .b3 {
+    color: #e0583a;
+  }
 
-  .tone-success .b1 { color: #30d158; }
-  .tone-success .b2 { color: #00b3a0; }
-  .tone-success .b3 { color: #0a84ff; }
+  .tone-success .b1 {
+    color: #30d158;
+  }
+  .tone-success .b2 {
+    color: #00b3a0;
+  }
+  .tone-success .b3 {
+    color: #0a84ff;
+  }
 </style>

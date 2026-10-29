@@ -1,3 +1,4 @@
+import { Events } from "@wailsio/runtime";
 // The window's connection to Go: the bound Service, the "status", "state"
 // and "navigate" events, and stores that hold the latest status and state.
 //
@@ -6,10 +7,14 @@
 // mock.ts, so the UI can be developed and screenshotted without the app.
 // A production build never falls back to the mock on its own: fake data
 // in the shipped app would hide a broken bridge.
-import { writable, type Readable } from "svelte/store";
-import { Events } from "@wailsio/runtime";
-import { AppInfoView, Service, StateView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
+import { type Readable, writable } from "svelte/store";
+
 import { Status } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/app";
+import {
+  AppInfoView,
+  Service,
+  StateView,
+} from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
 import { lang } from "./i18n";
 import { navigate } from "./stores";
 
@@ -17,7 +22,9 @@ type ServiceApi = typeof Service;
 
 /** Backend has the methods of the bound Service, returning plain promises. */
 export type Backend = {
-  [K in keyof ServiceApi]: (...args: Parameters<ServiceApi[K]>) => Promise<Awaited<ReturnType<ServiceApi[K]>>>;
+  [K in keyof ServiceApi]: (
+    ...args: Parameters<ServiceApi[K]>
+  ) => Promise<Awaited<ReturnType<ServiceApi[K]>>>;
 };
 
 /** Payloads of the events Go sends to the window. */
@@ -30,7 +37,10 @@ export interface EventMap {
 /** Transport is a backend plus a way to listen to its events. */
 export interface Transport {
   backend: Backend;
-  on<E extends keyof EventMap>(name: E, cb: (data: EventMap[E]) => void): () => void;
+  on<E extends keyof EventMap>(
+    name: E,
+    cb: (data: EventMap[E]) => void,
+  ): () => void;
 }
 
 declare global {
@@ -42,13 +52,19 @@ declare global {
 
 /** True inside the Wails webview (the native message bridge exists). */
 function hasWailsRuntime(): boolean {
-  return Boolean(window.webkit?.messageHandlers?.["external"] || window.chrome?.webview);
+  return Boolean(
+    window.webkit?.messageHandlers?.["external"] || window.chrome?.webview,
+  );
 }
 
-export const isMock = import.meta.env.VITE_MOCK === "1" || (!import.meta.env.PROD && !hasWailsRuntime());
+export const isMock =
+  import.meta.env.VITE_MOCK === "1" ||
+  (!import.meta.env.PROD && !hasWailsRuntime());
 
 if (!isMock && !hasWailsRuntime()) {
-  console.error("Wails runtime not found: the window cannot reach the app (set VITE_MOCK=1 for the mock backend)");
+  console.error(
+    "Wails runtime not found: the window cannot reach the app (set VITE_MOCK=1 for the mock backend)",
+  );
 }
 
 function wailsTransport(): Transport {
@@ -68,7 +84,14 @@ const transport: Promise<Transport> = isMock
 export const backend: Backend = new Proxy({} as Backend, {
   get(_, name: string) {
     return (...args: unknown[]) =>
-      transport.then((tr) => (tr.backend as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>)[name](...args));
+      transport.then((tr) =>
+        (
+          tr.backend as unknown as Record<
+            string,
+            (...a: unknown[]) => Promise<unknown>
+          >
+        )[name](...args),
+      );
   },
 });
 
@@ -79,7 +102,9 @@ const stateStore = writable<StateView>(new StateView());
 export const status: Readable<Status> = { subscribe: statusStore.subscribe };
 
 /** The latest full state (server, card, settings, language, …). */
-export const appState: Readable<StateView> = { subscribe: stateStore.subscribe };
+export const appState: Readable<StateView> = {
+  subscribe: stateStore.subscribe,
+};
 
 const appInfoStore = writable<AppInfoView | null>(null);
 
@@ -87,7 +112,9 @@ const appInfoStore = writable<AppInfoView | null>(null);
  * This copy of the app (Service.AppInfo): its system, whether it is a
  * beta, the GitHub links. null until it has loaded; it does not change.
  */
-export const appInfo: Readable<AppInfoView | null> = { subscribe: appInfoStore.subscribe };
+export const appInfo: Readable<AppInfoView | null> = {
+  subscribe: appInfoStore.subscribe,
+};
 
 let lastStatusAt = 0;
 
@@ -121,14 +148,16 @@ function setState(v: StateView): void {
 export function connect(): () => void {
   let offs: (() => void)[] = [];
   let closed = false;
-  transport.then((tr) => {
+  void transport.then((tr) => {
     if (closed) return;
     offs = [
       tr.on("status", setStatus),
       tr.on("state", setState),
       tr.on("navigate", navigate),
     ];
-    tr.backend.State().then(setState, (err) => console.error("State failed", err));
+    tr.backend
+      .State()
+      .then(setState, (err) => console.error("State failed", err));
     tr.backend.AppInfo().then(
       (info) => appInfoStore.set(info),
       (err) => console.error("AppInfo failed", err),

@@ -11,7 +11,13 @@
     onchange: (checked: boolean) => void;
   }
 
-  let { checked, disabled = false, id, describedby, onchange }: Props = $props();
+  let {
+    checked,
+    disabled = false,
+    id,
+    describedby,
+    onchange,
+  }: Props = $props();
 </script>
 
 <span class="switch" class:on={checked} class:disabled>
@@ -51,7 +57,9 @@
   }
   .switch.on {
     background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
-    box-shadow: var(--glow), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    box-shadow:
+      var(--glow),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
   .switch.disabled {
     opacity: 0.5;

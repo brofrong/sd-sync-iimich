@@ -6,6 +6,7 @@
   // stays empty, and an empty field keeps the saved key.
   import { onDestroy, untrack } from "svelte";
   import { fade, fly } from "svelte/transition";
+
   import type { ServerCheckView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
   import { appState, backend } from "../lib/backend";
   import { t } from "../lib/i18n";
@@ -36,7 +37,11 @@
 
   /** The URL as Go saves it (see normalizeServer), to tell real edits apart. */
   function normalize(u: string): string {
-    return u.trim().replace(/\/+$/, "").replace(/\/api$/, "").replace(/\/+$/, "");
+    return u
+      .trim()
+      .replace(/\/+$/, "")
+      .replace(/\/api$/, "")
+      .replace(/\/+$/, "");
   }
 
   const dirty = $derived(normalize(url) !== savedUrl || key.trim() !== "");
@@ -77,7 +82,13 @@
     try {
       return await backend.TestServer(url, key);
     } catch (err) {
-      return { ok: false, version: "", code: "failed", params: { detail: message(err) }, noStack: false };
+      return {
+        ok: false,
+        version: "",
+        code: "failed",
+        params: { detail: message(err) },
+        noStack: false,
+      };
     }
   }
 
@@ -150,7 +161,9 @@
 
   // The technical reason a check failed, as Go reported it.
   const resultDetail = $derived(
-    result && !result.ok ? [result.params?.status, result.params?.detail].filter(Boolean).join(" ") : "",
+    result && !result.ok
+      ? [result.params?.status, result.params?.detail].filter(Boolean).join(" ")
+      : "",
   );
 </script>
 
@@ -176,7 +189,12 @@
       onkeydown={onEnter}
     />
     {#if urlError}
-      <p id="server-url-error" class="error-text" role="alert" in:fly={{ y: -4, duration: ms(220) }}>
+      <p
+        id="server-url-error"
+        class="error-text"
+        role="alert"
+        in:fly={{ y: -4, duration: ms(220) }}
+      >
         {t("server.invalid_url")}
       </p>
     {:else}
@@ -194,7 +212,9 @@
         autocomplete="off"
         autocapitalize="off"
         spellcheck="false"
-        placeholder={hasKey && keyError !== "key_required" ? t("server.key_saved_placeholder") : t("server.key_placeholder")}
+        placeholder={hasKey && keyError !== "key_required"
+          ? t("server.key_saved_placeholder")
+          : t("server.key_placeholder")}
         aria-invalid={keyError !== ""}
         aria-describedby={keyError ? "server-key-error" : "server-key-hint"}
         bind:this={keyInput}
@@ -211,12 +231,21 @@
         title={showKey ? t("server.hide_key") : t("server.show_key")}
         onclick={() => (showKey = !showKey)}
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d={showKey ? icons.eyeOff : icons.eye} /></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={showKey ? icons.eyeOff : icons.eye} /></svg
+        >
       </button>
     </div>
     {#if keyError}
-      <p id="server-key-error" class="error-text" role="alert" in:fly={{ y: -4, duration: ms(220) }}>
-        {keyError === "key_missing" ? t("server.key_missing") : t("server.key_required")}
+      <p
+        id="server-key-error"
+        class="error-text"
+        role="alert"
+        in:fly={{ y: -4, duration: ms(220) }}
+      >
+        {keyError === "key_missing"
+          ? t("server.key_missing")
+          : t("server.key_required")}
       </p>
     {:else}
       <p id="server-key-hint" class="hint">{t("server.key_hint")}</p>
@@ -224,14 +253,23 @@
   </div>
 
   <div class="actions">
-    <Button busy={busy === "test"} disabled={busy === "save"} onclick={test}>{t("server.test")}</Button>
-    <Button variant="primary" busy={busy === "save"} disabled={!dirty || busy === "test"} onclick={save}>
+    <Button busy={busy === "test"} disabled={busy === "save"} onclick={test}
+      >{t("server.test")}</Button
+    >
+    <Button
+      variant="primary"
+      busy={busy === "save"}
+      disabled={!dirty || busy === "test"}
+      onclick={save}
+    >
       {t("server.save")}
     </Button>
     <span class="saved" aria-live="polite">
       {#if saved}
         <span class="saved-text" transition:fade={{ duration: ms(200) }}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.check} /></svg>{t("server.saved")}
+          <svg viewBox="0 0 24 24" aria-hidden="true"
+            ><path d={icons.check} /></svg
+          >{t("server.saved")}
         </span>
       {/if}
     </span>
@@ -246,17 +284,29 @@
 
   <div aria-live="polite">
     {#if result}
-      <div class="result" class:ok={result.ok} in:fly={{ y: 6, duration: ms(300) }}>
+      <div
+        class="result"
+        class:ok={result.ok}
+        in:fly={{ y: 6, duration: ms(300) }}
+      >
         <span class="glyph" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d={result.ok ? icons.check : icons.warning} /></svg>
+          <svg viewBox="0 0 24 24"
+            ><path d={result.ok ? icons.check : icons.warning} /></svg
+          >
         </span>
         <div class="result-text">
           {#if result.ok}
-            <p class="result-title">{t("server.connected", { version: result.version })}</p>
-            {#if result.noStack}<p class="detail-text">{t("server.no_stack")}</p>{/if}
+            <p class="result-title">
+              {t("server.connected", { version: result.version })}
+            </p>
+            {#if result.noStack}<p class="detail-text">
+                {t("server.no_stack")}
+              </p>{/if}
           {:else}
             <p class="result-title">
-              {result.code === "key_forbidden" ? t("server.key_forbidden") : t(`status.${result.code}.title`)}
+              {result.code === "key_forbidden"
+                ? t("server.key_forbidden")
+                : t(`status.${result.code}.title`)}
             </p>
             {#if resultDetail}<p class="detail-text">{resultDetail}</p>{/if}
           {/if}

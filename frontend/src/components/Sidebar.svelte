@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { appInfo, appState, backend, status } from "../lib/backend";
   // The plain dark sidebar. A glowing pill slides with a spring to the
   // selected section; the Status item carries a dot coloured by the
   // current status so a problem is visible from any section. Its footer
@@ -8,7 +9,6 @@
   import { t } from "../lib/i18n";
   import { icons } from "../lib/icons";
   import { sections, toneFor } from "../lib/stores";
-  import { appInfo, appState, backend, status } from "../lib/backend";
 
   interface Props {
     current: string;
@@ -17,7 +17,9 @@
 
   let { current, onSelect }: Props = $props();
 
-  const index = $derived(Math.max(0, sections.indexOf(current as (typeof sections)[number])));
+  const index = $derived(
+    Math.max(0, sections.indexOf(current as (typeof sections)[number])),
+  );
   const tone = $derived(toneFor($status.code));
 
   let buttons = $state<HTMLButtonElement[]>([]);
@@ -25,7 +27,8 @@
   function onKey(e: KeyboardEvent, i: number): void {
     let next = -1;
     if (e.key === "ArrowDown") next = (i + 1) % sections.length;
-    else if (e.key === "ArrowUp") next = (i - 1 + sections.length) % sections.length;
+    else if (e.key === "ArrowUp")
+      next = (i - 1 + sections.length) % sections.length;
     else if (e.key === "Home") next = 0;
     else if (e.key === "End") next = sections.length - 1;
     if (next < 0) return;
@@ -49,7 +52,11 @@
 <aside class="sidebar">
   <div class="titlebar drag" aria-hidden="true"></div>
   <nav aria-label={t("sidebar.label")}>
-    <span class="pill" style:transform="translateY({index * 34}px)" aria-hidden="true"></span>
+    <span
+      class="pill"
+      style:transform="translateY({index * 34}px)"
+      aria-hidden="true"
+    ></span>
     {#each sections as id, i (id)}
       <button
         type="button"
@@ -61,7 +68,9 @@
         onclick={() => onSelect(id)}
         onkeydown={(e) => onKey(e, i)}
       >
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d={icons[id]} /></svg>
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={icons[id]} /></svg
+        >
         <span class="name">{t(`section.${id}`)}</span>
         {#if id === "status" && tone !== "idle"}
           <span class="dot {tone}" aria-hidden="true"></span>
@@ -75,7 +84,9 @@
         <span class="version">{$appState.version}</span>
       {/if}
       {#if info?.beta}
-        <span class="beta" title={t("sidebar.beta_hint")}>{t("sidebar.beta")}</span>
+        <span class="beta" title={t("sidebar.beta_hint")}
+          >{t("sidebar.beta")}</span
+        >
       {/if}
     </div>
     <div class="actions">
@@ -87,7 +98,9 @@
         disabled={!info}
         onclick={() => open(info?.repoURL)}
       >
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d={icons.github} /></svg>
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={icons.github} /></svg
+        >
       </button>
       <button
         type="button"
@@ -97,10 +110,19 @@
         disabled={!info}
         onclick={() => open(info?.issueURL)}
       >
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d={icons.bug} /></svg>
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={icons.bug} /></svg
+        >
       </button>
-      <button type="button" class="quit" title={t("sidebar.quit_hint")} onclick={quit}>
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d={icons.power} /></svg>
+      <button
+        type="button"
+        class="quit"
+        title={t("sidebar.quit_hint")}
+        onclick={quit}
+      >
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={icons.power} /></svg
+        >
         <span>{t("sidebar.quit")}</span>
       </button>
     </div>
@@ -139,7 +161,11 @@
     right: 0;
     height: 32px;
     border-radius: var(--radius-m);
-    background: linear-gradient(90deg, rgba(140, 110, 255, 0.5), rgba(255, 255, 255, 0.06));
+    background: linear-gradient(
+      90deg,
+      rgba(140, 110, 255, 0.5),
+      rgba(255, 255, 255, 0.06)
+    );
     box-shadow: var(--glow-pill);
     transition: transform 0.45s var(--spring);
     pointer-events: none;
@@ -159,7 +185,9 @@
     font-size: 13px;
     text-align: left;
     cursor: pointer;
-    transition: color 0.25s, background-color 0.2s;
+    transition:
+      color 0.25s,
+      background-color 0.2s;
   }
   .item:hover:not(.on) {
     background: rgba(255, 255, 255, 0.04);
@@ -268,7 +296,9 @@
     color: var(--text-3);
     font-size: 12px;
     cursor: pointer;
-    transition: color 0.2s, background-color 0.2s;
+    transition:
+      color 0.2s,
+      background-color 0.2s;
   }
   .icon-btn {
     width: 28px;

@@ -7,14 +7,25 @@
   // demand, with "Retry failed files"; runs from before the list was kept
   // say so instead.
   import { fly, slide } from "svelte/transition";
-  import type { FileFailure, SyncRun } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/state";
+
+  import type {
+    FileFailure,
+    SyncRun,
+  } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/state";
   import Button from "../components/Button.svelte";
   import GlassCard from "../components/GlassCard.svelte";
   import { backend, parseTime, status } from "../lib/backend";
-  import { formatBytes, formatDay, formatDuration, formatNumber, formatTime, t } from "../lib/i18n";
+  import {
+    formatBytes,
+    formatDay,
+    formatDuration,
+    formatNumber,
+    formatTime,
+    t,
+  } from "../lib/i18n";
   import { icons } from "../lib/icons";
   import { errorKindLines } from "../lib/runs";
-  import { navigate, reducedMotion, toneFor, type Tone } from "../lib/stores";
+  import { navigate, reducedMotion, type Tone, toneFor } from "../lib/stores";
 
   const LIMIT = 50;
 
@@ -78,19 +89,37 @@
 
     // Go writes the counts when a run finishes: an unfinished run's zeros
     // mean "unknown", so it shows none.
-    const counted = Boolean(finished) || run.uploaded + run.duplicates + run.skipped + run.errors > 0;
-    const stats: Row["stats"] = counted ? [{ text: t("history.uploaded", { count: formatNumber(run.uploaded) }) }] : [];
-    if (run.duplicates > 0) stats.push({ text: t("history.duplicates", { count: formatNumber(run.duplicates) }) });
-    if (run.skipped > 0) stats.push({ text: t("history.skipped", { count: formatNumber(run.skipped) }) });
-    if (run.errors > 0) stats.push({ text: t("history.errors", { count: formatNumber(run.errors) }), bad: true });
+    const counted =
+      Boolean(finished) ||
+      run.uploaded + run.duplicates + run.skipped + run.errors > 0;
+    const stats: Row["stats"] = counted
+      ? [{ text: t("history.uploaded", { count: formatNumber(run.uploaded) }) }]
+      : [];
+    if (run.duplicates > 0)
+      stats.push({
+        text: t("history.duplicates", { count: formatNumber(run.duplicates) }),
+      });
+    if (run.skipped > 0)
+      stats.push({
+        text: t("history.skipped", { count: formatNumber(run.skipped) }),
+      });
+    if (run.errors > 0)
+      stats.push({
+        text: t("history.errors", { count: formatNumber(run.errors) }),
+        bad: true,
+      });
     if (run.bytes > 0) stats.push({ text: formatBytes(run.bytes) });
-    if (started && finished > started) stats.push({ text: formatDuration((finished - started) / 1000) });
+    if (started && finished > started)
+      stats.push({ text: formatDuration((finished - started) / 1000) });
 
     const kinds = errorKindLines(run.errorSummary);
 
     // The technical reason a run stopped, as Go reported it.
     const p = run.resultParams ?? {};
-    const detail = finished && p.detail ? [p.status, p.detail].filter(Boolean).join(" ") : "";
+    const detail =
+      finished && p.detail
+        ? [p.status, p.detail].filter(Boolean).join(" ")
+        : "";
 
     return {
       id: run.id,
@@ -121,7 +150,12 @@
       delete open[row.id];
       return;
     }
-    open[row.id] = { loading: row.failuresRecorded, files: [], error: "", retryError: "" };
+    open[row.id] = {
+      loading: row.failuresRecorded,
+      files: [],
+      error: "",
+      retryError: "",
+    };
     if (!row.failuresRecorded) return;
     backend.RunFailures(row.id).then(
       (files) => {
@@ -130,7 +164,11 @@
       },
       (err) => {
         const f = open[row.id];
-        if (f) Object.assign(f, { loading: false, error: t("ui.load_failed", { detail: message(err) }) });
+        if (f)
+          Object.assign(f, {
+            loading: false,
+            error: t("ui.load_failed", { detail: message(err) }),
+          });
       },
     );
   }
@@ -179,7 +217,11 @@
     </GlassCard>
   {:else if runs.length === 0}
     <GlassCard>
-      <p class="empty-state"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.history} /></svg><span>{t("history.empty")}</span></p>
+      <p class="empty-state">
+        <svg viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={icons.history} /></svg
+        ><span>{t("history.empty")}</span>
+      </p>
     </GlassCard>
   {:else}
     <GlassCard padding="4px 18px 6px">
@@ -188,7 +230,13 @@
           <h2 id="day-{g}">{group.day}</h2>
           <ol>
             {#each group.rows as row, i (row.id)}
-              <li in:fly={{ y: 6, duration: ms(300), delay: ms(Math.min(g * 3 + i, 12) * 30) }}>
+              <li
+                in:fly={{
+                  y: 6,
+                  duration: ms(300),
+                  delay: ms(Math.min(g * 3 + i, 12) * 30),
+                }}
+              >
                 <span class="dot {row.tone}" aria-hidden="true"></span>
                 <div class="main">
                   <div class="line">
@@ -221,14 +269,24 @@
                       aria-controls="failures-{row.id}"
                       onclick={() => toggle(row)}
                     >
-                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>{t("history.failures")}
+                      <svg viewBox="0 0 24 24" aria-hidden="true"
+                        ><path d="M9 6l6 6-6 6" /></svg
+                      >{t("history.failures")}
                     </button>
                     {#if f}
-                      <div class="failures" id="failures-{row.id}" transition:slide={{ duration: ms(250) }}>
+                      <div
+                        class="failures"
+                        id="failures-{row.id}"
+                        transition:slide={{ duration: ms(250) }}
+                      >
                         {#if !row.failuresRecorded}
-                          <p class="hint">{t("history.failures_unavailable")}</p>
+                          <p class="hint">
+                            {t("history.failures_unavailable")}
+                          </p>
                         {:else if f.loading}
-                          <div class="skeleton-lines" aria-hidden="true"><i></i><i></i></div>
+                          <div class="skeleton-lines" aria-hidden="true">
+                            <i></i><i></i>
+                          </div>
                         {:else if f.error}
                           <p class="error-text" role="alert">{f.error}</p>
                         {:else}
@@ -237,7 +295,9 @@
                               <li>
                                 <span class="path">{file.relativePath}</span>
                                 <span class="sep" aria-hidden="true">—</span>
-                                <span class="kind">{t(`error_kind.${file.kind}`)}</span>
+                                <span class="kind"
+                                  >{t(`error_kind.${file.kind}`)}</span
+                                >
                                 {#if file.detail}
                                   <span class="sep" aria-hidden="true">—</span>
                                   <span class="why">{file.detail}</span>
@@ -247,16 +307,23 @@
                           </ul>
                           {#if row.errors > f.files.length && f.files.length}
                             <p class="hint">
-                              {t("history.failures_truncated", { shown: formatNumber(f.files.length), total: formatNumber(row.errors) })}
+                              {t("history.failures_truncated", {
+                                shown: formatNumber(f.files.length),
+                                total: formatNumber(row.errors),
+                              })}
                             </p>
                           {/if}
                           {#if f.files.length}
                             <div class="retry">
-                              <Button onclick={() => retry(row)}>{t("history.retry_failures")}</Button>
+                              <Button onclick={() => retry(row)}
+                                >{t("history.retry_failures")}</Button
+                              >
                             </div>
                           {/if}
                           {#if f.retryError}
-                            <p class="error-text" role="alert">{f.retryError}</p>
+                            <p class="error-text" role="alert">
+                              {f.retryError}
+                            </p>
                           {/if}
                         {/if}
                       </div>
@@ -473,6 +540,4 @@
       transform: scale(0.8);
     }
   }
-
-
 </style>

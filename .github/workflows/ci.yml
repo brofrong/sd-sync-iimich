@@ -53,9 +53,17 @@ jobs:
             exit 1
           fi
 
+      - name: Lint frontend
+        working-directory: frontend
+        run: bun lint
+
+      - name: Format frontend
+        working-directory: frontend
+        run: bun fmt --check
+
       - name: Check frontend
         working-directory: frontend
-        run: npm run check
+        run: bun check
 
       - name: Build
         run: go build -o sd-sync-immich ./cmd/sd-sync-immich

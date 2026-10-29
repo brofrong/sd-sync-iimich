@@ -15,13 +15,24 @@
   // the log panel.
   import { onDestroy, onMount } from "svelte";
   import { fade, fly, slide } from "svelte/transition";
-  import { NotificationsView, SettingsView, type UpdateView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
+
+  import {
+    NotificationsView,
+    SettingsView,
+    type UpdateView,
+  } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
   import Button from "../components/Button.svelte";
   import GlassCard from "../components/GlassCard.svelte";
   import ServerSettings from "../components/ServerSettings.svelte";
   import Switch from "../components/Switch.svelte";
   import { appInfo, appState, backend, parseTime } from "../lib/backend";
-  import { formatNumber, formatRelative, languageNames, supported, t } from "../lib/i18n";
+  import {
+    formatNumber,
+    formatRelative,
+    languageNames,
+    supported,
+    t,
+  } from "../lib/i18n";
   import { icons } from "../lib/icons";
   import { logsOpen, reducedMotion } from "../lib/stores";
 
@@ -72,7 +83,16 @@
   let confirmWait = $state(0);
   let confirmTimer: ReturnType<typeof setInterval> | undefined;
   let telemetry = $state(false);
-  let notifications = $state(new NotificationsView({ enabled: true, done: true, errors: true, otherCard: true, server: true, card: true }));
+  let notifications = $state(
+    new NotificationsView({
+      enabled: true,
+      done: true,
+      errors: true,
+      otherCard: true,
+      server: true,
+      card: true,
+    }),
+  );
 
   // The notification kinds, in the order of the spec.
   const notifyKinds = [
@@ -86,7 +106,10 @@
   function syncFromState(s: SettingsView): void {
     language = s.language;
     auto = s.concurrency <= 0;
-    concurrency = s.concurrency >= 1 && s.concurrency <= MAX_CONCURRENCY ? s.concurrency : DEFAULT_CONCURRENCY;
+    concurrency =
+      s.concurrency >= 1 && s.concurrency <= MAX_CONCURRENCY
+        ? s.concurrency
+        : DEFAULT_CONCURRENCY;
     autoPaths = s.autoPaths;
     stackRawJpeg = s.stackRawJpeg;
     autostart = s.autostart;
@@ -254,7 +277,8 @@
   const flatpak = $derived($appInfo?.flatpak ?? false);
 
   onMount(() => {
-    if (!$appInfo?.flatpak && Date.now() - checkedAt > AUTO_CHECK_AFTER) checkUpdates(true);
+    if (!$appInfo?.flatpak && Date.now() - checkedAt > AUTO_CHECK_AFTER)
+      checkUpdates(true);
   });
 
   let confirming = $state(false);
@@ -294,7 +318,9 @@
         <p class="error-text" role="alert">{saveError}</p>
       {:else if saved}
         <p class="ok-text" transition:fade={{ duration: ms(200) }}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.check} /></svg>{t("settings.saved")}
+          <svg viewBox="0 0 24 24" aria-hidden="true"
+            ><path d={icons.check} /></svg
+          >{t("settings.saved")}
         </p>
       {/if}
     {/if}
@@ -307,33 +333,50 @@
 
     <div class="version-row">
       <div class="text">
-        <div class="app-version">{t("settings.version", { version: $appState.version || "—" })}</div>
+        <div class="app-version">
+          {t("settings.version", { version: $appState.version || "—" })}
+        </div>
         <div class="check-result" aria-live="polite">
           {#if flatpak}
             <p class="hint">{t("settings.updates_flatpak")}</p>
           {:else if check === "failed"}
-            <p class="error-text" in:fly={{ y: 4, duration: ms(250) }}>{checkError}</p>
+            <p class="error-text" in:fly={{ y: 4, duration: ms(250) }}>
+              {checkError}
+            </p>
           {:else if checkedAt && !update}
             <p class="ok-text" in:fly={{ y: 4, duration: ms(250) }}>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.check} /></svg>{t("settings.up_to_date")}
+              <svg viewBox="0 0 24 24" aria-hidden="true"
+                ><path d={icons.check} /></svg
+              >{t("settings.up_to_date")}
             </p>
           {/if}
           {#if checkedAt}
             <p class="hint">
-              {t("settings.last_checked", { when: formatRelative(new Date(checkedAt), new Date(Math.max(now, checkedAt))) })}
+              {t("settings.last_checked", {
+                when: formatRelative(
+                  new Date(checkedAt),
+                  new Date(Math.max(now, checkedAt)),
+                ),
+              })}
             </p>
           {/if}
         </div>
       </div>
       {#if !flatpak}
-        <Button busy={check === "checking"} disabled={installing} onclick={() => checkUpdates()}>{t("settings.check_updates")}</Button>
+        <Button
+          busy={check === "checking"}
+          disabled={installing}
+          onclick={() => checkUpdates()}>{t("settings.check_updates")}</Button
+        >
       {/if}
     </div>
 
     {#if update}
       <div class="update" transition:slide={{ duration: ms(350) }}>
         <div class="update-head">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.download} /></svg>
+          <svg viewBox="0 0 24 24" aria-hidden="true"
+            ><path d={icons.download} /></svg
+          >
           <h3>{t("settings.update_available", { version: update.version })}</h3>
         </div>
         {#if update.notes.trim()}
@@ -342,18 +385,28 @@
         {/if}
 
         {#if installing}
-          <p class="installing" role="status"><span class="spinner" aria-hidden="true"></span>{t("settings.installing")}</p>
+          <p class="installing" role="status">
+            <span class="spinner" aria-hidden="true"></span>{t(
+              "settings.installing",
+            )}
+          </p>
         {:else if confirming}
           <div class="confirm" in:fly={{ y: 4, duration: ms(250) }}>
             <p>{t("settings.install_confirm", { version: update.version })}</p>
             <div class="buttons">
-              <Button variant="primary" onclick={install}>{t("settings.install_now")}</Button>
-              <Button onclick={() => (confirming = false)}>{t("settings.cancel")}</Button>
+              <Button variant="primary" onclick={install}
+                >{t("settings.install_now")}</Button
+              >
+              <Button onclick={() => (confirming = false)}
+                >{t("settings.cancel")}</Button
+              >
             </div>
           </div>
         {:else}
           <div class="buttons">
-            <Button variant="primary" onclick={() => (confirming = true)}>{t("settings.install")}</Button>
+            <Button variant="primary" onclick={() => (confirming = true)}
+              >{t("settings.install")}</Button
+            >
           </div>
         {/if}
         {#if installError}
@@ -369,7 +422,9 @@
     <h2 class="eyebrow">{t("settings.general")}</h2>
 
     <div class="row">
-      <div class="text"><label for="set-language">{t("settings.language")}</label></div>
+      <div class="text">
+        <label for="set-language">{t("settings.language")}</label>
+      </div>
       <select
         id="set-language"
         class="input control"
@@ -392,7 +447,9 @@
         <p class="hint" id="set-concurrency-hint">
           {auto
             ? t("settings.concurrency_auto_hint")
-            : t("settings.concurrency_hint", { default: formatNumber(DEFAULT_CONCURRENCY) })}
+            : t("settings.concurrency_hint", {
+                default: formatNumber(DEFAULT_CONCURRENCY),
+              })}
         </p>
       </div>
       <div class="auto control">
@@ -432,7 +489,9 @@
     <div class="row">
       <div class="text">
         <label for="set-auto-paths">{t("settings.auto_paths")}</label>
-        <p class="hint" id="set-auto-paths-hint">{t("settings.auto_paths_hint")}</p>
+        <p class="hint" id="set-auto-paths-hint">
+          {t("settings.auto_paths_hint")}
+        </p>
       </div>
       <Switch
         id="set-auto-paths"
@@ -448,7 +507,9 @@
     <div class="row">
       <div class="text">
         <label for="set-stack-raw-jpeg">{t("settings.stack_raw_jpeg")}</label>
-        <p class="hint" id="set-stack-raw-jpeg-hint">{t("settings.stack_raw_jpeg_hint")}</p>
+        <p class="hint" id="set-stack-raw-jpeg-hint">
+          {t("settings.stack_raw_jpeg_hint")}
+        </p>
       </div>
       <Switch
         id="set-stack-raw-jpeg"
@@ -492,7 +553,9 @@
     <div class="row">
       <div class="text">
         <label for="set-auto-eject">{t("settings.auto_eject")}</label>
-        <p class="hint" id="set-auto-eject-hint">{t("settings.auto_eject_hint")}</p>
+        <p class="hint" id="set-auto-eject-hint">
+          {t("settings.auto_eject_hint")}
+        </p>
       </div>
       <Switch
         id="set-auto-eject"
@@ -508,11 +571,15 @@
     <div class="row">
       <div class="text">
         <label for="set-auto-format">{t("settings.auto_format")}</label>
-        <p class="hint" id="set-auto-format-hint">{t("settings.auto_format_hint")}</p>
+        <p class="hint" id="set-auto-format-hint">
+          {t("settings.auto_format_hint")}
+        </p>
         {#if $appState.settings.autoFormatNeedsAdmin}
           <!-- Windows without administrator rights: the card is never
                formatted, only ejected (if that is on). -->
-          <p class="hint" id="set-auto-format-admin-hint">{t("settings.auto_format_needs_admin_hint")}</p>
+          <p class="hint" id="set-auto-format-admin-hint">
+            {t("settings.auto_format_needs_admin_hint")}
+          </p>
         {/if}
       </div>
       <Switch
@@ -525,8 +592,12 @@
       />
       {#if confirmFormat}
         <div class="confirm-row" transition:slide={{ duration: ms(250) }}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.warning} /></svg>
-          <p id="set-auto-format-confirm">{t("settings.auto_format_confirm")}</p>
+          <svg viewBox="0 0 24 24" aria-hidden="true"
+            ><path d={icons.warning} /></svg
+          >
+          <p id="set-auto-format-confirm">
+            {t("settings.auto_format_confirm")}
+          </p>
           <div class="buttons">
             <Button onclick={closeConfirm}>{t("settings.cancel")}</Button>
             <Button
@@ -539,12 +610,18 @@
                    button's width, so it does not jump as the count ends. -->
               <span class="reserve">
                 <span class="slot" aria-hidden="true">
-                  {t("settings.auto_format_enable_countdown", { seconds: formatNumber(CONFIRM_SECONDS) })}
+                  {t("settings.auto_format_enable_countdown", {
+                    seconds: formatNumber(CONFIRM_SECONDS),
+                  })}
                 </span>
-                <span class="slot" aria-hidden="true">{t("settings.auto_format_enable")}</span>
+                <span class="slot" aria-hidden="true"
+                  >{t("settings.auto_format_enable")}</span
+                >
                 <span>
                   {confirmWait > 0
-                    ? t("settings.auto_format_enable_countdown", { seconds: formatNumber(confirmWait) })
+                    ? t("settings.auto_format_enable_countdown", {
+                        seconds: formatNumber(confirmWait),
+                      })
                     : t("settings.auto_format_enable")}
                 </span>
               </span>
@@ -598,7 +675,12 @@
         <label for="set-stats">{t("settings.stats_enabled")}</label>
         <p class="hint" id="set-stats-hint">{t("settings.stats_hint")}</p>
       </div>
-      <Switch id="set-stats" checked={telemetry} describedby="set-stats-hint" onchange={saveTelemetry} />
+      <Switch
+        id="set-stats"
+        checked={telemetry}
+        describedby="set-stats-hint"
+        onchange={saveTelemetry}
+      />
     </div>
 
     {@render feedback("stats")}
@@ -612,7 +694,9 @@
         <p class="hint" id="set-logs-hint">{t("settings.logs_hint")}</p>
       </div>
       <Button describedby="set-logs-hint" onclick={() => logsOpen.set(true)}>
-        <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d={icons.logs} /></svg>
+        <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={icons.logs} /></svg
+        >
         {t("settings.open_logs")}
       </Button>
     </div>
@@ -686,7 +770,8 @@
     height: 5px;
     border-radius: 3px;
     background:
-      linear-gradient(90deg, var(--accent-1), var(--accent-2)) 0 0 / var(--fill) 100% no-repeat,
+      linear-gradient(90deg, var(--accent-1), var(--accent-2)) 0 0 / var(--fill)
+        100% no-repeat,
       rgba(255, 255, 255, 0.14);
   }
   input[type="range"]::-webkit-slider-thumb {
@@ -703,7 +788,9 @@
   }
   input[type="range"]:active::-webkit-slider-thumb {
     transform: scale(1.15);
-    box-shadow: 0 0 12px rgba(123, 92, 255, 0.7), 0 1px 4px rgba(0, 0, 0, 0.4);
+    box-shadow:
+      0 0 12px rgba(123, 92, 255, 0.7),
+      0 1px 4px rgba(0, 0, 0, 0.4);
   }
   input[type="range"]::-moz-range-track {
     height: 5px;

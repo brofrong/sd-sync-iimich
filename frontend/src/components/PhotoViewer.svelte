@@ -15,10 +15,17 @@
   // gone (the card was removed).
   import { onDestroy, onMount, untrack } from "svelte";
   import { fade } from "svelte/transition";
+
   import type { Photo } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gallery";
   import { appInfo, backend, parseTime } from "../lib/backend";
   import { dayOf } from "../lib/days";
-  import { formatBytes, formatDay, formatNumber, formatTime, t } from "../lib/i18n";
+  import {
+    formatBytes,
+    formatDay,
+    formatNumber,
+    formatTime,
+    t,
+  } from "../lib/i18n";
   import { icons } from "../lib/icons";
   import { logsOpen, reducedMotion } from "../lib/stores";
 
@@ -39,7 +46,9 @@
   // ---- Position -------------------------------------------------------------
   // The photo shown, by path, with the index it had: a reloaded list may
   // have moved it.
-  let at = $state(untrack(() => ({ path: photos[index]?.path ?? "", i: index })));
+  let at = $state(
+    untrack(() => ({ path: photos[index]?.path ?? "", i: index })),
+  );
 
   // A new index from the Gallery (its tile was activated) shows that photo.
   let lastIndex = untrack(() => index);
@@ -50,7 +59,9 @@
   });
 
   const current = $derived(
-    photos[at.i]?.path === at.path ? at.i : photos.findIndex((p) => p.path === at.path),
+    photos[at.i]?.path === at.path
+      ? at.i
+      : photos.findIndex((p) => p.path === at.path),
   );
   const photo = $derived<Photo | undefined>(photos[current]);
 
@@ -76,7 +87,8 @@
     let first = current;
     while (first > 0 && dayOf(photos[first - 1].takenAt) === key) first--;
     let last = current;
-    while (last < photos.length - 1 && dayOf(photos[last + 1].takenAt) === key) last++;
+    while (last < photos.length - 1 && dayOf(photos[last + 1].takenAt) === key)
+      last++;
     return { n: current - first + 1, count: last - first + 1 };
   });
 
@@ -84,15 +96,25 @@
   const strip = $derived.by(() => {
     const slots: ({ photo: Photo; i: number } | null)[] = [];
     for (let i = current - STRIP; i <= current + STRIP; i++) {
-      slots.push(current >= 0 && i >= 0 && i < photos.length ? { photo: photos[i], i } : null);
+      slots.push(
+        current >= 0 && i >= 0 && i < photos.length
+          ? { photo: photos[i], i }
+          : null,
+      );
     }
     return slots;
   });
 
   // ---- Details --------------------------------------------------------------
   const takenAt = $derived(photo ? parseTime(photo.takenAt) : 0);
-  const when = $derived(takenAt > 0 ? `${formatDay(new Date(takenAt))}, ${formatTime(new Date(takenAt))}` : "");
-  const statusLabel = $derived(photo ? t(`gallery.status_${photo.status}`) : "");
+  const when = $derived(
+    takenAt > 0
+      ? `${formatDay(new Date(takenAt))}, ${formatTime(new Date(takenAt))}`
+      : "",
+  );
+  const statusLabel = $derived(
+    photo ? t(`gallery.status_${photo.status}`) : "",
+  );
 
   // The full photo replaces the thumbnail once it has loaded.
   let loaded = $state("");
@@ -103,7 +125,9 @@
   // reload during a sync, and the same neighbours need no new fetch.
   let ahead: HTMLImageElement[] = [];
   const aroundKey = $derived(
-    [photos[current - 1]?.src, photos[current + 1]?.src].filter(Boolean).join("|"),
+    [photos[current - 1]?.src, photos[current + 1]?.src]
+      .filter(Boolean)
+      .join("|"),
   );
   $effect(() => {
     const around = aroundKey ? aroundKey.split("|") : [];
@@ -238,7 +262,9 @@
 
     <header class="top">
       <div class="info">
-        <h2 id="viewer-name" class="name" title={photo?.name}>{photo?.name ?? ""}</h2>
+        <h2 id="viewer-name" class="name" title={photo?.name}>
+          {photo?.name ?? ""}
+        </h2>
         <span class="meta">
           {#if when}<span>{when}</span>{/if}
           {#if photo}<span>{formatBytes(photo.size)}</span>{/if}
@@ -262,11 +288,15 @@
         type="button"
         class="round"
         aria-label={full ? t("viewer.exit_fullscreen") : t("viewer.fullscreen")}
-        title="{full ? t('viewer.exit_fullscreen') : t('viewer.fullscreen')} (F)"
+        title="{full
+          ? t('viewer.exit_fullscreen')
+          : t('viewer.fullscreen')} (F)"
         aria-pressed={full}
         onclick={toggleFullscreen}
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d={full ? icons.exitFullscreen : icons.fullscreen} /></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={full ? icons.exitFullscreen : icons.fullscreen} /></svg
+        >
       </button>
       <button
         type="button"
@@ -276,7 +306,9 @@
         bind:this={closeButton}
         onclick={close}
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.close} /></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={icons.close} /></svg
+        >
       </button>
     </header>
 
@@ -284,7 +316,12 @@
       {#if photo}
         {#key photo.path}
           {#if loaded !== photo.path}
-            <img class="photo stand-in" src={photo.thumb} alt="" draggable="false" />
+            <img
+              class="photo stand-in"
+              src={photo.thumb}
+              alt=""
+              draggable="false"
+            />
           {/if}
           <img
             class="photo"
@@ -305,7 +342,9 @@
         disabled={!hasPrev}
         onclick={prev}
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.chevronLeft} /></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={icons.chevronLeft} /></svg
+        >
       </button>
       <button
         type="button"
@@ -315,12 +354,17 @@
         disabled={!hasNext}
         onclick={next}
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.chevronRight} /></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={icons.chevronRight} /></svg
+        >
       </button>
 
       {#if position.count > 0}
         <span class="position" aria-live="polite">
-          {t("viewer.position", { n: formatNumber(position.n), count: formatNumber(position.count) })}
+          {t("viewer.position", {
+            n: formatNumber(position.n),
+            count: formatNumber(position.count),
+          })}
         </span>
       {/if}
     </div>

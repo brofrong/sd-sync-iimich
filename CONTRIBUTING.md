@@ -52,7 +52,7 @@ The same as CI runs on macOS, Windows and Linux:
 ```bash
 go vet ./...
 go test ./...
-cd frontend && npm run check
+cd frontend && bun lint && bun fmt --check && bun check
 ```
 
 `scripts/test-linux.sh` runs the Go checks for Linux in Docker from a Mac.

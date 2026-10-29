@@ -4,7 +4,13 @@
 import { readable, writable } from "svelte/store";
 
 /** Window sections, in sidebar order. */
-export const sections = ["status", "gallery", "history", "cards", "settings"] as const;
+export const sections = [
+  "status",
+  "gallery",
+  "history",
+  "cards",
+  "settings",
+] as const;
 export type SectionId = (typeof sections)[number];
 
 export function isSection(id: string): id is SectionId {
@@ -29,11 +35,14 @@ export function navigate(id: string): void {
 }
 
 /** False while the window is hidden or minimised. */
-export const pageVisible = readable(typeof document === "undefined" || !document.hidden, (set) => {
-  const update = () => set(!document.hidden);
-  document.addEventListener("visibilitychange", update);
-  return () => document.removeEventListener("visibilitychange", update);
-});
+export const pageVisible = readable(
+  typeof document === "undefined" || !document.hidden,
+  (set) => {
+    const update = () => set(!document.hidden);
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  },
+);
 
 /** True when the user asked the system to reduce motion. */
 export const reducedMotion = readable(false, (set) => {

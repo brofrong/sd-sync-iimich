@@ -5,16 +5,23 @@
   // the server is set up, a card asks, once, whether to send anonymous
   // statistics.
   import { onMount } from "svelte";
+
   import type { SyncRun } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/state";
   import Button from "../components/Button.svelte";
   import FormatDialog from "../components/FormatDialog.svelte";
   import GlassCard from "../components/GlassCard.svelte";
   import StatusCard from "../components/StatusCard.svelte";
   import { appState, backend, parseTime, status } from "../lib/backend";
-  import { formatBytes, formatDuration, formatNumber, formatRelative, t } from "../lib/i18n";
-  import { icons, type IconName } from "../lib/icons";
+  import {
+    formatBytes,
+    formatDuration,
+    formatNumber,
+    formatRelative,
+    t,
+  } from "../lib/i18n";
+  import { type IconName, icons } from "../lib/icons";
   import { errorKindLines } from "../lib/runs";
-  import { pageVisible, toneFor, type Tone } from "../lib/stores";
+  import { pageVisible, type Tone, toneFor } from "../lib/stores";
 
   interface Props {
     onNavigate: (section: string) => void;
@@ -27,11 +34,24 @@
   // ---- The selected card's actions --------------------------------------------
   const card = $derived($appState.card);
   const showCardBar = $derived(
-    Boolean(card?.uuid && card.mounted) && code !== "" && code !== "not_configured" && code !== "no_card_selected",
+    Boolean(card?.uuid && card.mounted) &&
+      code !== "" &&
+      code !== "not_configured" &&
+      code !== "no_card_selected",
   );
   // While the card is read, verified or erased it is left alone.
-  const cardBusy = $derived(["scanning", "syncing", "verifying", "format_pending", "formatting"].includes(code));
-  const serverReady = $derived(Boolean($appState.server?.url && $appState.server?.hasKey));
+  const cardBusy = $derived(
+    [
+      "scanning",
+      "syncing",
+      "verifying",
+      "format_pending",
+      "formatting",
+    ].includes(code),
+  );
+  const serverReady = $derived(
+    Boolean($appState.server?.url && $appState.server?.hasKey),
+  );
   const formatHint = $derived(
     $appState.settings?.autoFormatNeedsAdmin
       ? t("card_bar.format_needs_admin")
@@ -49,12 +69,16 @@
     try {
       await backend.SetTelemetry(enabled);
     } catch (err) {
-      statsError = t("ui.action_failed", { detail: err instanceof Error ? err.message : String(err) });
+      statsError = t("ui.action_failed", {
+        detail: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
   function failed(err: unknown): void {
-    cardError = t("ui.action_failed", { detail: err instanceof Error ? err.message : String(err) });
+    cardError = t("ui.action_failed", {
+      detail: err instanceof Error ? err.message : String(err),
+    });
   }
 
   async function eject(): Promise<void> {
@@ -119,7 +143,9 @@
 
   const serverUrl = $derived($appState.server.url);
   const configured = $derived(Boolean(serverUrl && $appState.server.hasKey));
-  const serverIssue = $derived(["server_unreachable", "auth_failed", "server_error"].includes(code));
+  const serverIssue = $derived(
+    ["server_unreachable", "auth_failed", "server_error"].includes(code),
+  );
 
   async function checkServer(url: string): Promise<void> {
     check = { state: "checking" };
@@ -127,7 +153,9 @@
     try {
       const res = await backend.TestServer(url, "");
       const latency = Math.round(performance.now() - started);
-      check = res.ok ? { state: "ok", latency, version: res.version } : { state: "fail", code: res.code };
+      check = res.ok
+        ? { state: "ok", latency, version: res.version }
+        : { state: "fail", code: res.code };
     } catch {
       check = { state: "fail", code: "failed" };
     }
@@ -167,7 +195,14 @@
   const cardTile = $derived.by((): Tile => {
     const c = $appState.card;
     if (!c.uuid) {
-      return { id: "cards", icon: "cards", label: t("tile.card"), value: t("tile.card_none"), sub: t("tile.card_choose"), tone: "muted" };
+      return {
+        id: "cards",
+        icon: "cards",
+        label: t("tile.card"),
+        value: t("tile.card_none"),
+        sub: t("tile.card_choose"),
+        tone: "muted",
+      };
     }
     return {
       id: "cards",
@@ -175,56 +210,115 @@
       label: t("tile.card"),
       value: c.name || c.uuid,
       sub: c.mounted
-        ? t("tile.card_connected") + (c.sizeBytes > 0 ? ` · ${formatBytes(c.sizeBytes)}` : "")
+        ? t("tile.card_connected") +
+          (c.sizeBytes > 0 ? ` · ${formatBytes(c.sizeBytes)}` : "")
         : t("tile.card_disconnected"),
       tone: c.mounted ? "success" : "muted",
     };
   });
 
   const serverTile = $derived.by((): Tile => {
-    const base = { id: "server", icon: "server" as IconName, label: t("tile.server") };
-    if (!serverUrl) return { ...base, value: t("tile.server_none"), sub: t("tile.server_setup"), tone: "muted" };
+    const base = {
+      id: "server",
+      icon: "server" as IconName,
+      label: t("tile.server"),
+    };
+    if (!serverUrl)
+      return {
+        ...base,
+        value: t("tile.server_none"),
+        sub: t("tile.server_setup"),
+        tone: "muted",
+      };
     const value = hostOf(serverUrl);
     const failure = (c: string): Tile => {
-      if (c === "auth_failed") return { ...base, value, sub: t("tile.server_rejected"), tone: "error" };
-      if (c === "server_error") return { ...base, value, sub: t("status.server_error.title"), tone: "error" };
+      if (c === "auth_failed")
+        return {
+          ...base,
+          value,
+          sub: t("tile.server_rejected"),
+          tone: "error",
+        };
+      if (c === "server_error")
+        return {
+          ...base,
+          value,
+          sub: t("status.server_error.title"),
+          tone: "error",
+        };
       return { ...base, value, sub: t("tile.server_offline"), tone: "error" };
     };
-    if (!$appState.server.hasKey) return { ...base, value, sub: t("tile.server_setup"), tone: "muted" };
+    if (!$appState.server.hasKey)
+      return { ...base, value, sub: t("tile.server_setup"), tone: "muted" };
     if (serverIssue) return failure(code);
     switch (check.state) {
       case "ok":
-        return { ...base, value, sub: t("tile.server_online", { latency: formatNumber(check.latency) }), tone: "success" };
+        return {
+          ...base,
+          value,
+          sub: t("tile.server_online", {
+            latency: formatNumber(check.latency),
+          }),
+          tone: "success",
+        };
       case "fail":
         return failure(check.code);
       default:
-        return { ...base, value, sub: t("tile.server_checking"), tone: "muted" };
+        return {
+          ...base,
+          value,
+          sub: t("tile.server_checking"),
+          tone: "muted",
+        };
     }
   });
 
   const lastTile = $derived.by((): Tile => {
-    const base = { id: "history", icon: "clock" as IconName, label: t("tile.last_sync") };
-    if (lastRun === undefined) return { ...base, value: "…", sub: "", tone: "muted" };
-    if (lastRun === null) return { ...base, value: t("tile.last_sync_never"), sub: "", tone: "muted" };
-    const finished = parseTime(lastRun.finishedAt) || parseTime(lastRun.startedAt);
+    const base = {
+      id: "history",
+      icon: "clock" as IconName,
+      label: t("tile.last_sync"),
+    };
+    if (lastRun === undefined)
+      return { ...base, value: "…", sub: "", tone: "muted" };
+    if (lastRun === null)
+      return {
+        ...base,
+        value: t("tile.last_sync_never"),
+        sub: "",
+        tone: "muted",
+      };
+    const finished =
+      parseTime(lastRun.finishedAt) || parseTime(lastRun.startedAt);
     const started = parseTime(lastRun.startedAt);
-    const value = formatRelative(new Date(finished), new Date(Math.max(now, finished)));
+    const value = formatRelative(
+      new Date(finished),
+      new Date(Math.max(now, finished)),
+    );
     const runTone = toneFor(lastRun.resultCode);
     let sub: string;
     if (["done", "done_with_errors"].includes(lastRun.resultCode)) {
       sub = t("tile.uploaded", { count: formatNumber(lastRun.uploaded) });
-      if (started && finished > started) sub += ` · ${formatDuration((finished - started) / 1000)}`;
+      if (started && finished > started)
+        sub += ` · ${formatDuration((finished - started) / 1000)}`;
     } else {
       sub = t(`status.${lastRun.resultCode}.title`);
     }
-    return { ...base, value, sub, tone: runTone === "idle" ? "muted" : runTone };
+    return {
+      ...base,
+      value,
+      sub,
+      tone: runTone === "idle" ? "muted" : runTone,
+    };
   });
 
   const tiles = $derived([cardTile, serverTile, lastTile]);
 
   // done_with_errors says why on the card: the last run's failures by kind.
   const errorKinds = $derived(
-    code === "done_with_errors" && lastRun?.resultCode === "done_with_errors" ? errorKindLines(lastRun.errorSummary) : [],
+    code === "done_with_errors" && lastRun?.resultCode === "done_with_errors"
+      ? errorKindLines(lastRun.errorSummary)
+      : [],
   );
 </script>
 
@@ -234,13 +328,22 @@
   {#if showCardBar}
     <GlassCard padding="10px 12px 10px 14px">
       <div class="card-bar">
-        <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true"><path d={icons.cards} /></svg>
+        <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={icons.cards} /></svg
+        >
         <span class="card-name" title={card.name}>{card.name}</span>
-        {#if card.sizeBytes > 0}<span class="card-size">{formatBytes(card.sizeBytes)}</span>{/if}
+        {#if card.sizeBytes > 0}<span class="card-size"
+            >{formatBytes(card.sizeBytes)}</span
+          >{/if}
         <div class="card-actions">
-          <Button disabled={cardBusy} onclick={eject}>{t("card_bar.eject")}</Button>
+          <Button disabled={cardBusy} onclick={eject}
+            >{t("card_bar.eject")}</Button
+          >
           <span title={formatHint}>
-            <Button disabled={cardBusy || formatHint !== ""} onclick={() => (formatOpen = true)}>{t("card_bar.format")}</Button>
+            <Button
+              disabled={cardBusy || formatHint !== ""}
+              onclick={() => (formatOpen = true)}>{t("card_bar.format")}</Button
+            >
           </span>
         </div>
       </div>
@@ -251,15 +354,22 @@
   {#if configured && !$appState.settings.telemetryAsked}
     <GlassCard padding="14px 16px">
       <div class="ask" role="region" aria-labelledby="stats-ask-title">
-        <svg class="ask-icon" viewBox="0 0 24 24" aria-hidden="true"><path d={icons.stats} /></svg>
+        <svg class="ask-icon" viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={icons.stats} /></svg
+        >
         <div class="ask-text">
           <h2 id="stats-ask-title">{t("stats.ask_title")}</h2>
           <p>{t("stats.ask_text")}</p>
-          {#if statsError}<p class="card-error" role="alert">{statsError}</p>{/if}
+          {#if statsError}<p class="card-error" role="alert">
+              {statsError}
+            </p>{/if}
         </div>
         <div class="ask-actions">
-          <Button onclick={() => answerStats(false)}>{t("stats.ask_no")}</Button>
-          <Button variant="primary" onclick={() => answerStats(true)}>{t("stats.ask_yes")}</Button>
+          <Button onclick={() => answerStats(false)}>{t("stats.ask_no")}</Button
+          >
+          <Button variant="primary" onclick={() => answerStats(true)}
+            >{t("stats.ask_yes")}</Button
+          >
         </div>
       </div>
     </GlassCard>
@@ -270,13 +380,21 @@
       <GlassCard padding="0">
         <button type="button" class="tile" onclick={() => onNavigate(tile.id)}>
           <span class="label">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons[tile.icon]} /></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true"
+              ><path d={icons[tile.icon]} /></svg
+            >
             {tile.label}
-            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"
+              ><path d="M9 6l6 6-6 6" /></svg
+            >
           </span>
           <span class="value" title={tile.value}>{tile.value}</span>
           {#if tile.sub}
-            <span class="sub" title={tile.sub}><i class="dot {tile.tone}" aria-hidden="true"></i><span class="text">{tile.sub}</span></span>
+            <span class="sub" title={tile.sub}
+              ><i class="dot {tile.tone}" aria-hidden="true"></i><span
+                class="text">{tile.sub}</span
+              ></span
+            >
           {/if}
         </button>
       </GlassCard>
@@ -285,7 +403,12 @@
 </div>
 
 {#if formatOpen}
-  <FormatDialog name={card.name} sizeBytes={card.sizeBytes} onconfirm={format} oncancel={() => (formatOpen = false)} />
+  <FormatDialog
+    name={card.name}
+    sizeBytes={card.sizeBytes}
+    onconfirm={format}
+    oncancel={() => (formatOpen = false)}
+  />
 {/if}
 
 <style>
@@ -461,7 +584,9 @@
     flex-shrink: 0;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.3);
-    transition: background-color 0.4s, box-shadow 0.4s;
+    transition:
+      background-color 0.4s,
+      box-shadow 0.4s;
   }
   .dot.success {
     background: var(--green);

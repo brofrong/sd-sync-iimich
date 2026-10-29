@@ -1,3 +1,15 @@
+import {
+  Progress,
+  Status,
+} from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/app";
+import type {
+  Action,
+  Code,
+} from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/app";
+import {
+  List,
+  Photo,
+} from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gallery";
 // A stand-in backend for developing the UI in a plain browser (no Wails
 // runtime, development builds only) or with VITE_MOCK=1. It replays the
 // mockup's scenario in a loop, syncing → server_unreachable → done, and
@@ -42,10 +54,10 @@ import {
   StateView,
   UpdateView,
 } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
-import { Progress, Status } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/app";
-import type { Action, Code } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/app";
-import { FileFailure, SyncRun } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/state";
-import { List, Photo } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gallery";
+import {
+  FileFailure,
+  SyncRun,
+} from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/state";
 import type { Backend, EventMap, Transport } from "./backend";
 import { resolveLanguage } from "./i18n";
 
@@ -66,7 +78,9 @@ const systems: Record<string, { os: string; osVersion: string }> = {
 function appInfo(system: string, version: string): AppInfoView {
   const { os, osVersion } = systems[system] ?? systems.macos;
   const name = `${os} ${osVersion}`.trim();
-  const body = `**Version:** ${version}\n**OS:** ${name}\n\n` + "**What happened:**\n\n**Steps to reproduce:**\n";
+  const body =
+    `**Version:** ${version}\n**OS:** ${name}\n\n` +
+    "**What happened:**\n\n**Steps to reproduce:**\n";
   return new AppInfoView({
     version,
     os,
@@ -156,7 +170,11 @@ const formatOutcomes: Record<string, Record<string, string>> = {
   needs_admin: { format: "needs_admin", name: mainCard.name },
 };
 
-function makeStatus(code: string, progress: Progress | null = null, p?: Record<string, string>): Status {
+function makeStatus(
+  code: string,
+  progress: Progress | null = null,
+  p?: Record<string, string>,
+): Status {
   return new Status({
     code: code as Code,
     params: p ?? params[code] ?? {},
@@ -206,7 +224,8 @@ const photoPath = (k: number) => `DCIM/100MSDCF/${photoName(k)}`;
 function inFlightAt(fraction: number): string[] {
   const first = Math.round(PHOTOS * fraction);
   const out: string[] = [];
-  for (let k = first; k < Math.min(PHOTOS, first + IN_FLIGHT); k++) out.push(photoPath(k));
+  for (let k = first; k < Math.min(PHOTOS, first + IN_FLIGHT); k++)
+    out.push(photoPath(k));
   return out;
 }
 
@@ -239,7 +258,12 @@ function samplePhotos(): Photo[] {
     const day = new Date(now - daysAgo * 86400e3);
     // A day's shooting from 9:00, spread over ten hours; today's ends
     // a few minutes ago.
-    let start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9).getTime();
+    let start = new Date(
+      day.getFullYear(),
+      day.getMonth(),
+      day.getDate(),
+      9,
+    ).getTime();
     let step = (10 * 3600e3) / count;
     if (daysAgo === 0) {
       step = 20e3;
@@ -306,7 +330,10 @@ function sampleHistory(): SyncRun[] {
     return new SyncRun({
       id: id--,
       startedAt: started.toISOString(),
-      finishedAt: minutes === null ? null : new Date(started.getTime() + minutes * 60e3).toISOString(),
+      finishedAt:
+        minutes === null
+          ? null
+          : new Date(started.getTime() + minutes * 60e3).toISOString(),
       volumeUUID: card.uuid,
       volumeName: card.name,
       resultCode: minutes === null ? "" : code,
@@ -322,30 +349,60 @@ function sampleHistory(): SyncRun[] {
     });
   };
   return [
-    run(3, 108, mainCard, "done_with_errors", { uploaded: "2101", errors: "3" }, {
-      uploaded: 2101,
-      duplicates: 37,
-      skipped: 3,
-      errors: 3,
-      summary: { network: 2, rejected: 1 },
-    }),
+    run(
+      3,
+      108,
+      mainCard,
+      "done_with_errors",
+      { uploaded: "2101", errors: "3" },
+      {
+        uploaded: 2101,
+        duplicates: 37,
+        skipped: 3,
+        errors: 3,
+        summary: { network: 2, rejected: 1 },
+      },
+    ),
     run(5, 2, mainCard, "nothing_new", {}, { uploaded: 0, skipped: 2117 }),
-    run(27, 12, mainCard, "server_unreachable", params.server_unreachable, { uploaded: 412 }),
-    run(30, 41, otherCard, "done_with_errors", { uploaded: "806", errors: "6" }, {
-      uploaded: 806,
-      skipped: 14,
-      errors: 6,
-      summary: { network: 4, rejected: 2 },
+    run(27, 12, mainCard, "server_unreachable", params.server_unreachable, {
+      uploaded: 412,
     }),
-    run(40, 33, mainCard, "done_with_errors", { uploaded: "512", errors: "2" }, {
-      uploaded: 512,
-      errors: 2,
-      summary: { read_failed: 2 },
-      recorded: false, // synced before the app kept the list
-    }),
+    run(
+      30,
+      41,
+      otherCard,
+      "done_with_errors",
+      { uploaded: "806", errors: "6" },
+      {
+        uploaded: 806,
+        skipped: 14,
+        errors: 6,
+        summary: { network: 4, rejected: 2 },
+      },
+    ),
+    run(
+      40,
+      33,
+      mainCard,
+      "done_with_errors",
+      { uploaded: "512", errors: "2" },
+      {
+        uploaded: 512,
+        errors: 2,
+        summary: { read_failed: 2 },
+        recorded: false, // synced before the app kept the list
+      },
+    ),
     run(52, 7, mainCard, "cancelled", { uploaded: "96" }, { uploaded: 96 }),
     run(98, null, mainCard, "", {}, { uploaded: 0 }),
-    run(170, 18, mainCard, "card_removed", { uploaded: "300" }, { uploaded: 300, skipped: 1 }),
+    run(
+      170,
+      18,
+      mainCard,
+      "card_removed",
+      { uploaded: "300" },
+      { uploaded: 300, skipped: 1 },
+    ),
     run(7400, 64, otherCard, "done", { uploaded: "1290" }, { uploaded: 1290 }),
   ];
 }
@@ -353,20 +410,47 @@ function sampleHistory(): SyncRun[] {
 /** sampleFailures are the failed files of the sample runs, by run id. */
 function sampleFailures(runs: SyncRun[]): Map<number, FileFailure[]> {
   const out = new Map<number, FileFailure[]>();
-  const f = (relativePath: string, kind: string, detail: string) => new FileFailure({ relativePath, kind, detail });
+  const f = (relativePath: string, kind: string, detail: string) =>
+    new FileFailure({ relativePath, kind, detail });
   for (const r of runs) {
     if (!r.failuresRecorded || r.errors === 0) continue;
     if (r.volumeUUID === mainCard.uuid) {
       out.set(r.id, [
-        f("DCIM/100MSDCF/DSC07311.ARW", "network", "Post \"https://immich.brofrong.ru/api/assets\": read tcp: connection reset by peer"),
-        f("DCIM/100MSDCF/DSC07342.ARW", "network", "Post \"https://immich.brofrong.ru/api/assets\": context deadline exceeded"),
-        f("PRIVATE/M4ROOT/CLIP/C0042.MP4", "rejected", "server returned 400: Unsupported file type"),
+        f(
+          "DCIM/100MSDCF/DSC07311.ARW",
+          "network",
+          'Post "https://immich.brofrong.ru/api/assets": read tcp: connection reset by peer',
+        ),
+        f(
+          "DCIM/100MSDCF/DSC07342.ARW",
+          "network",
+          'Post "https://immich.brofrong.ru/api/assets": context deadline exceeded',
+        ),
+        f(
+          "PRIVATE/M4ROOT/CLIP/C0042.MP4",
+          "rejected",
+          "server returned 400: Unsupported file type",
+        ),
       ]);
     } else {
       out.set(r.id, [
-        ...[4012, 4013, 4030, 4031].map((n) => f(`DCIM/100CANON/IMG_${n}.CR3`, "network", "dial tcp: lookup immich.brofrong.ru: no such host")),
-        f("DCIM/100CANON/IMG_4100.CR3", "rejected", "server returned 400: Unsupported file type"),
-        f("DCIM/100CANON/MVI_4101.MP4", "rejected", "server returned 413: Request Entity Too Large"),
+        ...[4012, 4013, 4030, 4031].map((n) =>
+          f(
+            `DCIM/100CANON/IMG_${n}.CR3`,
+            "network",
+            "dial tcp: lookup immich.brofrong.ru: no such host",
+          ),
+        ),
+        f(
+          "DCIM/100CANON/IMG_4100.CR3",
+          "rejected",
+          "server returned 400: Unsupported file type",
+        ),
+        f(
+          "DCIM/100CANON/MVI_4101.MP4",
+          "rejected",
+          "server returned 413: Request Entity Too Large",
+        ),
       ]);
     }
   }
@@ -381,24 +465,54 @@ function sampleLog(lines: number): string {
   const line = (level: string, msg: string, attrs = "") => {
     at += 1200 + Math.round(Math.random() * 1400);
     const ts = new Date(at).toISOString().replace("Z", "+00:00");
-    out.push(`time=${ts} level=${level} ${src}${200 + (out.length % 180)} msg="${msg}"${attrs ? " " + attrs : ""}`);
+    out.push(
+      `time=${ts} level=${level} ${src}${200 + (out.length % 180)} msg="${msg}"${attrs ? " " + attrs : ""}`,
+    );
   };
   line("INFO", "app run loop started", `version=0.4.0`);
-  line("INFO", "volume mounted", `name=${mainCard.name} uuid=${mainCard.uuid} mount=${mainCard.mountPoint}`);
+  line(
+    "INFO",
+    "volume mounted",
+    `name=${mainCard.name} uuid=${mainCard.uuid} mount=${mainCard.mountPoint}`,
+  );
   line("INFO", "scan started", `paths="[DCIM PRIVATE/M4ROOT/CLIP]"`);
-  line("DEBUG", "scan finished", `files=${FILES} new=${FILES - 3} skipped=3 took=1.84s`);
-  line("INFO", "sync started", `files=${FILES - 3} bytes=${BYTES} concurrency=4`);
+  line(
+    "DEBUG",
+    "scan finished",
+    `files=${FILES} new=${FILES - 3} skipped=3 took=1.84s`,
+  );
+  line(
+    "INFO",
+    "sync started",
+    `files=${FILES - 3} bytes=${BYTES} concurrency=4`,
+  );
   for (let i = 0; out.length < lines - 2; i++) {
     const file = `DSC0${7100 + i}.ARW`;
     if (i % 23 === 17) {
-      line("WARN", "upload failed, retrying", `file=${file} attempt=1 err="Post \"${SERVER_URL}/api/assets\": dial tcp: lookup ${HOST}: no such host"`);
+      line(
+        "WARN",
+        "upload failed, retrying",
+        `file=${file} attempt=1 err="Post ${SERVER_URL}/api/assets: dial tcp: lookup ${HOST}: no such host"`,
+      );
     } else if (i % 61 === 40) {
-      line("ERROR", "upload failed", `file=${file} kind=rejected err="server returned 400: Unsupported file type"`);
+      line(
+        "ERROR",
+        "upload failed",
+        `file=${file} kind=rejected err="server returned 400: Unsupported file type"`,
+      );
     } else {
-      line("INFO", "uploaded", `file=${file} bytes=${14_600_000 + i * 1013} duplicate=false`);
+      line(
+        "INFO",
+        "uploaded",
+        `file=${file} bytes=${14_600_000 + i * 1013} duplicate=false`,
+      );
     }
   }
-  line("INFO", "sync finished", `uploaded=${FILES} skipped=3 errors=0 took=1h48m12s`);
+  line(
+    "INFO",
+    "sync finished",
+    `uploaded=${FILES} skipped=3 errors=0 took=1h48m12s`,
+  );
   line("INFO", "status changed", "code=done");
   return out.slice(-lines).join("\n");
 }
@@ -442,7 +556,14 @@ export function createMockTransport(): Transport {
     autoEject: true,
     autoFormat: query.get("format_setting") === "on",
     autoFormatNeedsAdmin: query.get("format_admin") === "needed",
-    notifications: new NotificationsView({ enabled: true, done: true, errors: true, otherCard: true, server: true, card: true }),
+    notifications: new NotificationsView({
+      enabled: true,
+      done: true,
+      errors: true,
+      otherCard: true,
+      server: true,
+      card: true,
+    }),
     telemetry: query.get("stats") === "on",
     telemetryAsked: query.get("stats") !== "ask",
   });
@@ -458,13 +579,22 @@ export function createMockTransport(): Transport {
   });
   // Pinned onboarding and card codes need a matching configuration.
   // The mounted removable volumes; the selected card is state.card.
-  let mounted = [new CardView(mainCard), new CardView(otherCard), new CardView(spareCard)];
-  const unplugged = (c: CardView) => new CardView({ ...c, mounted: false, mountPoint: "", sizeBytes: 0 });
+  let mounted = [
+    new CardView(mainCard),
+    new CardView(otherCard),
+    new CardView(spareCard),
+  ];
+  const unplugged = (c: CardView) =>
+    new CardView({ ...c, mounted: false, mountPoint: "", sizeBytes: 0 });
   // The cards with sync state (as Go's state.RememberedCards): the main card,
   // an old copy of it from before it was formatted, and one never named.
   let remembered = [
     { uuid: mainCard.uuid, name: mainCard.name, uploaded: 13821 },
-    { uuid: "3A8C3713-C262-3DB7-8BEC-604865B64393", name: "Brofrong", uploaded: 18900 },
+    {
+      uuid: "3A8C3713-C262-3DB7-8BEC-604865B64393",
+      name: "Brofrong",
+      uploaded: 18900,
+    },
     { uuid: "9B04E7A1-52D3-4E6F-8C21-7A0F3D5B6E19", name: "", uploaded: 412 },
   ];
 
@@ -477,14 +607,22 @@ export function createMockTransport(): Transport {
     mounted = mounted.filter((c) => c.uuid !== mainCard.uuid);
     state.card = unplugged(mainCard);
   }
-  if (pinned === "syncing") state.status = makeStatus("syncing", syncProgress(0.38, 0));
+  if (pinned === "syncing")
+    state.status = makeStatus("syncing", syncProgress(0.38, 0));
   // The pinned sync stands at 38 %; otherwise the scenario moves it.
   let fraction = pinned === "syncing" ? 0.38 : 0.2;
   if (pinned === "scanning") state.status = makeStatus("scanning");
-  if (pinned === "verifying") state.status = makeStatus("verifying", new Progress({ current: 1388, total: 2114 }));
+  if (pinned === "verifying")
+    state.status = makeStatus(
+      "verifying",
+      new Progress({ current: 1388, total: 2114 }),
+    );
   if (pinned === "ejected") {
     const outcome = formatOutcomes[query.get("format") ?? ""];
-    state.status = makeStatus("ejected", null, { ...params.ejected, ...outcome });
+    state.status = makeStatus("ejected", null, {
+      ...params.ejected,
+      ...outcome,
+    });
   }
   if (pinned === "ejected" || pinned === "formatted") {
     // The ejected card is no longer mounted.
@@ -513,7 +651,11 @@ export function createMockTransport(): Transport {
     });
     history = [current, ...history].slice(0, 50);
   }
-  function record(code: string, p: Record<string, string>, uploaded: number): void {
+  function record(
+    code: string,
+    p: Record<string, string>,
+    uploaded: number,
+  ): void {
     if (!current) return;
     Object.assign(current, {
       // The scenario is compressed; pretend the sync took a while.
@@ -576,7 +718,8 @@ export function createMockTransport(): Transport {
   function run(): void {
     clearInterval(timer);
     timer = undefined;
-    if (!pinned && !document.hidden && state.card.uuid) timer = setInterval(step, TICK);
+    if (!pinned && !document.hidden && state.card.uuid)
+      timer = setInterval(step, TICK);
   }
   document.addEventListener("visibilitychange", run);
   if (!pinned) {
@@ -585,38 +728,77 @@ export function createMockTransport(): Transport {
   }
 
   function interrupt(s: Status, ms = 4000): void {
-    if (current) record(s.code, s.params as Record<string, string>, Number(s.params?.uploaded ?? 0));
+    if (current)
+      record(
+        s.code,
+        s.params as Record<string, string>,
+        Number(s.params?.uploaded ?? 0),
+      );
     setStatus(s);
     hold = pinned ? 0 : ms;
   }
 
-  const delay = <T>(ms: number, v: T) => new Promise<T>((r) => setTimeout(() => r(v), ms));
+  const delay = <T>(ms: number, v: T) =>
+    new Promise<T>((r) => setTimeout(() => r(v), ms));
 
   // As Go's Gallery: the selected card's photos while it is mounted, newest
   // first, with the statuses of the sync so far.
   const photos = samplePhotos();
   const galleryMode = query.get("gallery");
-  const finished = ["done", "done_with_errors", "nothing_new", "format_pending", "formatting", "formatted"];
+  const finished = [
+    "done",
+    "done_with_errors",
+    "nothing_new",
+    "format_pending",
+    "formatting",
+    "formatted",
+  ];
   function gallery(): List | null {
-    if (galleryMode === "none" || !mounted.some((c) => c.uuid === state.card.uuid)) return null;
-    if (galleryMode === "empty") return new List({ cardUuid: state.card.uuid, cardName: state.card.name, photos: [], other: 114 });
-    const uploaded = finished.includes(state.status.code) ? PHOTOS : Math.round(PHOTOS * fraction);
+    if (
+      galleryMode === "none" ||
+      !mounted.some((c) => c.uuid === state.card.uuid)
+    )
+      return null;
+    if (galleryMode === "empty")
+      return new List({
+        cardUuid: state.card.uuid,
+        cardName: state.card.name,
+        photos: [],
+        other: 114,
+      });
+    const uploaded = finished.includes(state.status.code)
+      ? PHOTOS
+      : Math.round(PHOTOS * fraction);
     const list = photos.map((p, k) => {
       // A few files failed in the last sync.
-      const status = k >= uploaded ? "waiting" : k % 331 === 170 ? "failed" : "in_immich";
+      const status =
+        k >= uploaded ? "waiting" : k % 331 === 170 ? "failed" : "in_immich";
       return new Photo({ ...p, status });
     });
-    return new List({ cardUuid: state.card.uuid, cardName: state.card.name, photos: list.reverse(), other: FILES - PHOTOS });
+    return new List({
+      cardUuid: state.card.uuid,
+      cardName: state.card.name,
+      photos: list.reverse(),
+      other: FILES - PHOTOS,
+    });
   }
 
   let fullscreen = false;
 
   // As Go's normalizeServer.
-  const normalizeUrl = (u: string) => u.trim().replace(/\/+$/, "").replace(/\/api$/, "").replace(/\/+$/, "");
+  const normalizeUrl = (u: string) =>
+    u
+      .trim()
+      .replace(/\/+$/, "")
+      .replace(/\/api$/, "")
+      .replace(/\/+$/, "");
   const validUrl = (u: string) => {
     try {
       const parsed = new URL(normalizeUrl(u));
-      return (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.host !== "";
+      return (
+        (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+        parsed.host !== ""
+      );
     } catch {
       return false;
     }
@@ -638,19 +820,42 @@ export function createMockTransport(): Transport {
       const listed = (uuid: string) => list.some((c) => c.uuid === uuid);
       const remember = (c: CardView) => {
         const r = remembered.find((r) => r.uuid === c.uuid);
-        return r ? new CardView({ ...c, name: c.name || r.name, remembered: true, uploaded: r.uploaded }) : c;
+        return r
+          ? new CardView({
+              ...c,
+              name: c.name || r.name,
+              remembered: true,
+              uploaded: r.uploaded,
+            })
+          : c;
       };
       if (state.card.uuid) {
         const m = mounted.find((c) => c.uuid === state.card.uuid);
-        list.push(remember(new CardView({ ...(m ?? state.card), selected: true })));
+        list.push(
+          remember(new CardView({ ...(m ?? state.card), selected: true })),
+        );
       }
-      for (const c of mounted) if (!listed(c.uuid)) list.push(remember(new CardView({ ...c, selected: false })));
-      for (const r of remembered) if (!listed(r.uuid)) list.push(new CardView({ uuid: r.uuid, name: r.name, remembered: true, uploaded: r.uploaded }));
+      for (const c of mounted)
+        if (!listed(c.uuid))
+          list.push(remember(new CardView({ ...c, selected: false })));
+      for (const r of remembered)
+        if (!listed(r.uuid))
+          list.push(
+            new CardView({
+              uuid: r.uuid,
+              name: r.name,
+              remembered: true,
+              uploaded: r.uploaded,
+            }),
+          );
       return delay(120, list);
     },
     ForgetCard: async (uuid) => {
       const selected = uuid === state.card.uuid;
-      if (selected && (state.status.code === "syncing" || state.status.code === "scanning")) {
+      if (
+        selected &&
+        (state.status.code === "syncing" || state.status.code === "scanning")
+      ) {
         throw new Error("the card is syncing");
       }
       await delay(300, null);
@@ -680,7 +885,10 @@ export function createMockTransport(): Transport {
       mounted = mounted.filter((c) => c !== card);
       state.card = unplugged(card);
       pushState();
-      interrupt(makeStatus("waiting_for_card", null, { name: state.card.name }), 5000);
+      interrupt(
+        makeStatus("waiting_for_card", null, { name: state.card.name }),
+        5000,
+      );
       // Plug it back in a moment later.
       setTimeout(() => {
         mounted = [card, ...mounted];
@@ -690,46 +898,110 @@ export function createMockTransport(): Transport {
     },
     TestServer: async (url, apiKey) => {
       if (!validUrl(url)) {
-        return delay(80, new ServerCheckView({ ok: false, code: "invalid_url", params: {} }));
+        return delay(
+          80,
+          new ServerCheckView({ ok: false, code: "invalid_url", params: {} }),
+        );
       }
       // As in Go, the saved key is only sent to the saved server's host.
-      if (!apiKey.trim() && state.server.hasKey && hostOf(url) !== hostOf(state.server.url)) {
-        return delay(80, new ServerCheckView({ ok: false, code: "key_required", params: {} }));
+      if (
+        !apiKey.trim() &&
+        state.server.hasKey &&
+        hostOf(url) !== hostOf(state.server.url)
+      ) {
+        return delay(
+          80,
+          new ServerCheckView({ ok: false, code: "key_required", params: {} }),
+        );
       }
       if (!apiKey.trim() && !state.server.hasKey) {
-        return delay(80, new ServerCheckView({ ok: false, code: "key_missing", params: {} }));
+        return delay(
+          80,
+          new ServerCheckView({ ok: false, code: "key_missing", params: {} }),
+        );
       }
       if (url.includes("bad")) {
-        return delay(600, new ServerCheckView({ ok: false, code: "server_unreachable", params: { host: url, detail: "no such host" } }));
+        return delay(
+          600,
+          new ServerCheckView({
+            ok: false,
+            code: "server_unreachable",
+            params: { host: url, detail: "no such host" },
+          }),
+        );
       }
       if (apiKey === "bad") {
-        return delay(300, new ServerCheckView({ ok: false, code: "auth_failed", params: { detail: "401 Unauthorized: Invalid API key" } }));
+        return delay(
+          300,
+          new ServerCheckView({
+            ok: false,
+            code: "auth_failed",
+            params: { detail: "401 Unauthorized: Invalid API key" },
+          }),
+        );
       }
       if (apiKey === "nostack") {
-        return delay(220, new ServerCheckView({ ok: true, version: "v3.3.4", code: "", params: {}, noStack: true }));
+        return delay(
+          220,
+          new ServerCheckView({
+            ok: true,
+            version: "v3.3.4",
+            code: "",
+            params: {},
+            noStack: true,
+          }),
+        );
       }
       if (apiKey === "readonly") {
-        return delay(300, new ServerCheckView({
-          ok: false, code: "key_forbidden", params: { detail: "403 Forbidden: Missing required permission: asset.upload" },
-        }));
+        return delay(
+          300,
+          new ServerCheckView({
+            ok: false,
+            code: "key_forbidden",
+            params: {
+              detail:
+                "403 Forbidden: Missing required permission: asset.upload",
+            },
+          }),
+        );
       }
-      return delay(220, new ServerCheckView({ ok: true, version: "v1.122.3", code: "", params: {} }));
+      return delay(
+        220,
+        new ServerCheckView({
+          ok: true,
+          version: "v1.122.3",
+          code: "",
+          params: {},
+        }),
+      );
     },
     SaveServer: async (url, apiKey) => {
-      if (!validUrl(url)) throw new Error("server URL must start with http:// or https://");
+      if (!validUrl(url))
+        throw new Error("server URL must start with http:// or https://");
       await delay(200, null);
-      if (!apiKey.trim() && state.server.hasKey && hostOf(url) !== hostOf(state.server.url)) {
+      if (
+        !apiKey.trim() &&
+        state.server.hasKey &&
+        hostOf(url) !== hostOf(state.server.url)
+      ) {
         throw new Error("key_required");
       }
-      if (!apiKey.trim() && !state.server.hasKey) throw new Error("key_missing");
+      if (!apiKey.trim() && !state.server.hasKey)
+        throw new Error("key_missing");
       if (url.includes("readonly")) {
-        throw new Error("save server settings: open ~/.config/sd-sync-immich/config.yaml: permission denied");
+        throw new Error(
+          "save server settings: open ~/.config/sd-sync-immich/config.yaml: permission denied",
+        );
       }
-      state.server = new ServerView({ url: normalizeUrl(url), hasKey: state.server.hasKey || apiKey.trim() !== "" });
+      state.server = new ServerView({
+        url: normalizeUrl(url),
+        hasKey: state.server.hasKey || apiKey.trim() !== "",
+      });
       pushState();
     },
     SaveSettings: async (v) => {
-      if (v.concurrency < 0 || v.concurrency > 16) throw new Error("concurrency must be 0 (auto) or between 1 and 16");
+      if (v.concurrency < 0 || v.concurrency > 16)
+        throw new Error("concurrency must be 0 (auto) or between 1 and 16");
       // As in Go, the autostart fields are not saved here.
       state.settings = new SettingsView({
         ...v,
@@ -745,16 +1017,26 @@ export function createMockTransport(): Transport {
     },
     SetTelemetry: async (enabled) => {
       await delay(150, null);
-      state.settings = new SettingsView({ ...state.settings, telemetry: enabled, telemetryAsked: true });
+      state.settings = new SettingsView({
+        ...state.settings,
+        telemetry: enabled,
+        telemetryAsked: true,
+      });
       pushState();
     },
     SetAutostart: async (enabled) => {
-      if (enabled && state.settings.autostartTranslocated) throw new Error("autostart_translocated");
+      if (enabled && state.settings.autostartTranslocated)
+        throw new Error("autostart_translocated");
       if (!state.settings.autostartAvailable) {
-        throw new Error("starting at login is not available for this copy of the app");
+        throw new Error(
+          "starting at login is not available for this copy of the app",
+        );
       }
       await delay(150, null);
-      state.settings = new SettingsView({ ...state.settings, autostart: enabled });
+      state.settings = new SettingsView({
+        ...state.settings,
+        autostart: enabled,
+      });
       pushState();
     },
     SyncNow: async () => {
@@ -762,7 +1044,11 @@ export function createMockTransport(): Transport {
       enter(0);
     },
     StopSync: async () => {
-      interrupt(makeStatus("cancelled", null, { uploaded: String(Math.round(FILES * fraction) - 412) }));
+      interrupt(
+        makeStatus("cancelled", null, {
+          uploaded: String(Math.round(FILES * fraction) - 412),
+        }),
+      );
     },
     Retry: async () => {
       hold = 0;
@@ -774,9 +1060,22 @@ export function createMockTransport(): Transport {
     // failure list, while no sync runs.
     RetryFailures: async (runID) => {
       const r = history.find((h) => h.id === runID);
-      const busy = ["scanning", "syncing", "verifying", "format_pending", "formatting"].includes(state.status.code);
+      const busy = [
+        "scanning",
+        "syncing",
+        "verifying",
+        "format_pending",
+        "formatting",
+      ].includes(state.status.code);
       const here = mounted.some((c) => c.uuid === state.card.uuid);
-      if (!r || !r.failuresRecorded || !failures.get(runID)?.length || r.volumeUUID !== state.card.uuid || !here || busy) {
+      if (
+        !r ||
+        !r.failuresRecorded ||
+        !failures.get(runID)?.length ||
+        r.volumeUUID !== state.card.uuid ||
+        !here ||
+        busy
+      ) {
         await delay(200, null);
         throw new Error("retry_unavailable");
       }
@@ -787,14 +1086,30 @@ export function createMockTransport(): Transport {
     },
     // As Go's FormatCard: refused while busy; verifies, then erases.
     FormatCard: async () => {
-      const busy = ["scanning", "syncing", "verifying", "format_pending", "formatting"].includes(state.status.code);
+      const busy = [
+        "scanning",
+        "syncing",
+        "verifying",
+        "format_pending",
+        "formatting",
+      ].includes(state.status.code);
       if (busy) throw new Error("the card is syncing");
-      if (!mounted.some((c) => c.uuid === state.card.uuid)) throw new Error("selected card is not mounted");
+      if (!mounted.some((c) => c.uuid === state.card.uuid))
+        throw new Error("selected card is not mounted");
       await delay(150, null);
       const name = state.card.name;
-      interrupt(makeStatus("verifying", new Progress({ current: 0, total: 2114 })), 8000);
-      setTimeout(() => setStatus(makeStatus("formatting", null, { name })), 2500);
-      setTimeout(() => setStatus(makeStatus("formatted", null, { name })), 4500);
+      interrupt(
+        makeStatus("verifying", new Progress({ current: 0, total: 2114 })),
+        8000,
+      );
+      setTimeout(
+        () => setStatus(makeStatus("formatting", null, { name })),
+        2500,
+      );
+      setTimeout(
+        () => setStatus(makeStatus("formatted", null, { name })),
+        4500,
+      );
     },
     CancelFormat: async () => {
       if (state.status.code !== "format_pending") return;
@@ -804,15 +1119,19 @@ export function createMockTransport(): Transport {
     LogTail: async (lines) => delay(150, sampleLog(lines)),
     RevealLog: async () => console.info("[mock] RevealLog"),
     OpenImmich: async () => console.info("[mock] OpenImmich", SERVER_URL),
-    AppInfo: async () => appInfo((query.get("os") ?? "macos").toLowerCase(), state.version),
+    AppInfo: async () =>
+      appInfo((query.get("os") ?? "macos").toLowerCase(), state.version),
     // Only the repository and a new issue, like Go (whose check is
     // stricter: a new issue may only carry a canonically encoded body).
     OpenURL: async (u) => {
       const q = u.indexOf("?");
       const page = q < 0 ? u : u.slice(0, q);
       const query = q < 0 ? "" : u.slice(q + 1);
-      const ok = (page === REPO_URL && q < 0) || (page === NEW_ISSUE_URL && (q < 0 || query.startsWith("body=")));
-      if (!ok || u.includes("#")) throw new Error("only the project's GitHub pages can be opened");
+      const ok =
+        (page === REPO_URL && q < 0) ||
+        (page === NEW_ISSUE_URL && (q < 0 || query.startsWith("body=")));
+      if (!ok || u.includes("#"))
+        throw new Error("only the project's GitHub pages can be opened");
       console.info("[mock] OpenURL", u);
     },
     Quit: async () => console.info("[mock] Quit"),
@@ -855,7 +1174,9 @@ export function createMockTransport(): Transport {
   if (expand) {
     // Click the disclosure of that run once History has rendered it.
     const click = (tries: number) => {
-      const b = document.querySelector<HTMLButtonElement>(`button[aria-controls="failures-${expand}"]`);
+      const b = document.querySelector<HTMLButtonElement>(
+        `button[aria-controls="failures-${expand}"]`,
+      );
       if (b) b.click();
       else if (tries > 0) setTimeout(() => click(tries - 1), 100);
     };

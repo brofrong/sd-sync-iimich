@@ -8,7 +8,11 @@
 
   let { value, label }: Props = $props();
 
-  const pct = $derived(value === null ? null : Math.round(Math.min(1, Math.max(0, value)) * 1000) / 10);
+  const pct = $derived(
+    value === null
+      ? null
+      : Math.round(Math.min(1, Math.max(0, value)) * 1000) / 10,
+  );
 </script>
 
 <div
@@ -46,7 +50,12 @@
     content: "";
     position: absolute;
     inset: 0;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.55),
+      transparent
+    );
     animation: shimmer 1.4s infinite;
   }
   @keyframes shimmer {

@@ -5,6 +5,7 @@
   // error appears).
   import type { Snippet } from "svelte";
   import { get } from "svelte/store";
+
   import type { Tone } from "../lib/stores";
   import { reducedMotion } from "../lib/stores";
 
@@ -15,7 +16,12 @@
     children: Snippet;
   }
 
-  let { tone = "idle", shake = 0, padding = "16px 18px", children }: Props = $props();
+  let {
+    tone = "idle",
+    shake = 0,
+    padding = "16px 18px",
+    children,
+  }: Props = $props();
 
   let el: HTMLDivElement;
   const tones: Tone[] = ["idle", "accent", "error", "warn", "success"];
@@ -80,19 +86,39 @@
     opacity: 1;
   }
   .tint.idle {
-    background: linear-gradient(150deg, rgba(120, 90, 255, 0.08), transparent 70%);
+    background: linear-gradient(
+      150deg,
+      rgba(120, 90, 255, 0.08),
+      transparent 70%
+    );
   }
   .tint.accent {
-    background: linear-gradient(150deg, rgba(123, 92, 255, 0.24), rgba(10, 132, 255, 0.06) 75%);
+    background: linear-gradient(
+      150deg,
+      rgba(123, 92, 255, 0.24),
+      rgba(10, 132, 255, 0.06) 75%
+    );
   }
   .tint.error {
-    background: linear-gradient(150deg, rgba(255, 69, 58, 0.26), rgba(40, 15, 20, 0.45));
+    background: linear-gradient(
+      150deg,
+      rgba(255, 69, 58, 0.26),
+      rgba(40, 15, 20, 0.45)
+    );
   }
   .tint.warn {
-    background: linear-gradient(150deg, rgba(255, 179, 64, 0.2), rgba(40, 28, 10, 0.4));
+    background: linear-gradient(
+      150deg,
+      rgba(255, 179, 64, 0.2),
+      rgba(40, 28, 10, 0.4)
+    );
   }
   .tint.success {
-    background: linear-gradient(150deg, rgba(48, 209, 88, 0.2), rgba(15, 35, 20, 0.45));
+    background: linear-gradient(
+      150deg,
+      rgba(48, 209, 88, 0.2),
+      rgba(15, 35, 20, 0.45)
+    );
   }
 
   .tone-accent {
@@ -100,15 +126,21 @@
   }
   .tone-error {
     border-color: rgba(255, 100, 100, 0.45);
-    box-shadow: 0 0 28px rgba(255, 69, 58, 0.26), var(--glass-shadow);
+    box-shadow:
+      0 0 28px rgba(255, 69, 58, 0.26),
+      var(--glass-shadow);
   }
   .tone-warn {
     border-color: rgba(255, 179, 64, 0.38);
-    box-shadow: 0 0 26px rgba(255, 179, 64, 0.16), var(--glass-shadow);
+    box-shadow:
+      0 0 26px rgba(255, 179, 64, 0.16),
+      var(--glass-shadow);
   }
   .tone-success {
     border-color: rgba(48, 209, 88, 0.4);
-    box-shadow: 0 0 28px rgba(48, 209, 88, 0.22), var(--glass-shadow);
+    box-shadow:
+      0 0 28px rgba(48, 209, 88, 0.22),
+      var(--glass-shadow);
   }
 
   .content {

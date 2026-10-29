@@ -5,6 +5,7 @@
   // card cannot be undone. Cancel, Escape and a click outside close it.
   import { onDestroy } from "svelte";
   import { fade, scale } from "svelte/transition";
+
   import { formatBytes, formatNumber, t } from "../lib/i18n";
   import { icons } from "../lib/icons";
   import { reducedMotion } from "../lib/stores";
@@ -54,7 +55,11 @@
 <svelte:window onkeydown={keydown} />
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions (Escape closes it, see keydown) -->
-<div class="backdrop" transition:fade={{ duration: ms(180) }} onclick={(e) => e.target === e.currentTarget && oncancel()}>
+<div
+  class="backdrop"
+  transition:fade={{ duration: ms(180) }}
+  onclick={(e) => e.target === e.currentTarget && oncancel()}
+>
   <div
     class="dialog"
     role="alertdialog"
@@ -68,7 +73,9 @@
     </div>
     <h2 id="format-title">{t("format_dialog.title", { name })}</h2>
     {#if sizeBytes > 0}
-      <p class="size">{t("format_dialog.size", { size: formatBytes(sizeBytes) })}</p>
+      <p class="size">
+        {t("format_dialog.size", { size: formatBytes(sizeBytes) })}
+      </p>
     {/if}
 
     <div id="format-body" class="body">
@@ -84,9 +91,17 @@
       <Button variant="danger" disabled={wait > 0} onclick={confirm}>
         <!-- The widest label (the countdown's start) reserves the width. -->
         <span class="reserve">
-          <span class="slot" aria-hidden="true">{t("format_dialog.confirm_countdown", { seconds: formatNumber(CONFIRM_SECONDS) })}</span>
+          <span class="slot" aria-hidden="true"
+            >{t("format_dialog.confirm_countdown", {
+              seconds: formatNumber(CONFIRM_SECONDS),
+            })}</span
+          >
           <span>
-            {wait > 0 ? t("format_dialog.confirm_countdown", { seconds: formatNumber(wait) }) : t("format_dialog.confirm")}
+            {wait > 0
+              ? t("format_dialog.confirm_countdown", {
+                  seconds: formatNumber(wait),
+                })
+              : t("format_dialog.confirm")}
           </span>
         </span>
       </Button>

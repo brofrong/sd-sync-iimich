@@ -7,6 +7,7 @@
   // tinted. The close button, Escape and a click outside close it.
   import { onDestroy, onMount, tick } from "svelte";
   import { fade, scale } from "svelte/transition";
+
   import { appInfo, backend } from "../lib/backend";
   import { formatNumber, t } from "../lib/i18n";
   import { icons } from "../lib/icons";
@@ -121,7 +122,11 @@
 <svelte:window onkeydown={keydown} />
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions (Escape closes it, see keydown) -->
-<div class="backdrop" transition:fade={{ duration: ms(180) }} onclick={(e) => e.target === e.currentTarget && onclose()}>
+<div
+  class="backdrop"
+  transition:fade={{ duration: ms(180) }}
+  onclick={(e) => e.target === e.currentTarget && onclose()}
+>
   <div
     class="dialog"
     role="dialog"
@@ -132,7 +137,9 @@
     <header class="head">
       <div>
         <h2 id="logs-title">{t("logs.label")}</h2>
-        <p class="caption">{t("logs.caption", { count: formatNumber(LINES) })}</p>
+        <p class="caption">
+          {t("logs.caption", { count: formatNumber(LINES) })}
+        </p>
       </div>
       <button
         type="button"
@@ -142,7 +149,9 @@
         bind:this={closeButton}
         onclick={onclose}
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.close} /></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"
+          ><path d={icons.close} /></svg
+        >
       </button>
     </header>
 
@@ -151,7 +160,9 @@
         <span class="copied" aria-live="polite">
           {#if copied}
             <span class="copied-text" transition:fade={{ duration: ms(180) }}>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons.check} /></svg>{t("logs.copied")}
+              <svg viewBox="0 0 24 24" aria-hidden="true"
+                ><path d={icons.check} /></svg
+              >{t("logs.copied")}
             </span>
           {/if}
         </span>
@@ -169,7 +180,13 @@
       <div class="log empty"><p>{t("logs.empty")}</p></div>
     {:else}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex: the log scrolls; keyboard users need to reach it -->
-      <pre class="log" bind:this={view} tabindex="0" aria-label={t("logs.label")}>{#each lines as line, i (i)}<span class="l {levelOf(line)}">{line}
+      <pre
+        class="log"
+        bind:this={view}
+        tabindex="0"
+        aria-label={t("logs.label")}>{#each lines as line, i (i)}<span
+          class="l {levelOf(line)}"
+          >{line}
 </span>{/each}</pre>
     {/if}
 
@@ -324,7 +341,13 @@
 
   .log.loading {
     background:
-      linear-gradient(90deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)) 0 0 / 200% 100%,
+      linear-gradient(
+          90deg,
+          rgba(255, 255, 255, 0.02),
+          rgba(255, 255, 255, 0.06),
+          rgba(255, 255, 255, 0.02)
+        )
+        0 0 / 200% 100%,
       rgba(8, 6, 16, 0.55);
     animation: wave 1.4s ease-in-out infinite;
   }

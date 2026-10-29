@@ -32,15 +32,21 @@
   --amber: #ffb340;
 
   /* Glass: tinted, blurred, with noise (see .noise below) */
-  --glass: linear-gradient(150deg, rgba(120, 90, 255, 0.26), rgba(30, 25, 60, 0.5));
+  --glass: linear-gradient(
+    150deg,
+    rgba(120, 90, 255, 0.26),
+    rgba(30, 25, 60, 0.5)
+  );
   --glass-border: rgba(180, 160, 255, 0.24);
   --glass-blur: blur(40px) saturate(170%);
-  --glass-shadow: 0 12px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  --glass-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.14);
 
   /* Glow on active elements */
   --glow: 0 0 14px rgba(123, 92, 255, 0.55);
   --glow-strong: 0 0 22px rgba(123, 92, 255, 0.75);
-  --glow-pill: 0 0 16px rgba(140, 110, 255, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  --glow-pill:
+    0 0 16px rgba(140, 110, 255, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.15);
   --glow-progress: 0 0 10px rgba(100, 210, 255, 0.6);
 
   /* Motion */
@@ -52,7 +58,9 @@
   --radius-m: 9px;
   --radius-l: 14px;
 
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
 
   /* Fractal noise texture for the glass grain */
@@ -169,13 +177,17 @@ textarea {
 .input:focus {
   outline: none;
   border-color: rgba(179, 157, 255, 0.7);
-  box-shadow: 0 0 0 3px rgba(123, 92, 255, 0.25), inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  box-shadow:
+    0 0 0 3px rgba(123, 92, 255, 0.25),
+    inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 .input[aria-invalid="true"] {
   border-color: rgba(255, 100, 100, 0.7);
 }
 .input[aria-invalid="true"]:focus {
-  box-shadow: 0 0 0 3px rgba(255, 69, 58, 0.22), inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  box-shadow:
+    0 0 0 3px rgba(255, 69, 58, 0.22),
+    inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 select.input {
   padding-right: 30px;
@@ -229,7 +241,12 @@ select.input option {
   display: block;
   height: 12px;
   border-radius: 6px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.06),
+    rgba(255, 255, 255, 0.12),
+    rgba(255, 255, 255, 0.06)
+  );
   background-size: 200% 100%;
   animation: skeleton-wave 1.4s ease-in-out infinite;
 }
