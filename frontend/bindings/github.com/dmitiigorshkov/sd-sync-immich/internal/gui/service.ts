@@ -224,6 +224,15 @@ export function SetFullscreen(on: boolean): $CancellablePromise<void> {
 }
 
 /**
+ * SetTelemetry turns the anonymous statistics on or off: the user's
+ * answer to the question in the window, or the switch in Settings.
+ * Turning them on makes a new install id, turning them off forgets it.
+ */
+export function SetTelemetry(enabled: boolean): $CancellablePromise<void> {
+    return $Call.ByID(1285393473, enabled);
+}
+
+/**
  * State returns everything the window renders.
  */
 export function State(): $CancellablePromise<$models.StateView> {

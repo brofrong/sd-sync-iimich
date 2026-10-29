@@ -22,6 +22,7 @@ import (
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/install"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/logx"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/state"
+	"github.com/dmitiigorshkov/sd-sync-immich/internal/telemetry"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/update"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/version"
 	"github.com/dmitiigorshkov/sd-sync-immich/internal/volume"
@@ -47,8 +48,10 @@ type Service struct {
 	st      *state.DB
 	version string
 	updater *update.Client
-	shell   *shell
-	gallery *gallery.Gallery
+	// telemetry sends anonymous statistics while the user allows it.
+	telemetry *telemetry.Client
+	shell     *shell
+	gallery   *gallery.Gallery
 
 	// executable is this program; bundlePath is the app bundle it runs
 	// from, "" when it runs outside one (a development build).
@@ -92,6 +95,7 @@ func newService(a *app.App, cfg *config.Store, st *state.DB, ver string, sh *she
 	}
 	s.status = newThrottle(statusInterval, func(st app.Status) { sh.emit(eventStatus, st) })
 	s.cat = s.loadCatalog(cfg.Get().UI.Language)
+	s.telemetry = s.newTelemetry()
 	return s
 }
 
@@ -130,6 +134,7 @@ func (s *Service) availableUpdate() *update.Release {
 func (s *Service) start(ctx context.Context) {
 	s.app.OnStatus(s.onStatus)
 	s.app.OnNotice(s.onNotice)
+	s.startTelemetry(ctx)
 	go s.app.Run(ctx)
 	go s.watchVolumes(ctx)
 	go s.runUpdateChecks(ctx)
@@ -463,6 +468,8 @@ func settingsView(cfg config.Config) SettingsView {
 		AutoFormat:   cfg.Card.AutoFormat,
 
 		AutoFormatNeedsAdmin: eraseNeedsAdmin(),
+		Telemetry:            cfg.Telemetry.Enabled,
+		TelemetryAsked:       cfg.Telemetry.Asked,
 		Notifications: NotificationsView{
 			Enabled:   n.Enabled,
 			Done:      n.Done,
@@ -518,6 +525,7 @@ func (s *Service) SaveSettings(v SettingsView) error {
 		s.mu.Lock()
 		s.cat = c
 		s.mu.Unlock()
+		s.telemetry.SetLanguage(c.Lang())
 	}
 	if prev.Scan.AutoPaths != v.AutoPaths {
 		s.app.ConfigChanged()

@@ -24,6 +24,8 @@
 //   ?os=<system>    the system AppInfo reports: macos (default), windows,
 //                   linux or flatpak (Linux, updated by Flatpak); Windows and
 //                   Linux are betas (the sidebar badge)
+//   ?stats=ask      the statistics question is not answered yet (default:
+//                   answered, statistics off); ?stats=on they are sent
 //
 // "Retry failed files" works for a run of the selected, mounted card (the
 // scenario syncs again) and answers retry_unavailable otherwise, as Go.
@@ -441,6 +443,8 @@ export function createMockTransport(): Transport {
     autoFormat: query.get("format_setting") === "on",
     autoFormatNeedsAdmin: query.get("format_admin") === "needed",
     notifications: new NotificationsView({ enabled: true, done: true, errors: true, otherCard: true, server: true, card: true }),
+    telemetry: query.get("stats") === "on",
+    telemetryAsked: query.get("stats") !== "ask",
   });
   const state = new StateView({
     status: makeStatus(pinned ?? "syncing"),
@@ -733,8 +737,15 @@ export function createMockTransport(): Transport {
         autostartAvailable: state.settings.autostartAvailable,
         autostartTranslocated: state.settings.autostartTranslocated,
         autoFormatNeedsAdmin: state.settings.autoFormatNeedsAdmin,
+        telemetry: state.settings.telemetry,
+        telemetryAsked: state.settings.telemetryAsked,
       });
       state.language = resolveLanguage(v.language, navigator.languages);
+      pushState();
+    },
+    SetTelemetry: async (enabled) => {
+      await delay(150, null);
+      state.settings = new SettingsView({ ...state.settings, telemetry: enabled, telemetryAsked: true });
       pushState();
     },
     SetAutostart: async (enabled) => {

@@ -37,3 +37,8 @@ notifications:
   other_card: true
   server: true
   card: true
+
+# Анонимная статистика (Настройки → Статистика); выключена, пока не разрешите.
+telemetry:
+  enabled: false
+  asked: false       # вопрос в окне уже был

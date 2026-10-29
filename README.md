@@ -76,9 +76,15 @@ Needs an Immich v3 server. Free and open source.
 
 ## Privacy
 
-The app talks only to your Immich server and to GitHub, to check for a new
-version and download it. No analytics, no accounts. The API key stays on
-your computer and is only sent to your server. Details are in
+The app talks to your Immich server and to GitHub, to check for a new
+version and download it. No accounts. The API key stays on your computer
+and is only sent to your server.
+
+Anonymous statistics are off until you allow them: the app asks once, and
+**Settings → Statistics** turns them on or off. When on, it sends the app's
+version and system, how many files each upload had and the errors it ran
+into, with a random id that changes each time you turn them on. Never file
+names, paths, the server's address or the API key. Details are in
 [SECURITY.md](SECURITY.md).
 
 ## How it is made

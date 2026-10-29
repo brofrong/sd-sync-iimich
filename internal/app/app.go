@@ -36,6 +36,7 @@ type App struct {
 	syncCancel context.CancelFunc
 	syncMu     sync.Mutex
 	onStatus   func(Status)
+	onSynced   func(SyncReport)
 	dryRun     bool
 
 	// resumer restarts a sync once Immich is reachable again; see resume().
@@ -150,6 +151,20 @@ func (a *App) startupStatus() Status {
 // OnStatus registers fn to receive every status change. Call it before Run.
 func (a *App) OnStatus(fn func(Status)) {
 	a.onStatus = fn
+}
+
+// SyncReport is a finished sync: its status code (before ejecting or
+// formatting the card), its counts and how long it took.
+type SyncReport struct {
+	Code     Code
+	Result   uploader.Result
+	Duration time.Duration
+}
+
+// OnSynced registers fn to receive every finished sync, dry runs aside.
+// Call it before Run.
+func (a *App) OnSynced(fn func(SyncReport)) {
+	a.onSynced = fn
 }
 
 // resume returns the App's resumer, creating it on first use (tests may
@@ -528,6 +543,10 @@ func (a *App) startSync(only []string) bool {
 			if recErr := a.State.RecordFailures(runID, result.Failures); recErr != nil {
 				logx.Error("state: failed to record failed files", "err", recErr)
 			}
+		}
+
+		if a.onSynced != nil && !a.dryRun {
+			a.onSynced(SyncReport{Code: st.Code, Result: result, Duration: time.Since(syncStart)})
 		}
 
 		a.setStatus(st)

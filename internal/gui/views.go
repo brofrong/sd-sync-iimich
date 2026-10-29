@@ -61,6 +61,10 @@ type CardView struct {
 // it must be moved to Applications first): the switch is then disabled.
 // Autostart is true only when the LaunchAgent runs this very executable.
 //
+// Telemetry and TelemetryAsked (read only, ignored by SaveSettings; see
+// Service.SetTelemetry) are whether anonymous statistics are sent and
+// whether the user has answered the question about them.
+//
 // AutoFormatNeedsAdmin (read only, ignored by SaveSettings) is true when
 // the system would only format a card with administrator rights (Windows
 // without elevation, see volume.EraseNeedsAdmin): auto-format then never
@@ -78,6 +82,8 @@ type SettingsView struct {
 	AutoFormat           bool              `json:"autoFormat"`
 	AutoFormatNeedsAdmin bool              `json:"autoFormatNeedsAdmin"`
 	Notifications        NotificationsView `json:"notifications"`
+	Telemetry            bool              `json:"telemetry"`
+	TelemetryAsked       bool              `json:"telemetryAsked"`
 }
 
 // NotificationsView holds the notification switches: Enabled turns all of

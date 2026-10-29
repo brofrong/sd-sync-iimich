@@ -21,7 +21,19 @@ reach everyone who keeps updates on.
   for: testing another address needs that server's key.
 - **Network.** The app talks to your Immich server and to GitHub: the
   GitHub API to check for a new version, and the release page to download
-  it. Nothing else, no analytics.
+  it. Nothing else, unless you allow anonymous statistics.
+- **Anonymous statistics.** Off until you allow them (the app asks once;
+  **Settings → Statistics**). When on, the app sends to
+  `sd-sync-stats.brofrong.ru`: a random id made when you turn them on (a
+  new one each time), the app's version, the system and its version, the
+  CPU architecture, how the app is installed and its language; that it
+  started and, once a day, that it still runs; each sync's counts (files,
+  uploaded, duplicates, failed by kind, bytes, duration) and outcome; and
+  the messages of errors it logs, without their details. Never file names,
+  paths, card names, the server's address or the API key. The server keeps
+  no IP addresses and deletes events after 400 days. Its code is in
+  [`internal/telemetryserver`](internal/telemetryserver), the app's side in
+  [`internal/telemetry`](internal/telemetry).
 - **Updates.** A downloaded update is checked against the SHA-256 in the
   release's `checksums.txt` before it replaces the app. The builds are not
   signed with an Apple or Microsoft certificate.

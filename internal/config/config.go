@@ -20,14 +20,15 @@ const appDirName = "sd-sync-immich"
 const defaultDBName = "state.db"
 
 type Config struct {
-	Immich        ImmichConfig `yaml:"immich"`
-	Watch         WatchConfig  `yaml:"watch"`
-	Scan          ScanConfig   `yaml:"scan"`
-	Upload        UploadConfig `yaml:"upload"`
-	State         StateConfig  `yaml:"state"`
-	UI            UIConfig     `yaml:"ui"`
-	Card          CardConfig   `yaml:"card"`
-	Notifications NotifyConfig `yaml:"notifications"`
+	Immich        ImmichConfig    `yaml:"immich"`
+	Watch         WatchConfig     `yaml:"watch"`
+	Scan          ScanConfig      `yaml:"scan"`
+	Upload        UploadConfig    `yaml:"upload"`
+	State         StateConfig     `yaml:"state"`
+	UI            UIConfig        `yaml:"ui"`
+	Card          CardConfig      `yaml:"card"`
+	Notifications NotifyConfig    `yaml:"notifications"`
+	Telemetry     TelemetryConfig `yaml:"telemetry"`
 }
 
 type ImmichConfig struct {
@@ -84,6 +85,16 @@ type NotifyConfig struct {
 	OtherCard bool `yaml:"other_card"`
 	Server    bool `yaml:"server"`
 	Card      bool `yaml:"card"`
+}
+
+// TelemetryConfig is the user's choice about anonymous statistics (see
+// package telemetry): Enabled sends them, Asked is set once the user has
+// answered the question in the window, and ID is the random install id
+// made when they were turned on ("" while off).
+type TelemetryConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Asked   bool   `yaml:"asked"`
+	ID      string `yaml:"id,omitempty"`
 }
 
 type Store struct {

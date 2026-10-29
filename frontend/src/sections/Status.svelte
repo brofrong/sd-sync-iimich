@@ -1,7 +1,9 @@
 <script lang="ts">
   // The Status section: the status card, the selected card's own actions
   // (eject, format) while it is plugged in, then three tiles (card, server,
-  // last sync) that each open the section where it can be changed.
+  // last sync) that each open the section where it can be changed. Once
+  // the server is set up, a card asks, once, whether to send anonymous
+  // statistics.
   import { onMount } from "svelte";
   import type { SyncRun } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/state";
   import Button from "../components/Button.svelte";
@@ -39,6 +41,17 @@
   );
   let formatOpen = $state(false);
   let cardError = $state("");
+
+  // ---- The statistics question --------------------------------------------------
+  let statsError = $state("");
+  async function answerStats(enabled: boolean): Promise<void> {
+    statsError = "";
+    try {
+      await backend.SetTelemetry(enabled);
+    } catch (err) {
+      statsError = t("ui.action_failed", { detail: err instanceof Error ? err.message : String(err) });
+    }
+  }
 
   function failed(err: unknown): void {
     cardError = t("ui.action_failed", { detail: err instanceof Error ? err.message : String(err) });
@@ -235,6 +248,23 @@
     </GlassCard>
   {/if}
 
+  {#if configured && !$appState.settings.telemetryAsked}
+    <GlassCard padding="14px 16px">
+      <div class="ask" role="region" aria-labelledby="stats-ask-title">
+        <svg class="ask-icon" viewBox="0 0 24 24" aria-hidden="true"><path d={icons.stats} /></svg>
+        <div class="ask-text">
+          <h2 id="stats-ask-title">{t("stats.ask_title")}</h2>
+          <p>{t("stats.ask_text")}</p>
+          {#if statsError}<p class="card-error" role="alert">{statsError}</p>{/if}
+        </div>
+        <div class="ask-actions">
+          <Button onclick={() => answerStats(false)}>{t("stats.ask_no")}</Button>
+          <Button variant="primary" onclick={() => answerStats(true)}>{t("stats.ask_yes")}</Button>
+        </div>
+      </div>
+    </GlassCard>
+  {/if}
+
   <div class="tiles">
     {#each tiles as tile (tile.id)}
       <GlassCard padding="0">
@@ -262,6 +292,47 @@
   .status {
     display: grid;
     gap: 14px;
+  }
+
+  /* ---- The statistics question ---- */
+  .ask {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 10px 14px;
+  }
+  .ask-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    margin-top: 1px;
+    fill: none;
+    stroke: var(--accent-soft, var(--text-2));
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .ask-text {
+    flex: 1 1 320px;
+    min-width: 0;
+  }
+  .ask-text h2 {
+    margin: 0 0 4px;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .ask-text p {
+    margin: 0;
+    color: var(--text-2);
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+  .ask-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+    align-self: center;
   }
 
   /* ---- The selected card's actions ---- */

@@ -11,7 +11,8 @@
   // the card after a sync (turning auto-format on asks first, in the row,
   // and its button only works after a countdown),
   // the notification switches (the kinds are disabled while notifications
-  // are off), and last a button that opens the log panel.
+  // are off), the anonymous statistics switch, and last a button that opens
+  // the log panel.
   import { onDestroy, onMount } from "svelte";
   import { fade, fly, slide } from "svelte/transition";
   import { NotificationsView, SettingsView, type UpdateView } from "../../bindings/github.com/dmitiigorshkov/sd-sync-immich/internal/gui";
@@ -70,6 +71,7 @@
   let confirmFormat = $state(false);
   let confirmWait = $state(0);
   let confirmTimer: ReturnType<typeof setInterval> | undefined;
+  let telemetry = $state(false);
   let notifications = $state(new NotificationsView({ enabled: true, done: true, errors: true, otherCard: true, server: true, card: true }));
 
   // The notification kinds, in the order of the spec.
@@ -90,13 +92,14 @@
     autostart = s.autostart;
     autoEject = s.autoEject;
     autoFormat = s.autoFormat;
+    telemetry = s.telemetry;
     if (s.notifications) notifications = new NotificationsView(s.notifications);
   }
   $effect(() => syncFromState($appState.settings));
 
   // Which card the "Saved" / error feedback shows in: the one whose
   // setting changed last.
-  type Group = "general" | "card" | "notify";
+  type Group = "general" | "card" | "notify" | "stats";
   let group = $state<Group>("general");
   let saveError = $state("");
   let saved = $state(false);
@@ -146,6 +149,21 @@
           ? t("settings.autostart_translocated")
           : t("settings.save_failed", { detail: message(err) });
       autostart = $appState.settings.autostart;
+      return;
+    }
+    showSaved();
+  }
+
+  async function saveTelemetry(enabled: boolean): Promise<void> {
+    group = "stats";
+    telemetry = enabled;
+    saveError = "";
+    saved = false;
+    try {
+      await backend.SetTelemetry(enabled);
+    } catch (err) {
+      saveError = t("settings.save_failed", { detail: message(err) });
+      telemetry = $appState.settings.telemetry;
       return;
     }
     showSaved();
@@ -570,6 +588,20 @@
     </ul>
 
     {@render feedback("notify")}
+  </GlassCard>
+
+  <GlassCard padding="16px 18px 6px">
+    <h2 class="eyebrow">{t("settings.stats")}</h2>
+
+    <div class="row">
+      <div class="text">
+        <label for="set-stats">{t("settings.stats_enabled")}</label>
+        <p class="hint" id="set-stats-hint">{t("settings.stats_hint")}</p>
+      </div>
+      <Switch id="set-stats" checked={telemetry} describedby="set-stats-hint" onchange={saveTelemetry} />
+    </div>
+
+    {@render feedback("stats")}
   </GlassCard>
 
   <GlassCard padding="16px 18px 6px">

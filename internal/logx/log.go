@@ -16,7 +16,19 @@ var (
 	mu      sync.RWMutex
 	logger  *slog.Logger
 	logFile *os.File
+	// onError, when set, receives the message of every error logged (see
+	// OnError).
+	onError func(msg string)
 )
+
+// OnError sets fn to receive the message of every error logged from now
+// on, without its attributes (nil stops it). It must not log errors
+// itself.
+func OnError(fn func(msg string)) {
+	mu.Lock()
+	onError = fn
+	mu.Unlock()
+}
 
 // appDirName names the app's log directory under the system's one.
 const appDirName = "sd-sync-immich"
@@ -77,8 +89,11 @@ func Debug(msg string, args ...any) { log(slog.LevelDebug, msg, args...) }
 
 func log(level slog.Level, msg string, args ...any) {
 	mu.RLock()
-	l := logger
+	l, hook := logger, onError
 	mu.RUnlock()
+	if hook != nil && level >= slog.LevelError {
+		hook(msg)
+	}
 	if l != nil {
 		l.Log(nil, level, msg, args...)
 		return

@@ -262,6 +262,10 @@ export class ServerView {
  * it must be moved to Applications first): the switch is then disabled.
  * Autostart is true only when the LaunchAgent runs this very executable.
  * 
+ * Telemetry and TelemetryAsked (read only, ignored by SaveSettings; see
+ * Service.SetTelemetry) are whether anonymous statistics are sent and
+ * whether the user has answered the question about them.
+ * 
  * AutoFormatNeedsAdmin (read only, ignored by SaveSettings) is true when
  * the system would only format a card with administrator rights (Windows
  * without elevation, see volume.EraseNeedsAdmin): auto-format then never
@@ -279,6 +283,8 @@ export class SettingsView {
     "autoFormat": boolean;
     "autoFormatNeedsAdmin": boolean;
     "notifications": NotificationsView;
+    "telemetry": boolean;
+    "telemetryAsked": boolean;
 
     /** Creates a new SettingsView instance. */
     constructor($$source: Partial<SettingsView> = {}) {
@@ -314,6 +320,12 @@ export class SettingsView {
         }
         if (!("notifications" in $$source)) {
             this["notifications"] = (new NotificationsView());
+        }
+        if (!("telemetry" in $$source)) {
+            this["telemetry"] = false;
+        }
+        if (!("telemetryAsked" in $$source)) {
+            this["telemetryAsked"] = false;
         }
 
         Object.assign(this, $$source);
